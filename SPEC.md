@@ -18,7 +18,7 @@ Reference implementation: `Challenge_Account_Tracker.xlsx` in this repo — the 
 
 ### Goal framing
 - Aspiration: $1,000,000. It is a direction, NOT a pass/fail line.
-- Success metric = **Total Score** = challenge account value + banked floors + tax reserved. Every banked dollar counts as won, permanently. Ending at $180k means winning $180k, not missing 82% of $1M.
+- Success metric = **Total Score** = challenge account value + banked floors + tax reserved. Every banked dollar counts as won, permanently. The final number is the prize, never a shortfall against the aspiration. The only real failures are breaking the rules or losing to VOO.
 
 ### Milestone ratchet
 - Below $100,000 account value: everything rides. No skims except tax reserve.

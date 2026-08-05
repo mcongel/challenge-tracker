@@ -80,7 +80,7 @@ const SECTIONS: { heading: string; rules: Rule[] }[] = [
       {
         n: 10,
         text: (
-          <><strong>Success = Total Score: account value + banked floors + tax reserved.</strong> Ending at $180k means winning $180k, not missing 82% of a million.</>
+          <><strong>Success = Total Score: account value + banked floors + tax reserved.</strong> The final number is the prize, never a shortfall against the aspiration. The only real failures are breaking the rules or losing to VOO.</>
         ),
       },
       {
