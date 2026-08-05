@@ -11,6 +11,13 @@ const CACHE_TTL_SECONDS = 7 * 24 * 3600;
 const MAX_TICKERS = 40;
 const RETRY_DELAY_MS = 1300;
 
+// ETFs have no profile on Finnhub's free tier — name the held ones here.
+const STATIC_NAMES = {
+  SOXX: 'iShares Semiconductor ETF',
+  VDE: 'Vanguard Energy Index Fund ETF',
+  VOO: 'Vanguard S&P 500 ETF',
+};
+
 export async function onRequestGet(context) {
   const { request, env } = context;
   const url = new URL(request.url);
@@ -44,6 +51,10 @@ export async function onRequestGet(context) {
 
   const uncached = [];
   for (const ticker of tickers) {
+    if (STATIC_NAMES[ticker]) {
+      names[ticker] = STATIC_NAMES[ticker];
+      continue;
+    }
     const hit = await cache.match(cacheKey(ticker));
     if (hit) {
       if (!(await readBody(hit, ticker))) missing.push(ticker);
