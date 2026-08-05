@@ -4,7 +4,8 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
 import { ErrorCard, SkeletonTable } from './CashLedger';
-import { priceFor, useData } from '../contexts/DataContext';
+import { useData } from '../contexts/DataContext';
+import { priceMapFor } from '../lib/alerts';
 import type { CloseAllocation, PositionLot } from '../lib/engine';
 import {
   closeShares, costBasis, daysHeld, longTermDate, marketValue, roundCents,
@@ -16,7 +17,8 @@ import {
 
 export function Positions() {
   const data = useData();
-  const { lots, overrides, loading, error } = data;
+  const { lots, overrides, quotes, loading, error } = data;
+  const priceMap = priceMapFor(lots, overrides, quotes);
   const [addOpen, setAddOpen] = useState(false);
   const [closeTicker, setCloseTicker] = useState<string | null>(null);
   const [splitTicker, setSplitTicker] = useState<string | null>(null);
@@ -73,8 +75,9 @@ export function Positions() {
             <tbody className="divide-y divide-gray-100">
               {byTicker.map(([ticker, tickerLots]) => {
                 const hasOverride = overrides[ticker] !== undefined;
+                const hasPrice = hasOverride || quotes[ticker] !== undefined;
                 const subtotalValue = tickerLots.reduce(
-                  (s, l) => s + marketValue(l, priceFor(overrides, ticker, l.avgCost)), 0);
+                  (s, l) => s + marketValue(l, priceMap[ticker] ?? l.avgCost), 0);
                 const subtotalBasis = tickerLots.reduce((s, l) => s + costBasis(l), 0);
                 const gain = subtotalValue - subtotalBasis;
                 return [
@@ -98,8 +101,9 @@ export function Positions() {
                     <td className="px-4 py-2 text-right">
                       <button onClick={() => setPriceTicker(ticker)}
                         className="inline-flex items-center gap-1 text-xs font-medium tabular-nums text-gray-600 hover:text-indigo-600"
-                        title={hasOverride ? 'Manual price (pinned)' : 'Set price'}>
-                        {hasOverride ? formatCurrency(overrides[ticker]) : 'set price'}
+                        title={hasOverride ? 'Manual price (pinned — beats quotes)' : hasPrice ? 'Delayed quote — click to pin a manual price' : 'Set price'}>
+                        {hasPrice ? formatCurrency(priceMap[ticker]) : 'set price'}
+                        {hasOverride && <span className="text-[10px] uppercase text-amber-800">pin</span>}
                         <Pencil className="h-3 w-3" />
                       </button>
                     </td>
@@ -115,7 +119,7 @@ export function Positions() {
                     <td colSpan={4} />
                   </tr>,
                   ...tickerLots.map((lot) => {
-                    const price = priceFor(overrides, ticker, lot.avgCost);
+                    const price = priceMap[ticker] ?? lot.avgCost;
                     const u = unrealized(lot, price);
                     return (
                       <tr key={lot.id} className="hover:bg-gray-50">
@@ -124,7 +128,7 @@ export function Positions() {
                         <td className="px-4 py-2 text-right tabular-nums">{formatCurrency(lot.avgCost)}</td>
                         <td className="px-4 py-2 text-right tabular-nums">{formatCurrency(roundCents(costBasis(lot)))}</td>
                         <td className="px-4 py-2 text-right tabular-nums text-gray-500">
-                          {hasOverride ? formatCurrency(price) : '—'}
+                          {hasPrice ? formatCurrency(price) : '—'}
                         </td>
                         <td className="px-4 py-2 text-right tabular-nums">{formatCurrency(roundCents(marketValue(lot, price)))}</td>
                         <td className={cn('px-4 py-2 text-right tabular-nums', u >= 0 ? 'text-green-600' : 'text-red-600')}>

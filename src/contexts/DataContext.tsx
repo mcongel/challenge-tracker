@@ -60,6 +60,10 @@ const EMPTY: DataState = {
 interface DataContextValue extends DataState {
   loading: boolean;
   error: string | null;
+  /** Delayed API quotes (override-free). Merged view: overrides win. */
+  quotes: Record<string, number>;
+  quotesAsOf: number | null;
+  refreshQuotes: () => Promise<void>;
   refresh: () => Promise<void>;
   /** For a Deposit, pass that day's VOO price to create the shadow twin. */
   addCashEvent: (e: Omit<CashEvent, 'id'>, vooPriceThatDay?: number) => Promise<void>;
@@ -89,6 +93,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<DataState>(EMPTY);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [quotes, setQuotes] = useState<Record<string, number>>({});
+  const [quotesAsOf, setQuotesAsOf] = useState<number | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -134,18 +140,55 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     void refresh();
   }, [refresh]);
 
+  const refreshQuotes = useCallback(async () => {
+    const tickers = [
+      ...new Set([...state.lots.map((l) => l.ticker), ...state.parked.map((p) => p.ticker), 'VOO']),
+    ];
+    if (tickers.length === 0) return;
+    try {
+      const res = await fetch(`/api/quotes?tickers=${tickers.join(',')}`);
+      if (!res.ok) return; // quotes are best-effort; overrides and cost fallbacks cover us
+      const body = (await res.json()) as {
+        quotes?: Record<string, { price: number }>;
+        asOf?: number;
+      };
+      if (body.quotes) {
+        setQuotes(Object.fromEntries(Object.entries(body.quotes).map(([t, q]) => [t, q.price])));
+        setQuotesAsOf(body.asOf ?? Date.now());
+      }
+    } catch {
+      // Local dev without the Pages Function, or the API is down — silently fine.
+    }
+  }, [state.lots, state.parked]);
+
+  const quotesFetched = useRef(false);
+  useEffect(() => {
+    if (loading || error || quotesFetched.current) return;
+    quotesFetched.current = true;
+    void refreshQuotes();
+  }, [loading, error, refreshQuotes]);
+
   // Daily snapshot: one row per calendar day, written on first load. Skipped
   // until a VOO price exists — recording shadowValue = 0 would poison the
   // rolling-12-month verdict. The date PK makes concurrent writes harmless.
+  const mergedParked = useMemo(
+    () =>
+      state.parked.map((p) => {
+        const effective = state.overrides[p.ticker] ?? quotes[p.ticker];
+        return effective !== undefined ? { ...p, currentPrice: effective } : p;
+      }),
+    [state.parked, state.overrides, quotes],
+  );
+
   const snapshotAttempted = useRef(false);
   useEffect(() => {
     if (loading || error || snapshotAttempted.current) return;
     const today = todayISO();
     if (state.snapshots.some((s) => s.date === today)) return;
-    const voo = state.overrides['VOO'];
+    const voo = state.overrides['VOO'] ?? quotes['VOO'];
     if (!voo) return;
     snapshotAttempted.current = true;
-    const priceMap = priceMapFor(state.lots, state.overrides);
+    const priceMap = priceMapFor(state.lots, state.overrides, quotes);
     const account = accountTotal(state.lots, priceMap, state.cashEvents);
     const payload = {
       date: today,
@@ -157,8 +200,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       ),
       shadow_voo_value: roundCents(shadowValue(state.benchmarkDeposits, voo)),
       net_contributed: roundCents(netContributed(state.cashEvents)),
-      parked_pile_value: roundCents(pileTotal(state.parked)),
-      semi_ai_pct: Number(concentration(state.parked).semiPct.toFixed(6)),
+      parked_pile_value: roundCents(pileTotal(mergedParked)),
+      semi_ai_pct: Number(concentration(mergedParked).semiPct.toFixed(6)),
     };
     void db()
       .from('snapshots')
@@ -166,7 +209,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       .then(({ error: err }) => {
         if (!err) void refresh();
       });
-  }, [loading, error, state, refresh]);
+  }, [loading, error, state, quotes, mergedParked, refresh]);
 
   const addCashEvent = useCallback(
     async (e: Omit<CashEvent, 'id'>, vooPriceThatDay?: number) => {
@@ -385,6 +428,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo(
     () => ({
       ...state,
+      parked: mergedParked,
+      quotes,
+      quotesAsOf,
+      refreshQuotes,
       loading,
       error,
       refresh,
@@ -401,9 +448,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       clearOverride,
     }),
     [
-      state, loading, error, refresh, addCashEvent, deleteCashEvent, addLot, closePosition,
-      recordSplit, setTradeWashSale, deleteTrade, updateParked, recordMilestone, setOverride,
-      clearOverride,
+      state, mergedParked, quotes, quotesAsOf, refreshQuotes, loading, error, refresh,
+      addCashEvent, deleteCashEvent, addLot, closePosition, recordSplit, setTradeWashSale,
+      deleteTrade, updateParked, recordMilestone, setOverride, clearOverride,
     ],
   );
 
@@ -414,9 +461,4 @@ export function useData(): DataContextValue {
   const ctx = useContext(DataContext);
   if (!ctx) throw new Error('useData must be used inside DataProvider');
   return ctx;
-}
-
-/** Manual override wins (pinned); fall back to the lot's cost so unrealized reads 0, not -100%. */
-export function priceFor(overrides: Record<string, number>, ticker: string, fallback: number): number {
-  return overrides[ticker] ?? fallback;
 }

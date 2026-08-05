@@ -45,22 +45,22 @@ const ALERT_STYLES: Record<string, string> = {
 export function Dashboard() {
   const {
     lots, cashEvents, trades, milestones, benchmarkDeposits, parked, snapshots,
-    carryforwards, overrides, loading, error,
+    carryforwards, overrides, quotes, loading, error,
   } = useData();
   const isDark = useIsDark();
   const today = todayISO();
 
-  const priceMap = priceMapFor(lots, overrides);
+  const priceMap = priceMapFor(lots, overrides, quotes);
   const account = accountTotal(lots, priceMap, cashEvents);
   const floor = cumulativeFloor(milestones);
   const reserved = reservedTotal(cashEvents);
   const score = totalScore(lots, priceMap, cashEvents, milestones);
-  const vooToday = overrides['VOO'];
+  const vooToday = overrides['VOO'] ?? quotes['VOO'];
   const shadow = vooToday ? shadowValue(benchmarkDeposits, vooToday) : null;
   const next = nextMilestone(account);
   const ytd = netRealizedYTD(trades, taxYearOf(today));
   const alerts = activeAlerts({
-    lots, cashEvents, trades, milestones, parked, carryforwards, overrides, today,
+    lots, cashEvents, trades, milestones, parked, carryforwards, overrides, quotes, today,
   });
 
   const chartData = snapshots.map((s) => ({

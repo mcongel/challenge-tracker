@@ -11,11 +11,11 @@ import { accountTotal, cumulativeFloor, milestoneTable, roundCents, skimDue } fr
 import { cn, formatCurrency, inputCls, labelCls, primaryBtnCls, todayISO } from '../lib/utils';
 
 export function Milestones() {
-  const { lots, cashEvents, milestones, overrides, loading, error } = useData();
+  const { lots, cashEvents, milestones, overrides, quotes, loading, error } = useData();
   const [banking, setBanking] = useState<MilestoneRow | null>(null);
   const [justBanked, setJustBanked] = useState(false);
 
-  const account = accountTotal(lots, priceMapFor(lots, overrides), cashEvents);
+  const account = accountTotal(lots, priceMapFor(lots, overrides, quotes), cashEvents);
   const rows = milestoneTable(account, milestones);
   const hits = rows.filter((r) => r.status === 'HIT_BANK_NOW');
   const floor = cumulativeFloor(milestones);

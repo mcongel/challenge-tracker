@@ -7,13 +7,14 @@ import {
 } from './engine';
 import { formatCurrency } from './utils';
 
-/** Price per ticker: pinned override first, else the lots' weighted avg cost
- * (unrealized reads 0, never -100%, until a real quote exists). */
-export function priceMapFor(lots: PositionLot[], overrides: Record<string, number>): PriceMap {
-  const map: PriceMap = { ...overrides };
-  for (const lot of lots) {
-    if (map[lot.ticker] === undefined) map[lot.ticker] = 0;
-  }
+/** Price per ticker. Precedence: pinned manual override > API quote > the
+ * lots' weighted avg cost (unrealized reads 0, never -100%, with no quote). */
+export function priceMapFor(
+  lots: PositionLot[],
+  overrides: Record<string, number>,
+  quotes: Record<string, number> = {},
+): PriceMap {
+  const map: PriceMap = { ...quotes, ...overrides };
   const byTicker = new Map<string, { shares: number; cost: number }>();
   for (const lot of lots) {
     const acc = byTicker.get(lot.ticker) ?? { shares: 0, cost: 0 };
@@ -22,7 +23,7 @@ export function priceMapFor(lots: PositionLot[], overrides: Record<string, numbe
     byTicker.set(lot.ticker, acc);
   }
   for (const [ticker, acc] of byTicker) {
-    if (overrides[ticker] === undefined && acc.shares > 0) map[ticker] = acc.cost / acc.shares;
+    if (map[ticker] === undefined && acc.shares > 0) map[ticker] = acc.cost / acc.shares;
   }
   return map;
 }
@@ -41,12 +42,13 @@ interface AlertInputs {
   parked: ParkedPosition[];
   carryforwards: LossCarryforward[];
   overrides: Record<string, number>;
+  quotes?: Record<string, number>;
   today: string;
 }
 
 export function activeAlerts(d: AlertInputs): AppAlert[] {
   const alerts: AppAlert[] = [];
-  const account = accountTotal(d.lots, priceMapFor(d.lots, d.overrides), d.cashEvents);
+  const account = accountTotal(d.lots, priceMapFor(d.lots, d.overrides, d.quotes), d.cashEvents);
 
   for (const row of milestoneTable(account, d.milestones)) {
     if (row.status === 'HIT_BANK_NOW') {

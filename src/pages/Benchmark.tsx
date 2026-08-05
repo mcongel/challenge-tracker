@@ -13,13 +13,13 @@ import { cn, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls, t
 
 export function Benchmark() {
   const {
-    benchmarkDeposits, lots, cashEvents, milestones, snapshots, overrides,
+    benchmarkDeposits, lots, cashEvents, milestones, snapshots, overrides, quotes,
     setOverride, loading, error,
   } = useData();
   const [priceOpen, setPriceOpen] = useState(false);
 
-  const vooToday = overrides['VOO'];
-  const score = totalScore(lots, priceMapFor(lots, overrides), cashEvents, milestones);
+  const vooToday = overrides['VOO'] ?? quotes['VOO'];
+  const score = totalScore(lots, priceMapFor(lots, overrides, quotes), cashEvents, milestones);
   const shadow = vooToday ? shadowValue(benchmarkDeposits, vooToday) : null;
   const delta = rollingLeadDelta(snapshots, todayISO());
 
