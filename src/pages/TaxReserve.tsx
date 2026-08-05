@@ -101,7 +101,7 @@ export function TaxReserve() {
                   </tr>
                 );
               })}
-              <tr className="bg-gray-50/50">
+              <tr className="bg-gray-50">
                 <td className="px-4 py-3 font-medium whitespace-nowrap text-gray-500">
                   {formatQuarterLabel(current)}
                   <span className="ml-2 text-xs font-normal text-gray-400">in progress</span>

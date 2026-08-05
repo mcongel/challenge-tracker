@@ -8,8 +8,9 @@ import { ErrorCard, SkeletonTable } from './CashLedger';
 import { useData } from '../contexts/DataContext';
 import type { AccountKind, ParkedLot, ParkedPosition, ParkedSale, UnlockSummary } from '../lib/engine';
 import {
-  concentration, contributionStatus, depositExceedsCap, dividendsCollected, netContributed,
-  parkedCostBasis, parkedMarketValue, roundCents, trackedBalance, trimPreview, unlockSummary,
+  concentration, contributionStatus, depositExceedsCap, dividendsCollected, estimatedPileTax,
+  netContributed, parkedCostBasis, parkedMarketValue, roundCents, trackedBalance, trimPreview,
+  unlockSummary,
 } from '../lib/engine';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import {
@@ -32,6 +33,10 @@ export function ParkedPile() {
 
   const realized = parkedSales.filter((s) => s.costBasis != null);
   const realizedTotal = realized.reduce((sum, s) => sum + (s.proceeds - (s.costBasis as number)), 0);
+  const estTaxTotal = realized.reduce(
+    (sum, s) => sum + estimatedPileTax(s.proceeds - (s.costBasis as number), s.shares, s.ltShares),
+    0,
+  );
   const unknownBasisCount = parkedSales.length - realized.length;
   const [editing, setEditing] = useState<ParkedPosition | null>(null);
   const [trimming, setTrimming] = useState<ParkedPosition | null>(null);
@@ -229,6 +234,11 @@ export function ParkedPile() {
               <span className={cn('font-bold', realizedTotal >= 0 ? 'text-green-600' : 'text-red-600')}>
                 {formatCurrency(roundCents(realizedTotal))}
               </span>
+              {estTaxTotal > 0 && (
+                <span className="text-xs text-gray-400" title="Rough estimate (~21% LT / ~29% ST). The quarterly skim is challenge-account-only — set this aside yourself.">
+                  {' '}· est. tax ~{formatCurrency(roundCents(estTaxTotal))}
+                </span>
+              )}
               {unknownBasisCount > 0 && (
                 <span className="text-xs text-gray-400"> · {unknownBasisCount} sale{unknownBasisCount > 1 ? 's' : ''} with unknown basis excluded</span>
               )}
@@ -914,6 +924,11 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
                 {fmtSh(preview.ltShares)} sh long-term
                 {preview.stShares > 0 && ` · ${fmtSh(preview.stShares)} sh short-term`}
                 {preview.unknownShares > 0 && ` · ${fmtSh(preview.unknownShares)} sh undated`}
+                {preview.gain > 0 && (
+                  <span title="Rough estimate (~21% LT / ~29% ST). The quarterly skim never covers pile sales — set this aside yourself.">
+                    {' '}· est. tax ~{formatCurrency(roundCents(estimatedPileTax(preview.gain, numShares, preview.ltShares + preview.unknownShares)))}
+                  </span>
+                )}
                 {isLoss && <span className="text-red-600 font-medium"> · loss — arms the 31-day wash-sale window</span>}
               </p>
             )}

@@ -112,6 +112,25 @@ export function consumeLotsFifo(lots: ParkedLot[], sharesToSell: number): LotCon
   return { updates, deletes, consumed };
 }
 
+/** Spec's rough combined rates: ~21% long-term, ~28–30% short-term. */
+export const LT_TAX_RATE = 0.21;
+export const ST_TAX_RATE = 0.29;
+
+/**
+ * Rough tax estimate on a positive pile gain, blended by the long-term share
+ * fraction. Unknown term assumes long-term (planned trims should be). Context
+ * only — the quarterly skim is challenge-account-only and never covers this.
+ */
+export function estimatedPileTax(
+  gain: number,
+  shares: number,
+  ltShares: number | null | undefined,
+): number {
+  if (gain <= 0 || shares <= 0) return 0;
+  const ltFrac = ltShares == null ? 1 : Math.min(1, Math.max(0, ltShares / shares));
+  return gain * (ltFrac * LT_TAX_RATE + (1 - ltFrac) * ST_TAX_RATE);
+}
+
 export interface TrimPreview {
   proceeds: number;
   costBasis: number;
