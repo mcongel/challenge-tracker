@@ -9,6 +9,7 @@ import {
   Swords,
   Archive,
   BookOpen,
+  HelpCircle,
   X,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
@@ -23,6 +24,7 @@ export const NAV_ITEMS = [
   { to: '/benchmark', label: 'Benchmark', icon: Swords },
   { to: '/parked', label: 'Parked Pile', icon: Archive },
   { to: '/rules', label: 'Rules', icon: BookOpen },
+  { to: '/help', label: 'Help', icon: HelpCircle },
 ];
 
 interface SidebarProps {
