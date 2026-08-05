@@ -100,9 +100,7 @@ export function Rules() {
 
       {/* The goal */}
       <div className="bg-white rounded-lg shadow-lg p-6 sm:p-8 mb-4">
-        <h2 className="font-display text-xl font-bold text-gray-900 mb-3" style={{ letterSpacing: '-0.01em' }}>
-          The goal
-        </h2>
+        <h2 className="text-xl font-bold text-gray-900 mb-3">The goal</h2>
         <p className="text-base leading-relaxed text-gray-700">
           Compound aggressively, lock in floors as you climb, and let{' '}
           <strong>the final height be the prize</strong>. $1M is the aspiration, not a pass/fail
@@ -112,9 +110,7 @@ export function Rules() {
 
       {SECTIONS.map((section) => (
         <div key={section.heading} className="bg-white rounded-lg shadow-lg p-6 sm:p-8 mb-4">
-          <h2 className="font-display text-xl font-bold text-gray-900 mb-4" style={{ letterSpacing: '-0.01em' }}>
-            {section.heading}
-          </h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-4">{section.heading}</h2>
           <ol className="space-y-4">
             {section.rules.map((rule) => (
               <li key={rule.n} className="flex gap-3">

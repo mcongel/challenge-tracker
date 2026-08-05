@@ -14,8 +14,10 @@ export default {
         'text-muted': 'rgb(var(--color-text-muted) / <alpha-value>)',
       },
       fontFamily: {
-        sans: ['"DM Sans"', '-apple-system', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-        // SpokenFor's display face for the wordmark, hero numbers, and headings.
+        // No sans override: SpokenFor's app runs on Tailwind's default stack
+        // (ui-sans-serif/system-ui — Segoe UI on Windows). DM Sans and Georgia
+        // are its LANDING-page faces only; Georgia survives here just for the
+        // login screen's landing-style wordmark.
         display: ['Georgia', 'ui-serif', 'serif'],
       },
     },

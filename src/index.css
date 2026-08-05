@@ -1,7 +1,7 @@
-/* Body face is DM Sans (matches spokenfor.money); display face is Georgia,
-   a system serif — no webfont needed. Fraunces is imported in the SpokenFor
-   reference CSS but unused in its production UI, so it is dropped here. */
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&display=swap');
+/* No webfonts. SpokenFor's app UI runs on the system sans stack (its DM Sans
+   and Georgia are landing-page-only, applied via inline styles there; the
+   Fraunces import in its CSS is unused). Georgia — a system serif — is used
+   here only on the login screen's wordmark. */
 
 @tailwind base;
 @tailwind components;
