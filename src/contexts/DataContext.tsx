@@ -91,6 +91,8 @@ interface DataContextValue extends DataState {
   quotes: Record<string, number>;
   quotesAsOf: number | null;
   refreshQuotes: () => Promise<void>;
+  /** Company names by ticker (best-effort; ETFs may be absent). */
+  tickerNames: Record<string, string>;
   refresh: () => Promise<void>;
   /** For a Deposit, pass that day's VOO price to create the shadow twin. */
   addCashEvent: (e: Omit<CashEvent, 'id'>, vooPriceThatDay?: number) => Promise<void>;
@@ -156,6 +158,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [quotes, setQuotes] = useState<Record<string, number>>({});
   const [quotesAsOf, setQuotesAsOf] = useState<number | null>(null);
+  const [tickerNames, setTickerNames] = useState<Record<string, string>>({});
 
   const refresh = useCallback(async () => {
     try {
@@ -253,7 +256,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     if (loading || error || quotesFetched.current) return;
     quotesFetched.current = true;
     void refreshQuotes();
-  }, [loading, error, refreshQuotes]);
+    // Names once per session — they're cached a week server-side.
+    const tickers = [
+      ...new Set([...state.lots.map((l) => l.ticker), ...state.parked.map((p) => p.ticker)]),
+    ];
+    if (tickers.length > 0) {
+      void fetch(`/api/names?tickers=${tickers.join(',')}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((body: { names?: Record<string, string> } | null) => {
+          if (body?.names) setTickerNames((prev) => ({ ...prev, ...body.names }));
+        })
+        .catch(() => {
+          /* best-effort */
+        });
+    }
+  }, [loading, error, refreshQuotes, state.lots, state.parked]);
 
   // Keep an open tab honest: refetch every 30 minutes (the server cache TTL)
   // and when the tab regains focus after going stale. Cache hits cost nothing.
@@ -811,6 +828,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       quotes,
       quotesAsOf,
       refreshQuotes,
+      tickerNames,
       contributionCap,
       loading,
       error,
@@ -839,7 +857,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       clearOverride,
     }),
     [
-      state, mergedParked, quotes, quotesAsOf, refreshQuotes, contributionCap, loading, error,
+      state, mergedParked, quotes, quotesAsOf, refreshQuotes, tickerNames, contributionCap,
+      loading, error,
       refresh, addCashEvent, deleteCashEvent, addLot, closePosition, recordSplit,
       setTradeWashSale, deleteTrade, updateParked, recordMilestone, addAccount, addOutsideSale,
       deleteOutsideSale, recordTrim, addParkedLot, deleteParkedLot, addParkedPosition,

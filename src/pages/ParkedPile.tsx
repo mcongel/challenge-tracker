@@ -26,7 +26,7 @@ const CATEGORY_STYLES: Record<ParkedPosition['category'], string> = {
 const fmtSh = (n: number) => String(Number(n.toFixed(4)));
 
 export function ParkedPile() {
-  const { parked, parkedLots, parkedSales, accounts, deleteParkedSale, loading, error } = useData();
+  const { parked, parkedLots, parkedSales, accounts, tickerNames, deleteParkedSale, loading, error } = useData();
   const [deletingSale, setDeletingSale] = useState<ParkedSale | null>(null);
   const [editingSale, setEditingSale] = useState<ParkedSale | null>(null);
 
@@ -172,7 +172,14 @@ export function ParkedPile() {
                             </span>
                           )}
                         </span>
-                        {p.notes && <p className="text-xs font-normal text-gray-400 max-w-[14rem] truncate">{p.notes}</p>}
+                        {(tickerNames[p.ticker] || p.notes) && (
+                          <p
+                            className="text-xs font-normal text-gray-400 max-w-[14rem] truncate"
+                            title={[tickerNames[p.ticker], p.notes].filter(Boolean).join(' · ')}
+                          >
+                            {[tickerNames[p.ticker], p.notes].filter(Boolean).join(' · ')}
+                          </p>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-gray-500">{p.account}</td>
                       <td className="px-4 py-3 text-right tabular-nums">{fmtSh(p.shares)}</td>
