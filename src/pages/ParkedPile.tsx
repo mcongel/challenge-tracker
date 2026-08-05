@@ -1,16 +1,17 @@
-import { useState } from 'react';
-import { AlertTriangle, Archive, Pencil, Scissors, Settings2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { AlertTriangle, Archive, History, Pencil, Scissors, Settings2, Trash2 } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
 import { AccountSelect } from '../components/ui/AccountSelect';
 import { ErrorCard, SkeletonTable } from './CashLedger';
 import { useData } from '../contexts/DataContext';
-import type { AccountKind, ParkedPosition } from '../lib/engine';
+import type { AccountKind, ParkedLot, ParkedPosition, UnlockSummary } from '../lib/engine';
 import {
-  concentration, contributionStatus, depositExceedsCap, ltStatus, netContributed,
-  parkedCostBasis, parkedMarketValue, roundCents, trackedBalance,
+  concentration, contributionStatus, depositExceedsCap, dividendsCollected, netContributed,
+  parkedCostBasis, parkedMarketValue, roundCents, trackedBalance, unlockSummary,
 } from '../lib/engine';
+import { ConfirmModal } from '../components/ui/ConfirmModal';
 import {
   cn, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls, secondaryBtnCls, todayISO,
 } from '../lib/utils';
@@ -22,11 +23,21 @@ const CATEGORY_STYLES: Record<ParkedPosition['category'], string> = {
   Other: 'bg-gray-100 text-gray-600',
 };
 
+const fmtSh = (n: number) => String(Number(n.toFixed(4)));
+
 export function ParkedPile() {
-  const { parked, loading, error } = useData();
+  const { parked, parkedLots, loading, error } = useData();
   const [editing, setEditing] = useState<ParkedPosition | null>(null);
   const [trimming, setTrimming] = useState<ParkedPosition | null>(null);
+  const [lotsFor, setLotsFor] = useState<ParkedPosition | null>(null);
   const [accountsOpen, setAccountsOpen] = useState(false);
+
+  const lotsByPosition = useMemo(() => {
+    const m = new Map<string, ParkedLot[]>();
+    for (const l of parkedLots) (m.get(l.parkedPositionId) ?? m.set(l.parkedPositionId, []).get(l.parkedPositionId)!).push(l);
+    return m;
+  }, [parkedLots]);
+  const divTotal = dividendsCollected(parkedLots);
 
   const today = todayISO();
   const c = concentration(parked);
@@ -58,7 +69,10 @@ export function ParkedPile() {
         <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
           <p className="text-xs font-medium text-gray-500">Pile total</p>
           <p className="mt-0.5 text-xl font-bold tabular-nums text-gray-900">{formatCurrency(roundCents(c.total))}</p>
-          <p className="text-xs text-gray-400 mt-0.5">not in score</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            not in score
+            {divTotal > 0 && <span className="text-green-700"> · +{formatCurrency(roundCents(divTotal))} dividends</span>}
+          </p>
         </div>
         <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
           <p className="text-xs font-medium text-gray-500">Semi/AI</p>
@@ -119,7 +133,7 @@ export function ParkedPile() {
               {ordered.map((p) => {
                 const value = parkedMarketValue(p);
                 const basis = parkedCostBasis(p);
-                const lt = ltStatus(p, today);
+                const summ = unlockSummary(lotsByPosition.get(p.id) ?? [], today);
                 return (
                   <tr key={p.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 font-medium">
@@ -141,18 +155,13 @@ export function ParkedPile() {
                       {basis === 0 ? '—' : formatPercent((value - basis) / basis)}
                     </td>
                     <td className="px-4 py-3">
-                      {lt.kind === 'UNLOCKED' ? (
-                        <span className="inline-block rounded-full bg-green-50 text-green-700 px-2 py-0.5 text-xs font-medium">
-                          FUNDING UNLOCKED
-                        </span>
-                      ) : lt.kind === 'COUNTDOWN' ? (
-                        <span className="text-xs text-gray-500 tabular-nums">{lt.daysLeft}d → {lt.unlockDate}</span>
-                      ) : (
-                        <span className="text-xs text-amber-800">enter buy date</span>
-                      )}
+                      <UnlockCell summary={summ} onAddDates={() => setLotsFor(p)} />
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums text-gray-500">{p.trimRank ?? '—'}</td>
                     <td className="px-2 py-3 whitespace-nowrap">
+                      <button onClick={() => setLotsFor(p)} className="p-1 rounded hover:bg-gray-100" aria-label={`Lots and dividends for ${p.ticker}`} title="Lots & dividends">
+                        <History className="h-4 w-4 text-gray-300 hover:text-gray-600" />
+                      </button>
                       <button onClick={() => setTrimming(p)} className="p-1 rounded hover:bg-green-50" aria-label={`Trim ${p.ticker}`} title="Record trim">
                         <Scissors className="h-4 w-4 text-gray-300 hover:text-green-700" />
                       </button>
@@ -170,15 +179,229 @@ export function ParkedPile() {
 
       {editing && <EditParkedModal position={editing} onClose={() => setEditing(null)} />}
       {trimming && <TrimModal position={trimming} onClose={() => setTrimming(null)} />}
+      {lotsFor && <LotsModal position={lotsFor} onClose={() => setLotsFor(null)} />}
       {accountsOpen && <AccountsModal onClose={() => setAccountsOpen(false)} />}
     </div>
+  );
+}
+
+function UnlockCell({ summary: s, onAddDates }: { summary: UnlockSummary; onAddDates: () => void }) {
+  if (s.totalShares <= 0) return <span className="text-xs text-gray-400">—</span>;
+  if (s.unknownShares >= s.totalShares - 1e-9) {
+    return (
+      <button onClick={onAddDates} className="text-xs text-amber-800 hover:underline">
+        add lot dates
+      </button>
+    );
+  }
+  if (s.unlockedShares >= s.totalShares - 1e-9) {
+    return (
+      <span className="inline-block rounded-full bg-green-50 text-green-700 px-2 py-0.5 text-xs font-medium">
+        FUNDING UNLOCKED
+      </span>
+    );
+  }
+  return (
+    <span className="text-xs tabular-nums">
+      <span className={cn('font-medium', s.unlockedShares > 0 ? 'text-green-700' : 'text-gray-500')}>
+        {fmtSh(s.unlockedShares)}/{fmtSh(s.totalShares)} sh unlocked
+      </span>
+      {s.nextUnlock && (
+        <span className="block text-gray-400">next {fmtSh(s.nextUnlock.shares)} sh on {s.nextUnlock.date}</span>
+      )}
+      {s.unknownShares > 0 && (
+        <button onClick={onAddDates} className="block text-amber-800 hover:underline">
+          {fmtSh(s.unknownShares)} sh undated
+        </button>
+      )}
+    </span>
+  );
+}
+
+function LotsModal({ position: p, onClose }: { position: ParkedPosition; onClose: () => void }) {
+  const { parkedLots, addParkedLot, deleteParkedLot, overrides, quotes } = useData();
+  const lots = parkedLots
+    .filter((l) => l.parkedPositionId === p.id)
+    .sort((a, b) => (a.date ?? '').localeCompare(b.date ?? ''));
+  const effectivePrice = overrides[p.ticker] ?? quotes[p.ticker] ?? p.currentPrice;
+
+  const [mode, setMode] = useState<'purchase' | 'dividend' | null>(null);
+  const [date, setDate] = useState('');
+  const [shares, setShares] = useState('');
+  const [price, setPrice] = useState('');
+  const [amount, setAmount] = useState('');
+  const [reinvested, setReinvested] = useState(true);
+  const [deleting, setDeleting] = useState<ParkedLot | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const openForm = (m: 'purchase' | 'dividend') => {
+    setMode(m);
+    setDate(todayISO());
+    setShares('');
+    setAmount('');
+    setPrice(m === 'dividend' && effectivePrice ? String(effectivePrice) : '');
+    setFormError(null);
+  };
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    setBusy(true);
+    try {
+      if (mode === 'purchase') {
+        const sh = Number(shares);
+        const pr = Number(price);
+        if (!sh || sh <= 0 || !pr || pr <= 0) throw new Error('Enter shares and price.');
+        await addParkedLot({
+          parkedPositionId: p.id,
+          date: date || null,
+          source: 'purchase',
+          shares: sh,
+          price: pr,
+          amount: roundCents(sh * pr),
+        });
+      } else {
+        const amt = Number(amount);
+        if (!amt || amt <= 0) throw new Error('Enter the dividend amount.');
+        const pr = Number(price);
+        if (reinvested && (!pr || pr <= 0)) throw new Error('Reinvested dividends need the reinvestment price.');
+        await addParkedLot({
+          parkedPositionId: p.id,
+          date: date || null,
+          source: 'dividend',
+          shares: reinvested ? amt / pr : 0,
+          price: reinvested ? pr : null,
+          amount: roundCents(amt),
+          notes: reinvested ? 'reinvested' : 'cash',
+        });
+      }
+      setMode(null);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal isOpen onClose={onClose} title={`${p.ticker} — lots & dividends`}>
+      <div className="space-y-3">
+        <div className="max-h-64 overflow-y-auto rounded-md border border-gray-200">
+          <table className="w-full text-sm">
+            <tbody className="divide-y divide-gray-100">
+              {lots.map((l) => (
+                <tr key={l.id} className="hover:bg-gray-50">
+                  <td className={cn('px-3 py-2 tabular-nums w-28', l.date ? 'text-gray-600' : 'text-amber-800')}>
+                    {l.date ?? 'no date'}
+                  </td>
+                  <td className="px-3 py-2">
+                    <span className={cn('inline-block rounded-full px-2 py-0.5 text-xs font-medium',
+                      l.source === 'purchase' ? 'bg-indigo-50 text-indigo-700' : 'bg-sky-50 text-sky-700')}>
+                      {l.source === 'dividend' ? (l.shares > 0 ? 'dividend · DRIP' : 'dividend · cash') : 'purchase'}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-gray-600">
+                    {l.shares > 0 ? `${fmtSh(l.shares)} sh` : '—'}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-gray-600">{formatCurrency(l.amount)}</td>
+                  <td className="px-1 py-2 w-8">
+                    <button onClick={() => setDeleting(l)} className="p-1 rounded hover:bg-red-50" aria-label="Delete lot">
+                      <Trash2 className="h-3.5 w-3.5 text-gray-300 hover:text-red-600" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {lots.length === 0 && (
+                <tr><td className="px-3 py-4 text-sm text-gray-400 text-center">No lots yet</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {mode === null ? (
+          <div className="flex gap-2">
+            <button onClick={() => openForm('purchase')} className={secondaryBtnCls}>Add past purchase</button>
+            <button onClick={() => openForm('dividend')} className={secondaryBtnCls}>Add dividend</button>
+          </div>
+        ) : (
+          <form onSubmit={submit} className="space-y-3 border-t border-gray-100 pt-3">
+            <p className="text-xs font-medium text-gray-500">
+              {mode === 'purchase' ? 'Past purchase' : 'Dividend'}
+            </p>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className={labelCls}>Date</label>
+                <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
+              </div>
+              {mode === 'purchase' ? (
+                <>
+                  <div>
+                    <label className={labelCls}>Shares</label>
+                    <input type="number" step="any" min="0.00000001" required value={shares}
+                      onChange={(e) => setShares(e.target.value)} className={inputCls} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Price ($)</label>
+                    <input type="number" step="0.01" min="0.01" required value={price}
+                      onChange={(e) => setPrice(e.target.value)} className={inputCls} />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <label className={labelCls}>Amount ($)</label>
+                    <input type="number" step="0.01" min="0.01" required value={amount}
+                      onChange={(e) => setAmount(e.target.value)} className={inputCls} />
+                  </div>
+                  {reinvested && (
+                    <div>
+                      <label className={labelCls}>Reinvest price ($)</label>
+                      <input type="number" step="0.01" min="0.01" value={price}
+                        onChange={(e) => setPrice(e.target.value)} className={inputCls} />
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+            {mode === 'dividend' && (
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" checked={reinvested} onChange={(e) => setReinvested(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-600" />
+                Reinvested (DRIP) — buys {amount && price && Number(price) > 0 ? fmtSh(Number(amount) / Number(price)) : '…'} sh
+                with its own 366-day clock
+              </label>
+            )}
+            {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setMode(null)} className={secondaryBtnCls}>Cancel</button>
+              <button type="submit" disabled={busy} className={primaryBtnCls}>{busy ? 'Saving…' : 'Add'}</button>
+            </div>
+          </form>
+        )}
+
+        <p className="text-xs text-gray-400">
+          Shares and cost basis derive from these lots. To fix a wrong entry, delete it and re-add.
+          Leave the date blank only if it's truly unknown — dated lots drive the unlock countdowns.
+        </p>
+      </div>
+
+      {deleting && (
+        <ConfirmModal
+          title="Delete lot"
+          message={`Delete this ${deleting.source} (${deleting.shares > 0 ? `${fmtSh(deleting.shares)} sh, ` : ''}${formatCurrency(deleting.amount)})? The position's shares and cost recompute without it.`}
+          onConfirm={() => deleteParkedLot(deleting.id)}
+          onClose={() => setDeleting(null)}
+        />
+      )}
+    </Modal>
   );
 }
 
 const NEVER_TRIM = new Set(['NVDA', 'TSLA', 'MSTR']);
 
 function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose: () => void }) {
-  const { recordTrim, cashEvents, contributionCap } = useData();
+  const { recordTrim, cashEvents, contributionCap, parkedLots } = useData();
   const [shares, setShares] = useState('');
   const [price, setPrice] = useState(p.currentPrice ? String(p.currentPrice) : '');
   const [date, setDate] = useState(todayISO());
@@ -191,8 +414,8 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
   const numPrice = Number(price);
   const proceeds = numShares > 0 && numPrice > 0 ? roundCents(numShares * numPrice) : 0;
   const fullTrim = numShares >= p.shares - 1e-9;
-  const lt = ltStatus(p, date);
-  const notUnlocked = lt.kind !== 'UNLOCKED';
+  const summ = unlockSummary(parkedLots.filter((l) => l.parkedPositionId === p.id), date);
+  const dipsShortTerm = numShares > 0 && numShares > summ.unlockedShares + 1e-9;
   const neverTrimFuel = NEVER_TRIM.has(p.ticker) || p.category === 'BTC';
   const isLoss = numPrice > 0 && numPrice < p.avgCost;
 
@@ -242,15 +465,21 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
             <span>{p.ticker} is never trim fuel — Rule 5. The conviction holds stay parked.</span>
           </div>
         )}
-        {notUnlocked && !neverTrimFuel && (
+        {dipsShortTerm && !neverTrimFuel && (
           <div className="flex gap-2 bg-amber-50 text-amber-800 rounded-md px-3 py-2 text-sm">
             <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
             <span>
-              {lt.kind === 'COUNTDOWN'
-                ? `Not FUNDING UNLOCKED yet — ${lt.daysLeft} days to long-term (${lt.unlockDate}). Selling now pays short-term rates; Rule 5 says planned long-term trims.`
-                : 'No buy date on this position — the app can\'t tell if this is a long-term trim. Rule 5 says planned long-term trims only.'}
+              Only {fmtSh(summ.unlockedShares)} of {fmtSh(summ.totalShares)} sh are long-term.
+              Trimming {fmtSh(numShares)} dips into short-term{summ.unknownShares > 0 ? ' or undated' : ''} lots —
+              short-term rates, and Rule 5 says planned long-term trims.
+              {summ.nextUnlock && ` Next ${fmtSh(summ.nextUnlock.shares)} sh unlock ${summ.nextUnlock.date}.`}
             </span>
           </div>
+        )}
+        {summ.unlockedShares > 0 && !dipsShortTerm && numShares > 0 && (
+          <p className="text-xs text-green-700">
+            Within the long-term shares ({fmtSh(summ.unlockedShares)} sh unlocked) — legitimate Rule 5 fuel.
+          </p>
         )}
 
         <div className="grid grid-cols-3 gap-3">
@@ -409,9 +638,6 @@ function AccountsModal({ onClose }: { onClose: () => void }) {
 function EditParkedModal({ position: p, onClose }: { position: ParkedPosition; onClose: () => void }) {
   const { updateParked, accounts } = useData();
   const [price, setPrice] = useState(String(p.currentPrice || ''));
-  const [shares, setShares] = useState(String(p.shares));
-  const [avgCost, setAvgCost] = useState(String(p.avgCost));
-  const [buyDate, setBuyDate] = useState(p.buyDate ?? '');
   const [trimRank, setTrimRank] = useState(p.trimRank != null ? String(p.trimRank) : '');
   const [accountId, setAccountId] = useState(p.accountId);
   const [notes, setNotes] = useState(p.notes ?? '');
@@ -425,9 +651,6 @@ function EditParkedModal({ position: p, onClose }: { position: ParkedPosition; o
     try {
       await updateParked(p.id, {
         currentPrice: Number(price) || 0,
-        shares: Number(shares),
-        avgCost: Number(avgCost),
-        buyDate: buyDate || null,
         trimRank: trimRank === '' ? null : Number(trimRank),
         accountId,
         notes: notes || null,
@@ -443,27 +666,11 @@ function EditParkedModal({ position: p, onClose }: { position: ParkedPosition; o
   return (
     <Modal isOpen onClose={onClose} title={`Edit ${p.ticker} (${p.account})`}>
       <form onSubmit={submit} className="space-y-3">
-        <div className="grid grid-cols-3 gap-3">
-          <div>
-            <label className={labelCls}>Shares</label>
-            <input type="number" step="any" min="0" required value={shares}
-              onChange={(e) => setShares(e.target.value)} className={inputCls} />
-          </div>
-          <div>
-            <label className={labelCls}>Avg cost ($)</label>
-            <input type="number" step="0.01" min="0" required value={avgCost}
-              onChange={(e) => setAvgCost(e.target.value)} className={inputCls} />
-          </div>
+        <div className="grid grid-cols-2 gap-3">
           <div>
             <label className={labelCls}>Price ($)</label>
             <input type="number" step="0.01" min="0" value={price}
               onChange={(e) => setPrice(e.target.value)} className={inputCls} />
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls}>Buy date (oldest lot — drives the unlock)</label>
-            <input type="date" value={buyDate} onChange={(e) => setBuyDate(e.target.value)} className={inputCls} />
           </div>
           <div>
             <label className={labelCls}>Trim rank</label>
@@ -473,6 +680,9 @@ function EditParkedModal({ position: p, onClose }: { position: ParkedPosition; o
         </div>
         <AccountSelect accounts={accounts} value={accountId} onChange={setAccountId}
           label="Account (e.g. after an ACATS transfer)" kinds={['outside', 'challenge']} allowNone={false} />
+        <p className="text-xs text-gray-400">
+          Shares, cost, and dates live in the lots (clock icon on the row) — they recompute from there.
+        </p>
         <div>
           <label className={labelCls}>Notes</label>
           <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls} />

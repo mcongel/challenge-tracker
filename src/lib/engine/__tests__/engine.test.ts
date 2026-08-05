@@ -233,6 +233,54 @@ describe('contribution cap — Rule 11', () => {
   });
 });
 
+describe('parked lots — per-lot unlocks, aggregates, FIFO', () => {
+  const lot = (id: string, date: string | null, shares: number, amount: number, source: 'purchase' | 'dividend' = 'purchase') =>
+    ({ id, parkedPositionId: 'p1', date, source, shares, price: null, amount });
+
+  it('unlockSummary splits unlocked / locked / unknown and finds the next unlock', async () => {
+    const { unlockSummary } = await import('../parkedLots');
+    const lots = [
+      lot('a', '2025-01-10', 5, 500),            // unlocked (>366d before today)
+      lot('b', '2026-05-01', 0.1, 20, 'dividend'), // locked DRIP sliver
+      lot('c', '2026-02-01', 0.2, 30, 'dividend'), // locked, unlocks first
+      lot('d', null, 1, 100),                     // unknown date
+      lot('e', '2026-03-01', 0, 15, 'dividend'),  // cash dividend — no shares
+    ];
+    const s = unlockSummary(lots, '2026-08-05');
+    expect(s.totalShares).toBeCloseTo(6.3, 9);
+    expect(s.unlockedShares).toBe(5);
+    expect(s.unknownShares).toBe(1);
+    expect(s.nextUnlock).toEqual({ date: '2027-02-02', shares: 0.2 });
+  });
+
+  it('aggregateLots: reinvested dividends add basis, cash dividends do not', async () => {
+    const { aggregateLots, dividendsCollected } = await import('../parkedLots');
+    const lots = [
+      lot('a', '2025-01-10', 10, 1000),
+      lot('b', '2026-05-01', 0.5, 60, 'dividend'),  // reinvested
+      lot('c', '2026-03-01', 0, 25, 'dividend'),    // cash
+    ];
+    const agg = aggregateLots(lots);
+    expect(agg.shares).toBeCloseTo(10.5, 9);
+    expect(agg.costBasis).toBe(1060);
+    expect(agg.avgCost).toBeCloseTo(1060 / 10.5, 9);
+    expect(dividendsCollected(lots)).toBe(85);
+  });
+
+  it('consumeLotsFifo: unknown-date lots go first, partial lots keep proportional basis', async () => {
+    const { consumeLotsFifo } = await import('../parkedLots');
+    const lots = [
+      lot('new', '2026-05-01', 2, 300),
+      lot('old', null, 4, 400),
+      lot('mid', '2025-06-01', 4, 500),
+    ];
+    const r = consumeLotsFifo(lots, 6);
+    expect(r.deletes).toEqual(['old']);          // null date consumed first
+    expect(r.updates).toEqual([{ id: 'mid', shares: 2, amount: 250 }]);
+    expect(() => consumeLotsFifo(lots, 11)).toThrow();
+  });
+});
+
 describe('benchmark — rolling 12-month verdict', () => {
   const snap = (date: string, totalScore: number, shadowVooValue: number): Snapshot => ({
     date, totalScore, shadowVooValue,

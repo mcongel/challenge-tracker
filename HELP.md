@@ -51,7 +51,8 @@ The floor rises permanently, the staircase chart gets a step, and the banner is 
 ## The parked pile — context, fuel schedule, never score
 
 - Everything here is **walled off from the score**. The pile total appears on the Dashboard small and labeled "context only."
-- Each holding shows a **funding unlock** countdown (366 days from buy — enter buy dates!). FUNDING UNLOCKED means a *planned* trim can fund the challenge account at long-term rates — Rules 4 and 5: on schedule, never in response to losses, and NVDA/TSLA/MSTR are never trim fuel.
+- Each holding is a stack of dated **lots** (clock icon on a row) — every purchase and DRIP reinvestment has its own 366-day unlock clock, so the table shows "3.2/5.56 sh unlocked" honestly. Unlocked shares are the only legitimate trim fuel — Rules 4 and 5: on schedule, never in response to losses, and NVDA/TSLA/MSTR never.
+- **Dividends** go in from the same lots view: date, amount, and whether it reinvested (a DRIP buys its own dated sliver; cash just logs as income context). One entry per brokerage statement line.
 - **Trim** (scissors icon on a row) does the whole flow in one form: shrinks the position, logs the sale in the wash-sale radar, and — if you check "deposit the proceeds" — writes the Deposit and its shadow VOO twin. It warns before unlock and refuses to blow the contribution cap.
 - **Concentration watch**: Semi/AI over the 50% cap turns the banner red — trim semis first; it funds the account *and* fixes the concentration.
 - **Accounts** button: manage where money lives — brokerages and bank accounts. Bank accounts show *tracked strategy cash* (what the ledger has routed there), which is deliberately not your real bank balance.

@@ -14,15 +14,18 @@ import type {
   Trade,
 } from '../lib/engine';
 import {
-  accountTotal, closeShares, concentration, cumulativeFloor, netContributed, pileTotal,
-  reservedTotal, roundCents, shadowValue, totalScore,
+  accountTotal, aggregateLots, closeShares, concentration, consumeLotsFifo, cumulativeFloor,
+  netContributed, pileTotal, reservedTotal, roundCents, shadowValue, totalScore,
 } from '../lib/engine';
+import type { ParkedLot } from '../lib/engine';
 import { priceMapFor } from '../lib/alerts';
 import { todayISO } from '../lib/utils';
 import {
   cashEventPayload,
   db,
   lotPayload,
+  mapParkedLot,
+  parkedLotPayload,
   mapAccount,
   mapBenchmarkDeposit,
   mapCarryforward,
@@ -54,6 +57,8 @@ interface DataState {
   /** Where money lives. Labels and context only — never score math. */
   accounts: Account[];
   outsideSales: OutsideSale[];
+  /** Dated slices of parked positions — purchases and dividends. */
+  parkedLots: ParkedLot[];
 }
 
 const EMPTY: DataState = {
@@ -69,6 +74,7 @@ const EMPTY: DataState = {
   settings: {},
   accounts: [],
   outsideSales: [],
+  parkedLots: [],
 };
 
 interface DataContextValue extends DataState {
@@ -112,6 +118,8 @@ interface DataContextValue extends DataState {
     date: string;
     depositVooPrice?: number;
   }) => Promise<void>;
+  addParkedLot: (lot: Omit<ParkedLot, 'id'>) => Promise<void>;
+  deleteParkedLot: (id: string) => Promise<void>;
   /** Rows seeded from the workbook, identified by EXAMPLE in their notes. */
   exampleData: { cashEvents: CashEvent[]; lots: PositionLot[]; trades: Trade[]; total: number };
   clearExampleData: () => Promise<void>;
@@ -134,7 +142,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const client = db();
       const [
         cash, lots, trades, milestones, bench, parked, snaps, carry, overrides, settings,
-        accounts, outsideSales,
+        accounts, outsideSales, parkedLots,
       ] = await Promise.all([
         client.from('cash_events').select('*').order('date').order('created_at'),
         client.from('position_lots').select('*').order('buy_date'),
@@ -148,11 +156,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         client.from('app_settings').select('*'),
         client.from('accounts').select('*').order('name'),
         client.from('outside_sales').select('*').order('sale_date'),
+        client.from('parked_lots').select('*').order('date', { nullsFirst: true }),
       ]);
       const firstError =
         cash.error ?? lots.error ?? trades.error ?? milestones.error ?? bench.error ??
         parked.error ?? snaps.error ?? carry.error ?? overrides.error ?? settings.error ??
-        accounts.error ?? outsideSales.error;
+        accounts.error ?? outsideSales.error ?? parkedLots.error;
       if (firstError) throw firstError;
       setState({
         cashEvents: (cash.data ?? []).map(mapCashEvent),
@@ -169,6 +178,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         settings: Object.fromEntries((settings.data ?? []).map((r) => [r.key, r.value])),
         accounts: (accounts.data ?? []).map(mapAccount),
         outsideSales: (outsideSales.data ?? []).map(mapOutsideSale),
+        parkedLots: (parkedLots.data ?? []).map(mapParkedLot),
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -456,6 +466,48 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [refresh],
   );
 
+  /** Recompute a position's shares/avg_cost from its lots; a position whose
+   * lots hold no shares is removed (cascade takes the lot history). */
+  const recomputeParkedAggregate = useCallback(async (positionId: string) => {
+    const client = db();
+    const { data, error: readErr } = await client
+      .from('parked_lots').select('*').eq('parked_position_id', positionId);
+    if (readErr) throw readErr;
+    const agg = aggregateLots((data ?? []).map(mapParkedLot));
+    if (agg.shares <= 1e-9) {
+      const { error: err } = await client.from('parked_positions').delete().eq('id', positionId);
+      if (err) throw err;
+    } else {
+      const { error: err } = await client
+        .from('parked_positions')
+        .update({ shares: agg.shares, avg_cost: Math.round(agg.avgCost * 10000) / 10000 })
+        .eq('id', positionId);
+      if (err) throw err;
+    }
+  }, []);
+
+  const addParkedLot = useCallback(
+    async (lot: Omit<ParkedLot, 'id'>) => {
+      const { error: err } = await db().from('parked_lots').insert(parkedLotPayload(lot));
+      if (err) throw err;
+      await recomputeParkedAggregate(lot.parkedPositionId);
+      await refresh();
+    },
+    [refresh, recomputeParkedAggregate],
+  );
+
+  const deleteParkedLot = useCallback(
+    async (id: string) => {
+      const lot = state.parkedLots.find((l) => l.id === id);
+      if (!lot) throw new Error('Lot not found');
+      const { error: err } = await db().from('parked_lots').delete().eq('id', id);
+      if (err) throw err;
+      await recomputeParkedAggregate(lot.parkedPositionId);
+      await refresh();
+    },
+    [refresh, recomputeParkedAggregate, state.parkedLots],
+  );
+
   const recordTrim = useCallback(
     async ({
       parkedId, shares, pricePerShare, date, depositVooPrice,
@@ -474,14 +526,31 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         throw new Error(`Only ${p.shares} shares parked; cannot trim ${shares}`);
       }
 
-      const remaining = p.shares - shares;
-      if (remaining > 1e-9) {
-        const { error: err } = await client
-          .from('parked_positions').update({ shares: remaining }).eq('id', p.id);
-        if (err) throw err;
+      // Consume lots oldest-first so remaining basis and unlock clocks stay honest.
+      const positionLots = state.parkedLots.filter((l) => l.parkedPositionId === parkedId);
+      if (positionLots.length > 0) {
+        const { updates, deletes } = consumeLotsFifo(positionLots, shares);
+        for (const u of updates) {
+          const { error: err } = await client
+            .from('parked_lots').update({ shares: u.shares, amount: u.amount }).eq('id', u.id);
+          if (err) throw err;
+        }
+        if (deletes.length > 0) {
+          const { error: err } = await client.from('parked_lots').delete().in('id', deletes);
+          if (err) throw err;
+        }
+        await recomputeParkedAggregate(parkedId);
       } else {
-        const { error: err } = await client.from('parked_positions').delete().eq('id', p.id);
-        if (err) throw err;
+        // No lot history (shouldn't happen post-migration) — adjust the aggregate directly.
+        const remaining = p.shares - shares;
+        if (remaining > 1e-9) {
+          const { error: err } = await client
+            .from('parked_positions').update({ shares: remaining }).eq('id', p.id);
+          if (err) throw err;
+        } else {
+          const { error: err } = await client.from('parked_positions').delete().eq('id', p.id);
+          if (err) throw err;
+        }
       }
 
       const { error: saleErr } = await client.from('outside_sales').insert(
@@ -514,7 +583,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
       await refresh();
     },
-    [refresh, state.parked],
+    [refresh, state.parked, state.parkedLots, recomputeParkedAggregate],
   );
 
   const exampleData = useMemo(() => {
@@ -620,6 +689,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       addOutsideSale,
       deleteOutsideSale,
       recordTrim,
+      addParkedLot,
+      deleteParkedLot,
       exampleData,
       clearExampleData,
       setOverride,
@@ -629,7 +700,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       state, mergedParked, quotes, quotesAsOf, refreshQuotes, contributionCap, loading, error,
       refresh, addCashEvent, deleteCashEvent, addLot, closePosition, recordSplit,
       setTradeWashSale, deleteTrade, updateParked, recordMilestone, addAccount, addOutsideSale,
-      deleteOutsideSale, recordTrim, exampleData, clearExampleData, setOverride, clearOverride,
+      deleteOutsideSale, recordTrim, addParkedLot, deleteParkedLot, exampleData, clearExampleData,
+      setOverride, clearOverride,
     ],
   );
 

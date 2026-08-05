@@ -173,10 +173,16 @@ export function Help() {
         <ul className="list-disc pl-5 space-y-2 text-sm text-gray-600 leading-relaxed">
           <li>Walled off from the score entirely; the Dashboard shows the total small, labeled "context only."</li>
           <li>
-            Each holding counts down to <strong className="text-gray-900">FUNDING UNLOCKED</strong>{' '}
-            (366 days from buy — enter buy dates!). Unlocked means a <em>planned</em> trim can fund
-            the challenge account at long-term rates — on schedule, never in response to losses,
-            and NVDA/TSLA/MSTR are never trim fuel <Rule n="4–5" />.
+            Each holding is a stack of dated <strong className="text-gray-900">lots</strong> (clock
+            icon on a row) — every purchase and DRIP reinvestment has its own 366-day unlock clock,
+            so the table shows "3.2/5.56 sh unlocked" honestly. Unlocked shares are the only
+            legitimate trim fuel — on schedule, never in response to losses, and NVDA/TSLA/MSTR
+            never <Rule n="4–5" />.
+          </li>
+          <li>
+            <strong className="text-gray-900">Dividends</strong> go in from the same lots view: date,
+            amount, and whether it reinvested (a DRIP buys its own dated sliver; cash just logs as
+            income context). One entry per brokerage statement line.
           </li>
           <li>
             <strong className="text-gray-900">Trim</strong> (scissors icon on a row) does the whole

@@ -8,12 +8,14 @@ import { cn } from '../lib/utils';
 /** First-run guidance. Renders only while setup steps remain; disappears for
  * good once the account is really running. */
 export function GettingStarted() {
-  const { exampleData, parked, cashEvents, lots, clearExampleData, loading } = useData();
+  const { exampleData, parkedLots, cashEvents, lots, clearExampleData, loading } = useData();
   const [confirmClear, setConfirmClear] = useState(false);
 
   if (loading) return null;
 
-  const missingDates = parked.filter((p) => !p.buyDate).length;
+  const missingDates = new Set(
+    parkedLots.filter((l) => !l.date && l.shares > 0).map((l) => l.parkedPositionId),
+  ).size;
   const exampleIds = new Set(exampleData.cashEvents.map((e) => e.id));
   const exampleLotIds = new Set(exampleData.lots.map((l) => l.id));
   const hasRealDeposit = cashEvents.some((e) => e.type === 'Deposit' && !exampleIds.has(e.id));
@@ -42,8 +44,9 @@ export function GettingStarted() {
       done: missingDates === 0,
       label: (
         <span>
-          Add buy dates to the <Link to="/parked" className="font-medium text-green-700 hover:underline">parked pile</Link>
-          {missingDates > 0 && ` (${missingDates} missing)`} — they drive the funding-unlock countdowns.
+          Date the lots in the <Link to="/parked" className="font-medium text-green-700 hover:underline">parked pile</Link>
+          {missingDates > 0 && ` (${missingDates} positions undated)`} — clock icon on a row; dates
+          drive the funding-unlock countdowns.
         </span>
       ),
     },
