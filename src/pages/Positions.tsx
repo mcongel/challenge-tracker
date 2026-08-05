@@ -158,7 +158,14 @@ export function Positions() {
 }
 
 function AddPositionModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
-  const { addLot, lots, trades, outsideSales, accounts } = useData();
+  const { addLot, lots, trades, outsideSales, parkedSales, accounts } = useData();
+  // Pile sales at a loss count for Rule 9 too — merge them into the radar.
+  const saleRadar = [
+    ...outsideSales,
+    ...parkedSales
+      .filter((s) => s.costBasis != null && s.proceeds < s.costBasis)
+      .map((s) => ({ id: s.id, accountId: s.accountId, ticker: s.ticker, saleDate: s.date, loss: true })),
+  ];
   const [ticker, setTicker] = useState('');
   const [buyDate, setBuyDate] = useState(todayISO());
   const [shares, setShares] = useState('');
@@ -177,7 +184,7 @@ function AddPositionModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
   ];
 
   const conflicts = ticker
-    ? washSaleConflicts(trades, outsideSales, ticker.toUpperCase(), buyDate)
+    ? washSaleConflicts(trades, saleRadar, ticker.toUpperCase(), buyDate)
     : { trades: [], outside: [] };
   const washCitations = [
     ...conflicts.trades.map((t) => `${t.closeDate} (challenge account)`),

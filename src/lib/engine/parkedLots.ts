@@ -67,6 +67,8 @@ export function dividendsCollected(lots: ParkedLot[]): number {
 export interface LotConsumption {
   updates: { id: string; shares: number; amount: number }[];
   deletes: string[];
+  /** What was actually sold, lot by lot — carries the basis and dates. */
+  consumed: { id: string; date: string | null; shares: number; amount: number }[];
 }
 
 /** Consume shares oldest-first (unknown dates count as oldest — they're the
@@ -86,6 +88,7 @@ export function consumeLotsFifo(lots: ParkedLot[], sharesToSell: number): LotCon
   }
   const updates: LotConsumption['updates'] = [];
   const deletes: string[] = [];
+  const consumed: LotConsumption['consumed'] = [];
   let remaining = sharesToSell;
   for (const lot of ordered) {
     if (remaining <= 1e-9) break;
@@ -93,14 +96,49 @@ export function consumeLotsFifo(lots: ParkedLot[], sharesToSell: number): LotCon
     remaining -= take;
     const left = lot.shares - take;
     if (left > 1e-9) {
-      updates.push({
+      const keptAmount = Math.round(lot.amount * (left / lot.shares) * 100) / 100;
+      updates.push({ id: lot.id, shares: left, amount: keptAmount });
+      consumed.push({
         id: lot.id,
-        shares: left,
-        amount: Math.round(lot.amount * (left / lot.shares) * 100) / 100,
+        date: lot.date,
+        shares: take,
+        amount: Math.round((lot.amount - keptAmount) * 100) / 100,
       });
     } else {
       deletes.push(lot.id);
+      consumed.push({ id: lot.id, date: lot.date, shares: lot.shares, amount: lot.amount });
     }
   }
-  return { updates, deletes };
+  return { updates, deletes, consumed };
+}
+
+export interface TrimPreview {
+  proceeds: number;
+  costBasis: number;
+  gain: number;
+  /** Shares long-term at the sale date (legit Rule 5 fuel). */
+  ltShares: number;
+  stShares: number;
+  unknownShares: number;
+}
+
+/** What a sale would realize, from the lots it would actually consume. */
+export function trimPreview(
+  lots: ParkedLot[],
+  sharesToSell: number,
+  pricePerShare: number,
+  saleDate: string,
+): TrimPreview {
+  const { consumed } = consumeLotsFifo(lots, sharesToSell);
+  const costBasis = sum(consumed.map((c) => c.amount));
+  const proceeds = sharesToSell * pricePerShare;
+  let ltShares = 0;
+  let stShares = 0;
+  let unknownShares = 0;
+  for (const c of consumed) {
+    if (!c.date) unknownShares += c.shares;
+    else if (longTermDate(c.date) <= saleDate) ltShares += c.shares;
+    else stShares += c.shares;
+  }
+  return { proceeds, costBasis, gain: proceeds - costBasis, ltShares, stShares, unknownShares };
 }

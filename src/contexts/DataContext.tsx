@@ -15,9 +15,9 @@ import type {
 } from '../lib/engine';
 import {
   accountTotal, aggregateLots, closeShares, concentration, consumeLotsFifo, cumulativeFloor,
-  netContributed, pileTotal, reservedTotal, roundCents, shadowValue, totalScore,
+  netContributed, pileTotal, reservedTotal, roundCents, shadowValue, totalScore, trimPreview,
 } from '../lib/engine';
-import type { ParkedLot } from '../lib/engine';
+import type { ParkedLot, ParkedSale } from '../lib/engine';
 import { priceMapFor } from '../lib/alerts';
 import { todayISO } from '../lib/utils';
 import {
@@ -26,6 +26,8 @@ import {
   lotPayload,
   mapParkedLot,
   parkedLotPayload,
+  mapParkedSale,
+  parkedSalePayload,
   mapAccount,
   mapBenchmarkDeposit,
   mapCarryforward,
@@ -59,6 +61,8 @@ interface DataState {
   outsideSales: OutsideSale[];
   /** Dated slices of parked positions — purchases and dividends. */
   parkedLots: ParkedLot[];
+  /** The pile's own sale log — never score/YTD/tax math. */
+  parkedSales: ParkedSale[];
 }
 
 const EMPTY: DataState = {
@@ -75,6 +79,7 @@ const EMPTY: DataState = {
   accounts: [],
   outsideSales: [],
   parkedLots: [],
+  parkedSales: [],
 };
 
 interface DataContextValue extends DataState {
@@ -130,6 +135,7 @@ interface DataContextValue extends DataState {
     price: number;
     notes?: string | null;
   }) => Promise<void>;
+  deleteParkedSale: (id: string) => Promise<void>;
   /** Rows seeded from the workbook, identified by EXAMPLE in their notes. */
   exampleData: { cashEvents: CashEvent[]; lots: PositionLot[]; trades: Trade[]; total: number };
   clearExampleData: () => Promise<void>;
@@ -152,7 +158,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const client = db();
       const [
         cash, lots, trades, milestones, bench, parked, snaps, carry, overrides, settings,
-        accounts, outsideSales, parkedLots,
+        accounts, outsideSales, parkedLots, parkedSales,
       ] = await Promise.all([
         client.from('cash_events').select('*').order('date').order('created_at'),
         client.from('position_lots').select('*').order('buy_date'),
@@ -167,11 +173,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         client.from('accounts').select('*').order('name'),
         client.from('outside_sales').select('*').order('sale_date'),
         client.from('parked_lots').select('*').order('date', { nullsFirst: true }),
+        client.from('parked_sales').select('*').order('date'),
       ]);
       const firstError =
         cash.error ?? lots.error ?? trades.error ?? milestones.error ?? bench.error ??
         parked.error ?? snaps.error ?? carry.error ?? overrides.error ?? settings.error ??
-        accounts.error ?? outsideSales.error ?? parkedLots.error;
+        accounts.error ?? outsideSales.error ?? parkedLots.error ?? parkedSales.error;
       if (firstError) throw firstError;
       setState({
         cashEvents: (cash.data ?? []).map(mapCashEvent),
@@ -189,6 +196,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         accounts: (accounts.data ?? []).map(mapAccount),
         outsideSales: (outsideSales.data ?? []).map(mapOutsideSale),
         parkedLots: (parkedLots.data ?? []).map(mapParkedLot),
+        parkedSales: (parkedSales.data ?? []).map(mapParkedSale),
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -597,6 +605,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [refresh, recomputeParkedAggregate, state.parkedLots],
   );
 
+  const deleteParkedSale = useCallback(
+    async (id: string) => {
+      const { error: err } = await db().from('parked_sales').delete().eq('id', id);
+      if (err) throw err;
+      await refresh();
+    },
+    [refresh],
+  );
+
   const recordTrim = useCallback(
     async ({
       parkedId, shares, pricePerShare, date, depositVooPrice,
@@ -615,9 +632,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         throw new Error(`Only ${p.shares} shares parked; cannot trim ${shares}`);
       }
 
-      // Consume lots oldest-first so remaining basis and unlock clocks stay honest.
+      // Consume lots oldest-first so remaining basis and unlock clocks stay
+      // honest — and so the sale record carries the real basis and LT split.
       const positionLots = state.parkedLots.filter((l) => l.parkedPositionId === parkedId);
+      let costBasis: number | null = null;
+      let ltShares: number | null = null;
       if (positionLots.length > 0) {
+        const preview = trimPreview(positionLots, shares, pricePerShare, date);
+        costBasis = roundCents(preview.costBasis);
+        ltShares = preview.ltShares;
         const { updates, deletes } = consumeLotsFifo(positionLots, shares);
         for (const u of updates) {
           const { error: err } = await client
@@ -642,13 +665,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      const { error: saleErr } = await client.from('outside_sales').insert(
-        outsideSalePayload({
-          accountId: p.accountId,
+      const { error: saleErr } = await client.from('parked_sales').insert(
+        parkedSalePayload({
           ticker: p.ticker,
-          saleDate: date,
-          loss: pricePerShare < p.avgCost,
-          notes: `Trim: ${shares} sh @ ${pricePerShare}`,
+          accountId: p.accountId,
+          date,
+          shares,
+          pricePerShare,
+          proceeds: roundCents(shares * pricePerShare),
+          costBasis,
+          ltShares,
+          fundedChallenge: Boolean(depositVooPrice),
         }),
       );
       if (saleErr) throw saleErr;
@@ -781,6 +808,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       addParkedLot,
       deleteParkedLot,
       addParkedPosition,
+      deleteParkedSale,
       exampleData,
       clearExampleData,
       setOverride,
@@ -791,7 +819,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       refresh, addCashEvent, deleteCashEvent, addLot, closePosition, recordSplit,
       setTradeWashSale, deleteTrade, updateParked, recordMilestone, addAccount, addOutsideSale,
       deleteOutsideSale, recordTrim, addParkedLot, deleteParkedLot, addParkedPosition,
-      exampleData, clearExampleData,
+      deleteParkedSale, exampleData, clearExampleData,
       setOverride, clearOverride,
     ],
   );

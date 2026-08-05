@@ -6,10 +6,10 @@ import { Modal } from '../components/ui/Modal';
 import { AccountSelect } from '../components/ui/AccountSelect';
 import { ErrorCard, SkeletonTable } from './CashLedger';
 import { useData } from '../contexts/DataContext';
-import type { AccountKind, ParkedLot, ParkedPosition, UnlockSummary } from '../lib/engine';
+import type { AccountKind, ParkedLot, ParkedPosition, ParkedSale, UnlockSummary } from '../lib/engine';
 import {
   concentration, contributionStatus, depositExceedsCap, dividendsCollected, netContributed,
-  parkedCostBasis, parkedMarketValue, roundCents, trackedBalance, unlockSummary,
+  parkedCostBasis, parkedMarketValue, roundCents, trackedBalance, trimPreview, unlockSummary,
 } from '../lib/engine';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import {
@@ -26,7 +26,8 @@ const CATEGORY_STYLES: Record<ParkedPosition['category'], string> = {
 const fmtSh = (n: number) => String(Number(n.toFixed(4)));
 
 export function ParkedPile() {
-  const { parked, parkedLots, loading, error } = useData();
+  const { parked, parkedLots, parkedSales, accounts, deleteParkedSale, loading, error } = useData();
+  const [deletingSale, setDeletingSale] = useState<ParkedSale | null>(null);
   const [editing, setEditing] = useState<ParkedPosition | null>(null);
   const [trimming, setTrimming] = useState<ParkedPosition | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -202,10 +203,96 @@ export function ParkedPile() {
         </div>
       )}
 
+      {/* The pile's own sale log — its own little tracker, never in the score. */}
+      {parkedSales.length > 0 && (
+        <div className="mt-4 bg-white rounded-lg shadow-lg overflow-x-auto">
+          <p className="px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">
+            Sale history — pile only, never in the score
+          </p>
+          <table className="w-full text-sm compact-table">
+            <thead>
+              <tr className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                <th className="px-4 py-2">Date</th>
+                <th className="px-4 py-2">Ticker</th>
+                <th className="px-4 py-2">Account</th>
+                <th className="px-4 py-2 text-right">Shares</th>
+                <th className="px-4 py-2 text-right">Price</th>
+                <th className="px-4 py-2 text-right">Proceeds</th>
+                <th className="px-4 py-2 text-right">Basis</th>
+                <th className="px-4 py-2 text-right">Gain</th>
+                <th className="px-4 py-2">Term</th>
+                <th className="px-4 py-2">Proceeds went</th>
+                <th className="px-2 py-2" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {[...parkedSales].reverse().map((s) => {
+                const gain = s.costBasis === null || s.costBasis === undefined ? null : s.proceeds - s.costBasis;
+                const term =
+                  s.ltShares === null || s.ltShares === undefined ? null
+                  : s.ltShares >= s.shares - 1e-9 ? 'LT'
+                  : s.ltShares <= 1e-9 ? 'ST' : 'MIXED';
+                return (
+                  <tr key={s.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-2 tabular-nums text-gray-500">{s.date}</td>
+                    <td className="px-4 py-2 font-medium">{s.ticker}</td>
+                    <td className="px-4 py-2 text-gray-500">{accounts.find((a) => a.id === s.accountId)?.name ?? '—'}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{fmtSh(s.shares)}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{formatCurrency(s.pricePerShare)}</td>
+                    <td className="px-4 py-2 text-right tabular-nums font-medium">{formatCurrency(s.proceeds)}</td>
+                    <td className="px-4 py-2 text-right tabular-nums text-gray-500">
+                      {s.costBasis == null ? '—' : formatCurrency(s.costBasis)}
+                    </td>
+                    <td className={cn('px-4 py-2 text-right tabular-nums font-medium',
+                      gain === null ? 'text-gray-400' : gain >= 0 ? 'text-green-600' : 'text-red-600')}>
+                      {gain === null ? 'unknown' : formatCurrency(roundCents(gain))}
+                    </td>
+                    <td className="px-4 py-2">
+                      {term === null ? (
+                        <span className="text-xs text-gray-400">—</span>
+                      ) : (
+                        <span className={cn('inline-block rounded-full px-2 py-0.5 text-xs font-medium',
+                          term === 'LT' ? 'bg-teal-50 text-teal-700'
+                          : term === 'ST' ? 'bg-indigo-50 text-indigo-700'
+                          : 'bg-amber-50 text-amber-800')}>
+                          {term}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2">
+                      {s.fundedChallenge ? (
+                        <span className="inline-block rounded-full bg-green-50 text-green-700 px-2 py-0.5 text-xs font-medium">
+                          → challenge
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-400">stayed outside</span>
+                      )}
+                    </td>
+                    <td className="px-2 py-2">
+                      <button onClick={() => setDeletingSale(s)} className="p-1 rounded hover:bg-red-50" aria-label="Delete sale record">
+                        <Trash2 className="h-4 w-4 text-gray-300 hover:text-red-600" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {editing && <EditParkedModal position={editing} onClose={() => setEditing(null)} />}
       {trimming && <TrimModal position={trimming} onClose={() => setTrimming(null)} />}
       {accountsOpen && <AccountsModal onClose={() => setAccountsOpen(false)} />}
       {addOpen && <AddHoldingModal onClose={() => setAddOpen(false)} />}
+      {deletingSale && (
+        <ConfirmModal
+          title="Delete sale record"
+          message={`Delete the ${deletingSale.ticker} sale from ${deletingSale.date} (${formatCurrency(deletingSale.proceeds)})? This removes only the history record — it does not restore shares or lots.`}
+          onConfirm={() => deleteParkedSale(deletingSale.id)}
+          onClose={() => setDeletingSale(null)}
+        />
+      )}
     </div>
   );
 }
@@ -576,7 +663,8 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
   const [shares, setShares] = useState('');
   const [price, setPrice] = useState(p.currentPrice ? String(p.currentPrice) : '');
   const [date, setDate] = useState(todayISO());
-  const [fund, setFund] = useState(true);
+  // The pile stands on its own: selling does NOT presume funding the challenge.
+  const [fund, setFund] = useState(false);
   const [vooPrice, setVooPrice] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -585,10 +673,19 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
   const numPrice = Number(price);
   const proceeds = numShares > 0 && numPrice > 0 ? roundCents(numShares * numPrice) : 0;
   const fullTrim = numShares >= p.shares - 1e-9;
-  const summ = unlockSummary(parkedLots.filter((l) => l.parkedPositionId === p.id), date);
+  const positionLots = parkedLots.filter((l) => l.parkedPositionId === p.id);
+  const summ = unlockSummary(positionLots, date);
   const dipsShortTerm = numShares > 0 && numShares > summ.unlockedShares + 1e-9;
   const neverTrimFuel = NEVER_TRIM.has(p.ticker) || p.category === 'BTC';
-  const isLoss = numPrice > 0 && numPrice < p.avgCost;
+  let preview: ReturnType<typeof trimPreview> | null = null;
+  if (numShares > 0 && numShares <= p.shares + 1e-9 && numPrice > 0 && positionLots.length > 0) {
+    try {
+      preview = trimPreview(positionLots, numShares, numPrice, date);
+    } catch {
+      preview = null;
+    }
+  }
+  const isLoss = preview ? preview.gain < 0 : numPrice > 0 && numPrice < p.avgCost;
 
   const contributed = netContributed(cashEvents);
   const overCap =
@@ -687,12 +784,28 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
           <div className="bg-gray-50 rounded-md px-3 py-2 text-sm space-y-1">
             <p className="text-gray-600">
               Proceeds <span className="font-medium tabular-nums">{formatCurrency(proceeds)}</span>
-              {isLoss && <span className="ml-2 text-red-600 font-medium">below cost — arms the 31-day wash-sale window</span>}
+              {preview && (
+                <>
+                  {' '}· gain{' '}
+                  <span className={cn('font-medium tabular-nums', preview.gain >= 0 ? 'text-green-600' : 'text-red-600')}>
+                    {formatCurrency(roundCents(preview.gain))}
+                  </span>
+                  <span className="text-gray-400"> (basis {formatCurrency(roundCents(preview.costBasis))})</span>
+                </>
+              )}
               {fullTrim && <span className="ml-2 text-gray-500">· sells the whole position (row removed)</span>}
             </p>
+            {preview && (
+              <p className="text-xs text-gray-500 tabular-nums">
+                {fmtSh(preview.ltShares)} sh long-term
+                {preview.stShares > 0 && ` · ${fmtSh(preview.stShares)} sh short-term`}
+                {preview.unknownShares > 0 && ` · ${fmtSh(preview.unknownShares)} sh undated`}
+                {isLoss && <span className="text-red-600 font-medium"> · loss — arms the 31-day wash-sale window</span>}
+              </p>
+            )}
             <p className="text-xs text-gray-400">
-              One action: shrinks the parked position, logs the sale in the wash-sale radar
-              {fund ? ', and writes the Deposit + shadow VOO twin to the ledger.' : '.'}
+              Recorded in the pile's sale history with basis and term
+              {fund ? ', and the Deposit + shadow VOO twin hit the ledger.' : '. Nothing touches the challenge account.'}
             </p>
           </div>
         )}

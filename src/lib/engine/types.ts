@@ -115,6 +115,23 @@ export interface ParkedPosition {
   notes?: string | null;
 }
 
+/** A parked-pile sale — the pile's own trade log. Real numbers (basis from
+ * the lots consumed, LT/ST split) but NEVER score, YTD, or tax-skim math. */
+export interface ParkedSale {
+  id: string;
+  ticker: string;
+  accountId: string;
+  date: string;
+  shares: number;
+  pricePerShare: number;
+  proceeds: number;
+  /** null = unknown (legacy backfill). */
+  costBasis?: number | null;
+  ltShares?: number | null;
+  fundedChallenge: boolean;
+  notes?: string | null;
+}
+
 /** Net loss carried INTO taxYear from prior years, stored as a positive number. */
 export interface LossCarryforward {
   taxYear: number;

@@ -10,6 +10,7 @@ import type {
   OutsideSale,
   ParkedLot,
   ParkedPosition,
+  ParkedSale,
   PositionLot,
   Snapshot,
   Trade,
@@ -182,6 +183,33 @@ export const parkedLotPayload = (l: Omit<ParkedLot, 'id'>) => ({
   price: l.price ?? null,
   amount: l.amount,
   notes: l.notes ?? null,
+});
+
+export const mapParkedSale = (r: any): ParkedSale => ({
+  id: r.id,
+  ticker: r.ticker,
+  accountId: r.account_id,
+  date: r.date,
+  shares: Number(r.shares),
+  pricePerShare: Number(r.price_per_share),
+  proceeds: Number(r.proceeds),
+  costBasis: r.cost_basis === null ? null : Number(r.cost_basis),
+  ltShares: r.lt_shares === null ? null : Number(r.lt_shares),
+  fundedChallenge: r.funded_challenge,
+  notes: r.notes,
+});
+
+export const parkedSalePayload = (s: Omit<ParkedSale, 'id'>) => ({
+  ticker: s.ticker,
+  account_id: s.accountId,
+  date: s.date,
+  shares: s.shares,
+  price_per_share: s.pricePerShare,
+  proceeds: s.proceeds,
+  cost_basis: s.costBasis ?? null,
+  lt_shares: s.ltShares ?? null,
+  funded_challenge: s.fundedChallenge,
+  notes: s.notes ?? null,
 });
 
 export const mapSnapshot = (r: any): Snapshot => ({

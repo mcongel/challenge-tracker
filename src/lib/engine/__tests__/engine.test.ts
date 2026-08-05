@@ -277,7 +277,28 @@ describe('parked lots — per-lot unlocks, aggregates, FIFO', () => {
     const r = consumeLotsFifo(lots, 6);
     expect(r.deletes).toEqual(['old']);          // null date consumed first
     expect(r.updates).toEqual([{ id: 'mid', shares: 2, amount: 250 }]);
+    expect(r.consumed).toEqual([
+      { id: 'old', date: null, shares: 4, amount: 400 },
+      { id: 'mid', date: '2025-06-01', shares: 2, amount: 250 },
+    ]);
     expect(() => consumeLotsFifo(lots, 11)).toThrow();
+  });
+
+  it('trimPreview: basis from consumed lots, LT/ST/unknown share split', async () => {
+    const { trimPreview } = await import('../parkedLots');
+    const lots = [
+      lot('a', null, 1, 100),           // unknown
+      lot('b', '2025-01-01', 2, 300),   // long-term by 2026-08-06
+      lot('c', '2026-06-01', 3, 900),   // short-term
+    ];
+    const p = trimPreview(lots, 4, 200, '2026-08-06');
+    // Consumes: a (1 sh, $100), b (2 sh, $300), c partial (1 sh, $300)
+    expect(p.costBasis).toBeCloseTo(700, 9);
+    expect(p.proceeds).toBe(800);
+    expect(p.gain).toBeCloseTo(100, 9);
+    expect(p.ltShares).toBe(2);
+    expect(p.stShares).toBe(1);
+    expect(p.unknownShares).toBe(1);
   });
 });
 
