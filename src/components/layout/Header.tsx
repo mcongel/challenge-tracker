@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Menu, Moon, Sun } from 'lucide-react';
+import { LogOut, Menu, Moon, Sun } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface HeaderProps {
   onMenuClick: () => void;
 }
 
 export function Header({ onMenuClick }: HeaderProps) {
+  const { signOut } = useAuth();
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
 
   useEffect(() => {
@@ -39,6 +41,14 @@ export function Header({ onMenuClick }: HeaderProps) {
           ) : (
             <Moon className="h-5 w-5 text-gray-500" />
           )}
+        </button>
+        <button
+          onClick={signOut}
+          className="p-2 rounded-md hover:bg-gray-100"
+          aria-label="Sign out"
+          title="Sign out"
+        >
+          <LogOut className="h-5 w-5 text-gray-500" />
         </button>
       </div>
     </header>
