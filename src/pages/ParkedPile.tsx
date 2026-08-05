@@ -231,6 +231,28 @@ function LotsModal({ position: p, onClose }: { position: ParkedPosition; onClose
   const [price, setPrice] = useState('');
   const [amount, setAmount] = useState('');
   const [reinvested, setReinvested] = useState(true);
+  // Dividends accept either entry: dollars (amount) or shares — whichever was
+  // typed last drives, the other computes from the reinvest price.
+  const [divDriver, setDivDriver] = useState<'amount' | 'shares'>('amount');
+
+  const syncFromAmount = (amt: string, pr: string) => {
+    setAmount(amt);
+    setDivDriver('amount');
+    const a = Number(amt); const pnum = Number(pr);
+    if (a > 0 && pnum > 0) setShares(String(Number((a / pnum).toFixed(8))));
+  };
+  const syncFromShares = (sh: string, pr: string) => {
+    setShares(sh);
+    setDivDriver('shares');
+    const s = Number(sh); const pnum = Number(pr);
+    if (s > 0 && pnum > 0) setAmount(String(roundCents(s * pnum)));
+  };
+  const syncFromPrice = (pr: string) => {
+    setPrice(pr);
+    if (mode !== 'dividend') return;
+    if (divDriver === 'amount') syncFromAmount(amount, pr);
+    else syncFromShares(shares, pr);
+  };
   const [deleting, setDeleting] = useState<ParkedLot | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -262,15 +284,16 @@ function LotsModal({ position: p, onClose }: { position: ParkedPosition; onClose
           amount: roundCents(sh * pr),
         });
       } else {
-        const amt = Number(amount);
-        if (!amt || amt <= 0) throw new Error('Enter the dividend amount.');
         const pr = Number(price);
         if (reinvested && (!pr || pr <= 0)) throw new Error('Reinvested dividends need the reinvestment price.');
+        const amt = Number(amount) > 0 ? Number(amount) : Number(shares) > 0 && pr > 0 ? Number(shares) * pr : 0;
+        if (amt <= 0) throw new Error('Enter the dividend as dollars or shares.');
+        const sh = reinvested ? (Number(shares) > 0 ? Number(shares) : amt / pr) : 0;
         await addParkedLot({
           parkedPositionId: p.id,
           date: date || null,
           source: 'dividend',
-          shares: reinvested ? amt / pr : 0,
+          shares: sh,
           price: reinvested ? pr : null,
           amount: roundCents(amt),
           notes: reinvested ? 'reinvested' : 'cash',
@@ -329,47 +352,60 @@ function LotsModal({ position: p, onClose }: { position: ParkedPosition; onClose
             <p className="text-xs font-medium text-gray-500">
               {mode === 'purchase' ? 'Past purchase' : 'Dividend'}
             </p>
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className={labelCls}>Date</label>
-                <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
+            {mode === 'purchase' ? (
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className={labelCls}>Date</label>
+                  <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Shares</label>
+                  <input type="number" step="any" min="0.00000001" required value={shares}
+                    onChange={(e) => setShares(e.target.value)} className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Price ($)</label>
+                  <input type="number" step="any" min="0" required value={price}
+                    onChange={(e) => setPrice(e.target.value)} className={inputCls} />
+                </div>
               </div>
-              {mode === 'purchase' ? (
-                <>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className={labelCls}>Shares</label>
-                    <input type="number" step="any" min="0.00000001" required value={shares}
-                      onChange={(e) => setShares(e.target.value)} className={inputCls} />
-                  </div>
-                  <div>
-                    <label className={labelCls}>Price ($)</label>
-                    <input type="number" step="any" min="0" required value={price}
-                      onChange={(e) => setPrice(e.target.value)} className={inputCls} />
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div>
-                    <label className={labelCls}>Amount ($)</label>
-                    <input type="number" step="any" min="0" required value={amount}
-                      onChange={(e) => setAmount(e.target.value)} className={inputCls} />
+                    <label className={labelCls}>Date</label>
+                    <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
                   </div>
                   {reinvested && (
                     <div>
                       <label className={labelCls}>Reinvest price ($)</label>
                       <input type="number" step="any" min="0" value={price}
-                        onChange={(e) => setPrice(e.target.value)} className={inputCls} />
+                        onChange={(e) => syncFromPrice(e.target.value)} className={inputCls} />
                     </div>
                   )}
-                </>
-              )}
-            </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelCls}>Amount ($)</label>
+                    <input type="number" step="any" min="0" value={amount}
+                      onChange={(e) => syncFromAmount(e.target.value, price)} className={inputCls} />
+                  </div>
+                  {reinvested && (
+                    <div>
+                      <label className={labelCls}>Shares</label>
+                      <input type="number" step="any" min="0" value={shares}
+                        onChange={(e) => syncFromShares(e.target.value, price)} className={inputCls} />
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
             {mode === 'dividend' && (
               <label className="flex items-center gap-2 text-sm text-gray-700">
                 <input type="checkbox" checked={reinvested} onChange={(e) => setReinvested(e.target.checked)}
                   className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-600" />
-                Reinvested (DRIP) — buys {amount && price && Number(price) > 0 ? fmtSh(Number(amount) / Number(price)) : '…'} sh
-                with its own 366-day clock
+                Reinvested (DRIP) — enter dollars or shares, the other computes. The shares get
+                their own 366-day clock.
               </label>
             )}
             {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
