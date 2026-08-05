@@ -186,12 +186,22 @@ function AccountsModal({ onClose }: { onClose: () => void }) {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
+    const trimmed = name.trim();
+    if (accounts.some((a) => a.name.toLowerCase() === trimmed.toLowerCase())) {
+      return setFormError(`An account named "${trimmed}" already exists.`);
+    }
     setBusy(true);
     try {
-      await addAccount(name.trim(), kind, broker.trim() || undefined);
+      await addAccount(trimmed, kind, broker.trim() || undefined);
       setName(''); setBroker('');
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err));
+      // 23505 = unique violation — races past the client-side check.
+      const isDuplicate = typeof err === 'object' && err !== null && 'code' in err && (err as { code?: string }).code === '23505';
+      setFormError(
+        isDuplicate
+          ? `An account named "${trimmed}" already exists.`
+          : err instanceof Error ? err.message : String(err),
+      );
     } finally {
       setBusy(false);
     }
