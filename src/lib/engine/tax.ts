@@ -79,3 +79,7 @@ export function computeCheck(
 export function skimDueNow(checks: TaxReserveCheck[]): TaxReserveCheck | undefined {
   return checks.find((c) => c.moveOutNow > 0);
 }
+
+export function formatQuarterLabel(q: TaxQuarter): string {
+  return `Q${q.quarter} ${q.year}`;
+}
