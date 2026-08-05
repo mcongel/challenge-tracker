@@ -204,12 +204,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         quotes?: Record<string, { price: number }>;
         asOf?: number;
       };
-      if (body.quotes) {
+      const fresh = body.quotes;
+      if (fresh) {
         // Merge instead of replace: a throttled fetch that misses a ticker
         // shouldn't blank out the price we already had.
         setQuotes((prev) => ({
           ...prev,
-          ...Object.fromEntries(Object.entries(body.quotes).map(([t, q]) => [t, q.price])),
+          ...Object.fromEntries(Object.entries(fresh).map(([t, q]) => [t, q.price])),
         }));
         setQuotesAsOf(body.asOf ?? Date.now());
         lastQuoteFetchAt.current = Date.now();
