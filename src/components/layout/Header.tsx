@@ -41,8 +41,8 @@ export function Header({ onMenuClick }: HeaderProps) {
         >
           <Menu className="h-5 w-5 text-gray-600" />
         </button>
-        <span className="lg:hidden font-display font-bold" style={{ letterSpacing: '-0.01em' }}>
-          Challenge<span className="text-green-600">Tracker</span>
+        <span className="lg:hidden text-lg font-bold text-gray-600 dark:text-slate-200">
+          Challenge Tracker
         </span>
       </div>
 

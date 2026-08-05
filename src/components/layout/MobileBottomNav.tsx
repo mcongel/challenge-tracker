@@ -10,9 +10,10 @@ const ITEMS = [
   { to: '/milestones', label: 'Milestones', icon: Flag },
 ];
 
+/** Classes mirror SpokenFor's mobile bottom nav. */
 export function MobileBottomNav() {
   return (
-    <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-white border-t border-gray-200 grid grid-cols-5">
+    <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t border-gray-200 dark:border-slate-700 shadow-lg z-40 flex">
       {ITEMS.map(({ to, label, icon: Icon }) => (
         <NavLink
           key={to}
@@ -20,13 +21,15 @@ export function MobileBottomNav() {
           end={to === '/'}
           className={({ isActive }) =>
             cn(
-              'flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium',
-              isActive ? 'text-green-700' : 'text-gray-500',
+              'flex flex-col items-center justify-center min-w-0 flex-1 px-1 py-2 rounded-lg transition-all relative',
+              isActive
+                ? 'text-green-600 dark:text-green-300'
+                : 'text-gray-500 dark:text-slate-400',
             )
           }
         >
           <Icon className="h-5 w-5" />
-          {label}
+          <span className="text-[10px] font-medium">{label}</span>
         </NavLink>
       ))}
     </nav>

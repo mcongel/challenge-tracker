@@ -30,66 +30,58 @@ interface SidebarProps {
   onClose: () => void;
 }
 
+/** Structure and classes mirror SpokenFor's Layout chunk: one aside that is a
+ * slide-in drawer on mobile and static on desktop. */
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
-  const nav = (
-    <nav className="flex-1 px-2 py-4 space-y-1">
-      {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
-        <NavLink
-          key={to}
-          to={to}
-          end={to === '/'}
-          onClick={onClose}
-          className={({ isActive }) =>
-            cn(
-              'flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors',
-              isActive
-                ? 'bg-green-50 text-green-700'
-                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900',
-            )
-          }
-        >
-          <Icon className="h-4 w-4 flex-shrink-0" />
-          {label}
-        </NavLink>
-      ))}
-    </nav>
-  );
-
-  const brand = (
-    <div className="h-14 flex items-center px-4 border-b border-gray-200">
-      <span className="font-display font-bold text-lg" style={{ letterSpacing: '-0.01em' }}>
-        Challenge<span className="text-green-600">Tracker</span>
-      </span>
-    </div>
-  );
-
   return (
     <>
-      {/* Desktop sidebar */}
-      <aside className="hidden lg:flex flex-col w-52 density-aware-sidebar flex-shrink-0 bg-white border-r border-gray-200 sticky top-0 h-screen">
-        {brand}
-        {nav}
-      </aside>
-
-      {/* Mobile drawer */}
       {isOpen && (
-        <div className="lg:hidden fixed inset-0 z-40">
-          <div className="fixed inset-0 bg-gray-500 bg-opacity-75" onClick={onClose} />
-          <aside className="relative flex flex-col w-64 max-w-[80vw] h-full bg-white animate-slide-in">
-            <div className="flex items-center justify-between border-b border-gray-200 pr-2">
-              {brand}
-              <button
-                onClick={onClose}
-                className="p-2 rounded-md hover:bg-gray-100"
-                aria-label="Close menu"
-              >
-                <X className="h-5 w-5 text-gray-500" />
-              </button>
-            </div>
-            {nav}
-          </aside>
-        </div>
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden" onClick={onClose} />
       )}
+
+      <aside
+        className={cn(
+          'fixed lg:static inset-y-0 left-0 z-50 w-52 density-aware-sidebar bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-700 transform transition-transform duration-200 ease-in-out',
+          isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
+        )}
+      >
+        <div className="h-full flex flex-col">
+          <div className="p-3 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
+            <h1 className="text-lg font-bold text-gray-600 dark:text-slate-200">
+              Challenge Tracker
+            </h1>
+            <button
+              onClick={onClose}
+              className="lg:hidden p-2 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-md"
+              aria-label="Close sidebar"
+            >
+              <X className="h-5 w-5 text-gray-500" />
+            </button>
+          </div>
+
+          <nav className="flex-1 p-3 space-y-1">
+            {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={to === '/'}
+                onClick={onClose}
+                className={({ isActive }) =>
+                  cn(
+                    'flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors relative',
+                    isActive
+                      ? 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-300'
+                      : 'text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800',
+                  )
+                }
+              >
+                <Icon className="h-5 w-5" />
+                <span className="font-medium">{label}</span>
+              </NavLink>
+            ))}
+          </nav>
+        </div>
+      </aside>
     </>
   );
 }
