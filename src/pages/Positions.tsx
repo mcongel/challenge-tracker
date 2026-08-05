@@ -35,7 +35,7 @@ export function Positions() {
     <div>
       <PageHeader
         title="Positions"
-        subtitle="Open lots. No entry without a defined exit — target and bail point are required."
+        subtitle="One stock at a time, full position, exit target written at open. Sell into the move, then rotate."
         actions={
           <button onClick={() => setAddOpen(true)} className={cn(primaryBtnCls, 'flex items-center gap-1.5')}>
             <Plus className="h-4 w-4" /> Add position
@@ -69,7 +69,6 @@ export function Positions() {
                 <th className="px-4 py-3 text-right">Days</th>
                 <th className="px-4 py-3">LT on</th>
                 <th className="px-4 py-3 text-right">Target</th>
-                <th className="px-4 py-3 text-right">Bail</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -116,7 +115,7 @@ export function Positions() {
                       gain >= 0 ? 'text-green-600' : 'text-red-600')}>
                       {subtotalBasis === 0 ? '—' : formatPercent(gain / subtotalBasis)}
                     </td>
-                    <td colSpan={4} />
+                    <td colSpan={3} />
                   </tr>,
                   ...tickerLots.map((lot) => {
                     const price = priceMap[ticker] ?? lot.avgCost;
@@ -140,7 +139,6 @@ export function Positions() {
                         <td className="px-4 py-2 text-right tabular-nums">{daysHeld(lot, today)}</td>
                         <td className="px-4 py-2 tabular-nums text-gray-500">{longTermDate(lot.buyDate)}</td>
                         <td className="px-4 py-2 text-right tabular-nums text-gray-500">{formatCurrency(lot.exitTarget)}</td>
-                        <td className="px-4 py-2 text-right tabular-nums text-gray-500">{formatCurrency(lot.bailPoint)}</td>
                       </tr>
                     );
                   }),
@@ -160,16 +158,23 @@ export function Positions() {
 }
 
 function AddPositionModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
-  const { addLot, trades, outsideSales, accounts } = useData();
+  const { addLot, lots, trades, outsideSales, accounts } = useData();
   const [ticker, setTicker] = useState('');
   const [buyDate, setBuyDate] = useState(todayISO());
   const [shares, setShares] = useState('');
   const [avgCost, setAvgCost] = useState('');
   const [exitTarget, setExitTarget] = useState('');
-  const [bailPoint, setBailPoint] = useState('');
   const [thesis, setThesis] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Rule 7 — one stock at a time. Warn (not block) so a same-day rotation
+  // can be entered in either order.
+  const otherOpenTickers = [
+    ...new Set(
+      lots.map((l) => l.ticker).filter((t) => ticker && t !== ticker.toUpperCase()),
+    ),
+  ];
 
   const conflicts = ticker
     ? washSaleConflicts(trades, outsideSales, ticker.toUpperCase(), buyDate)
@@ -184,11 +189,8 @@ function AddPositionModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
-    if (!Number(exitTarget) || !Number(bailPoint)) {
-      return setFormError('No entry without a defined exit. Target and bail point are the rule.');
-    }
-    if (Number(bailPoint) >= Number(avgCost)) {
-      // Not an error — bail above cost is legal (trailing stop) — but worth a beat.
+    if (!Number(exitTarget)) {
+      return setFormError('Exit on the target — Rule 8. Write the target before the entry.');
     }
     setBusy(true);
     try {
@@ -198,10 +200,10 @@ function AddPositionModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
         shares: Number(shares),
         avgCost: Number(avgCost),
         exitTarget: Number(exitTarget),
-        bailPoint: Number(bailPoint),
+        bailPoint: null,
         thesis: thesis || null,
       });
-      setTicker(''); setShares(''); setAvgCost(''); setExitTarget(''); setBailPoint(''); setThesis('');
+      setTicker(''); setShares(''); setAvgCost(''); setExitTarget(''); setThesis('');
       onClose();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : String(err));
@@ -229,7 +231,7 @@ function AddPositionModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
             <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
             <span>
               Wash-sale window: {ticker.toUpperCase()} was sold at a loss on{' '}
-              {washCitations.join(', ')} — buying within 31 days disallows that loss. Rule 8
+              {washCitations.join(', ')} — buying within 31 days disallows that loss. Rule 9
               crosses brokerages.
             </span>
           </div>
@@ -247,20 +249,26 @@ function AddPositionModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
               onChange={(e) => setAvgCost(e.target.value)} className={inputCls} />
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls}>Exit target ($) — required</label>
-            <input type="number" step="0.01" min="0.01" required value={exitTarget}
-              onChange={(e) => setExitTarget(e.target.value)} className={inputCls} />
-          </div>
-          <div>
-            <label className={labelCls}>Bail point ($) — required</label>
-            <input type="number" step="0.01" min="0.01" required value={bailPoint}
-              onChange={(e) => setBailPoint(e.target.value)} className={inputCls} />
-          </div>
+        <div>
+          <label className={labelCls}>Exit target ($) — required</label>
+          <input type="number" step="0.01" min="0.01" required value={exitTarget}
+            onChange={(e) => setExitTarget(e.target.value)} className={inputCls}
+            placeholder="the catalyst move you're selling into" />
         </div>
+
+        {otherOpenTickers.length > 0 && (
+          <div className="flex gap-2 bg-amber-50 text-amber-800 rounded-md px-3 py-2 text-sm">
+            <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+            <span>
+              One stock at a time — Rule 7. {otherOpenTickers.join(', ')}{' '}
+              {otherOpenTickers.length > 1 ? 'are' : 'is'} still riding. Xu style is sell, then
+              rotate — not split the stack.
+            </span>
+          </div>
+        )}
+
         <p className="text-xs text-gray-400">
-          Defined exit before entry — rule 7. The buy also writes itself to the Cash Ledger
+          Exit on the target — Rule 8. The buy also writes itself to the Cash Ledger
           ({shares && avgCost ? formatCurrency(roundCents(Number(shares) * Number(avgCost))) : '$—'}).
         </p>
         <div>

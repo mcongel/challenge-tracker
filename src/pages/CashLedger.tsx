@@ -190,15 +190,15 @@ function AddEventModal({
     if (type === 'Deposit' && (!vooPrice || Number(vooPrice) <= 0)) {
       return setFormError("Deposits need that day's VOO price — it creates the shadow purchase for the honest test.");
     }
-    // Rule 11: net contributed caps at the configured value. Refuse, don't warn.
+    // Rule 12: net contributed caps at the configured value. Refuse, don't warn.
     if (type === 'Deposit' && contributionCap !== null) {
       const contributed = netContributed(cashEvents);
       if (depositExceedsCap(contributed, amt, contributionCap)) {
         const room = contributionStatus(contributed, contributionCap).remaining;
         return setFormError(
           room > 0
-            ? `Rule 11: this deposit would exceed the ${formatCurrencyWhole(contributionCap)} contribution cap — only ${formatCurrency(roundCents(room))} of room remains.`
-            : `Rule 11: the ${formatCurrencyWhole(contributionCap)} contribution cap is reached — growth by trading only. Raising the cap requires beating VOO over a trailing 12 months.`,
+            ? `Rule 12: this deposit would exceed the ${formatCurrencyWhole(contributionCap)} contribution cap — only ${formatCurrency(roundCents(room))} of room remains.`
+            : `Rule 12: the ${formatCurrencyWhole(contributionCap)} contribution cap is reached — growth by trading only. Raising the cap requires beating VOO over a trailing 12 months.`,
         );
       }
     }

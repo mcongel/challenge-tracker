@@ -11,7 +11,7 @@ A personal trading scoreboard app for Mark's swing-trading "challenge account." 
   - Quarterly 30% tax reserve on net realized gains, non-negotiable, no off switch.
   - Parked pile is context only, walled off from all score/benchmark math.
   - Benchmark = shadow VOO purchases per deposit, compared against Total Score.
-  - Positions require exit target + bail point at entry. Warn on wash-sale-window rebuys.
+  - Positions require an exit target at entry — target only, "full Xu" (owner decision 2026-08-05 superseding the earlier target+bail rule; do not restore the bail point). One stock at a time: warn, don't block. Warn on wash-sale-window rebuys.
 - $1M is an aspiration label, never a pass/fail. UI language should reflect "final height is the prize."
 
 ## Stack

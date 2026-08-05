@@ -11,7 +11,7 @@ The app is a scoreboard that enforces the rules. **Total Score = account value +
 
 ## When money moves — Cash Ledger
 
-- **Deposit**: needs that day's **VOO price** — it creates the shadow VOO purchase automatically (the honest test never skips a beat). Pick the account the money came from. **Rule 11**: the form refuses any deposit that would push net contributed past the $25,000 cap; you'll see an amber "room left" badge from 80%.
+- **Deposit**: needs that day's **VOO price** — it creates the shadow VOO purchase automatically (the honest test never skips a beat). Pick the account the money came from. **Rule 12**: the form refuses any deposit that would push net contributed past the $25,000 cap; you'll see an amber "room left" badge from 80%.
 - **Withdrawal / other events**: pick the destination account so the ledger tells the whole story ("→ Tax Reserve Savings").
 - Buys and Sells are written for you when you trade on the Positions screen — you rarely add those by hand.
 - Deleting a Deposit also deletes its shadow VOO twin.
@@ -19,8 +19,9 @@ The app is a scoreboard that enforces the rules. **Total Score = account value +
 ## When you trade — Positions & Trade Log
 
 **Opening a position** (Positions → Add position):
-- Exit target and bail point are required. No entry without a defined exit — Rule 7. The form won't submit without them.
-- The wash-sale check runs as you type: any loss-sale of that ticker in the past 31 days — challenge account or a recorded outside sale — gets cited with its date and account (Rule 8).
+- One stock at a time — Rule 7. The form warns if another name is still riding; Xu style is sell, then rotate.
+- The exit target is required — the catalyst move you're selling into (Rule 8). The form won't submit without it.
+- The wash-sale check runs as you type: any loss-sale of that ticker in the past 31 days — challenge account or a recorded outside sale — gets cited with its date and account (Rule 9).
 - The Buy is written to the Cash Ledger automatically.
 
 **Closing** (Close button on the ticker):
@@ -57,7 +58,7 @@ The floor rises permanently, the staircase chart gets a step, and the banner is 
 
 ## The honest test — Benchmark
 
-Every deposit bought shadow VOO the same day. The Benchmark screen shows the race: your Total Score vs what the same money in VOO would be worth now, and after a year of snapshots, the **rolling 12-month verdict**. Beating VOO after tax is what proves the edge — and it's the only thing that raises the contribution cap (Rules 9 and 11). Two honesty notes printed on the screen: the shadow ignores VOO dividends (flatters you) and taxes (also flatters you). The real hurdle is higher than the lead suggests.
+Every deposit bought shadow VOO the same day. The Benchmark screen shows the race: your Total Score vs what the same money in VOO would be worth now, and after a year of snapshots, the **rolling 12-month verdict**. Beating VOO after tax is what proves the edge — and it's the only thing that raises the contribution cap (Rules 10 and 12). Two honesty notes printed on the screen: the shadow ignores VOO dividends (flatters you) and taxes (also flatters you). The real hurdle is higher than the lead suggests.
 
 ## Housekeeping
 
@@ -73,7 +74,7 @@ Every deposit bought shadow VOO the same day. The Benchmark screen shows the rac
 |---|---|
 | Dashboard | The score, alerts, charts — start here |
 | Cash Ledger | Every dollar in and out, running balance |
-| Positions | Open lots; entries enforce the exit rule |
+| Positions | Open lots; one name at a time, exit target enforced |
 | Trade Log | Closed trades, YTD realized, outside-sale radar |
 | Milestones | The ratchet: bank 25% at each level |
 | Tax Reserve | Quarterly 30% checklist |

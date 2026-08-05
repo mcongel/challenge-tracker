@@ -36,9 +36,10 @@ Reference implementation: `Challenge_Account_Tracker.xlsx` in this repo — the 
 - **Contribution cap:** net contributed caps at $25,000. Once reached, the account grows only by trading; raising the cap requires beating VOO after tax over a trailing 12 months. The cap is a config value (`contribution_cap` in `challenge.app_settings`), not a hardcoded constant. UI: at 80% of the cap the Dashboard and Cash Ledger show a subtle badge with remaining room; at 100% they show a persistent "Contribution cap reached — growth by trading only" state, and Deposit entries that would exceed the cap are refused.
 - The parked pile is tracked for context and funding-calendar purposes but is walled off from all scoreboard math.
 
-### Trading guardrails (the Xu rules)
-- No margin. No options. No chasing stocks that have already run.
-- Every position requires an **exit target** and **bail point** entered at open. The app should refuse (or loudly warn on) a position entry without them.
+### Trading guardrails (the Xu rules — full Xu since 2026-08-05)
+- No margin. No options. No crypto. No chasing stocks that have already run.
+- **One stock at a time**: the bankroll rides a single name with a near-term catalyst — full position, sell then rotate. The app warns loudly (doesn't block, to allow same-day rotations) when opening a ticker while another has open lots.
+- Every position requires an **exit target** entered at open — the catalyst move being sold into (Xu's 20–30%). The app refuses entry without it. **The bail point requirement was removed by owner decision 2026-08-05** (target-only exits, Xu style); the `bail_point` column remains nullable for history.
 - Wash sale rule: selling at a loss then rebuying the same ticker within 31 days — in ANY account (Robinhood, Cash App, Stash) — disallows the loss. This applies in both directions — don't buy a name in the challenge account within 31 days of selling it at a loss anywhere else. The app should warn when a buy is entered for a ticker with a loss-sale in the past 31 days.
 
 ### Benchmark (the honest test)
@@ -57,7 +58,7 @@ Reference implementation: `Challenge_Account_Tracker.xlsx` in this repo — the 
 
 ### Position (open)
 - id, ticker, buyDate, shares, avgCost — **each purchase is its own lot** (a row); a ticker may have multiple open lots, displayed grouped with a per-ticker subtotal.
-- exitTarget (required), bailPoint (required), thesis (text)
+- exitTarget (required), bailPoint (optional, legacy pre-Xu), thesis (text)
 - Derived per lot: costBasis = shares × avgCost; marketValue = shares × currentPrice; unrealized $ and %; daysHeld; longTermDate = buyDate + 366
 - **Partial close:** closing may take fewer shares than the lot holds — the closed portion becomes a Trade (proportional basis) and the lot's remaining shares stay open with original buyDate. Closing across multiple lots defaults to FIFO (oldest lot first), with per-lot override.
 - **Stock splits:** a manual "record split" action per ticker (ratio input) multiplies shares and divides avgCost across all open lots (and ParkedPositions of that ticker), logging the event in notes. No auto-detection needed.
@@ -100,7 +101,7 @@ Reference implementation: `Challenge_Account_Tracker.xlsx` in this repo — the 
 
 1. **Dashboard (landing).** Total Score (hero number), broken into account value / banked floors / tax reserved. Next milestone + distance. Progress bar to $1M labeled "aspiration." Net contributed. Lead vs VOO. Net realized YTD. Any active alerts (milestone hit, tax skim due, wash-sale warning, over concentration cap). Parked pile total shown small and explicitly labeled "context only — not in score."
 2. **Cash Ledger.** Event list with running balance, add-event form with type dropdown, summary block (deposits, withdrawals, net contributed, buys, sells, dividends, skims, fees, current cash). Adding a Deposit prompts for that day's VOO price to auto-create the BenchmarkDeposit twin.
-3. **Positions.** Open positions table; add form enforces exit target + bail point; shows days held and long-term date; close action moves it to Trade Log and creates the Sell cash event.
+3. **Positions.** Open positions table; add form enforces the exit target and warns when a second ticker would open (one stock at a time); shows days held and long-term date; close action moves it to Trade Log and creates the Sell cash event.
 4. **Trade Log.** Closed trades, ST/LT badge, wash-sale flag, YTD realized total.
 5. **Milestones.** The ratchet table with statuses and a "record banking" action.
 6. **Tax Reserve.** Quarterly checklist, auto-computed from Trade Log, with "mark moved" action creating the TaxSkim cash event.

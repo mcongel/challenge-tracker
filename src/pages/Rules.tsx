@@ -51,17 +51,23 @@ const SECTIONS: { heading: string; rules: Rule[] }[] = [
       {
         n: 6,
         text: (
-          <><strong>No margin. No options.</strong> No chasing stocks that have already run.</>
+          <><strong>No margin. No options. No crypto.</strong> No chasing stocks that have already run.</>
         ),
       },
       {
         n: 7,
         text: (
-          <><strong>Defined exit before entry.</strong> Every position gets a target and a bail point written in the Trade Log at open.</>
+          <><strong>One stock at a time.</strong> The bankroll rides a single name with a near-term catalyst — full position, no hedging, no diversifying the challenge account. Sell, then rotate.</>
         ),
       },
       {
         n: 8,
+        text: (
+          <><strong>Exit on the target.</strong> Every position gets an exit target written at open — the catalyst move you're selling into (Xu's 20–30%). Sell into strength and rotate to the next setup.</>
+        ),
+      },
+      {
+        n: 9,
         text: (
           <>No rebuying a name sold at a loss within <strong>31 days</strong> — in ANY account (Robinhood, Cash App, Stash). Wash sales cross brokerages. This applies <strong>in both directions</strong> — don't buy a name in the challenge account within 31 days of selling it at a loss anywhere else.</>
         ),
@@ -72,19 +78,19 @@ const SECTIONS: { heading: string; rules: Rule[] }[] = [
     heading: 'Scorekeeping',
     rules: [
       {
-        n: 9,
+        n: 10,
         text: (
           <>The benchmark is <strong>VOO after tax</strong>. Beating it over rolling 12 months is what proves an edge. If the edge is proven, adding capital is investing. If not, the experiment answered the question cheaply.</>
         ),
       },
       {
-        n: 10,
+        n: 11,
         text: (
           <><strong>Success = Total Score: account value + banked floors + tax reserved.</strong> The final number is the prize, never a shortfall against the aspiration. The only real failures are breaking the rules or losing to VOO.</>
         ),
       },
       {
-        n: 11,
+        n: 12,
         text: (
           <><strong>Net contributed caps at $25,000.</strong> Once reached, the account grows only by trading. Raising the cap requires <strong>beating VOO after tax over a trailing 12 months</strong> — not wanting to.</>
         ),

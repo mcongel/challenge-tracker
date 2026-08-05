@@ -76,7 +76,7 @@ export const mapLot = (r: any): PositionLot => ({
   shares: Number(r.shares),
   avgCost: Number(r.avg_cost),
   exitTarget: Number(r.exit_target),
-  bailPoint: Number(r.bail_point),
+  bailPoint: r.bail_point === null ? null : Number(r.bail_point),
   thesis: r.thesis,
 });
 
@@ -86,7 +86,7 @@ export const lotPayload = (l: Omit<PositionLot, 'id'>) => ({
   shares: l.shares,
   avg_cost: l.avgCost,
   exit_target: l.exitTarget,
-  bail_point: l.bailPoint,
+  bail_point: l.bailPoint ?? null,
   thesis: l.thesis ?? null,
 });
 

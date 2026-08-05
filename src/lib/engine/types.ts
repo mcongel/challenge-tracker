@@ -53,8 +53,10 @@ export interface PositionLot {
   buyDate: string;
   shares: number;
   avgCost: number;
+  /** The Xu exit: the catalyst move you're selling into. Required at entry. */
   exitTarget: number;
-  bailPoint: number;
+  /** Legacy — the pre-Xu downside exit. Optional since Rules v3 (2026-08-05). */
+  bailPoint?: number | null;
   thesis?: string | null;
 }
 

@@ -85,7 +85,7 @@ export function Help() {
           </li>
         </ul>
         <p className="mt-3 bg-amber-50 text-amber-800 rounded-md px-3 py-2 text-sm">
-          <Rule n="11" /> Net contributed caps at $25,000. From 80% you'll see a "room left" badge;
+          <Rule n="12" /> Net contributed caps at $25,000. From 80% you'll see a "room left" badge;
           the form refuses any deposit that would cross the cap.
         </p>
       </Card>
@@ -98,9 +98,10 @@ export function Help() {
         <div className="space-y-3 text-sm text-gray-600 leading-relaxed">
           <p>
             <strong className="text-gray-900">Open</strong> (<Screen to="/positions">Positions</Screen>{' '}
-            → Add position): exit target and bail point are required — no entry without a defined
-            exit <Rule n="7" />. As you type the ticker, the wash-sale check cites any loss-sale in
-            the past 31 days, challenge account or outside, with its date and account <Rule n="8" />.
+            → Add position): one stock at a time <Rule n="7" /> — the form warns if another name is
+            still riding — and the exit target is required: the catalyst move you're selling into{' '}
+            <Rule n="8" />. As you type the ticker, the wash-sale check cites any loss-sale in the
+            past 31 days, challenge account or outside, with its date and account <Rule n="9" />.
             The Buy hits the ledger automatically.
           </p>
           <p>
@@ -201,7 +202,7 @@ export function Help() {
           what the same money in VOO would be worth now — and after a year of snapshots, the{' '}
           <strong className="text-gray-900">rolling 12-month verdict</strong>. Beating VOO after
           tax is what proves the edge, and it's the only thing that raises the contribution cap{' '}
-          <Rule n="9 & 11" />. Two honesty notes, printed on the screen too: the shadow ignores VOO
+          <Rule n="10 & 12" />. Two honesty notes, printed on the screen too: the shadow ignores VOO
           dividends and taxes — both flatter you. The real hurdle is higher than the lead suggests.
         </p>
       </Card>
