@@ -343,7 +343,7 @@ function LotsModal({ position: p, onClose }: { position: ParkedPosition; onClose
                   </div>
                   <div>
                     <label className={labelCls}>Price ($)</label>
-                    <input type="number" step="0.01" min="0.01" required value={price}
+                    <input type="number" step="any" min="0" required value={price}
                       onChange={(e) => setPrice(e.target.value)} className={inputCls} />
                   </div>
                 </>
@@ -351,13 +351,13 @@ function LotsModal({ position: p, onClose }: { position: ParkedPosition; onClose
                 <>
                   <div>
                     <label className={labelCls}>Amount ($)</label>
-                    <input type="number" step="0.01" min="0.01" required value={amount}
+                    <input type="number" step="any" min="0" required value={amount}
                       onChange={(e) => setAmount(e.target.value)} className={inputCls} />
                   </div>
                   {reinvested && (
                     <div>
                       <label className={labelCls}>Reinvest price ($)</label>
-                      <input type="number" step="0.01" min="0.01" value={price}
+                      <input type="number" step="any" min="0" value={price}
                         onChange={(e) => setPrice(e.target.value)} className={inputCls} />
                     </div>
                   )}
