@@ -544,6 +544,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     await wipe('position_lots', exampleData.lots.map((l) => l.id));
     await wipe('cash_events', exampleData.cashEvents.map((e) => e.id));
     await wipe('benchmark_deposits', benchIds);
+    // Snapshots recorded while example data was loaded are fiction — the race
+    // chart would keep drawing the fake numbers forever. Reset history; the
+    // next app open writes a fresh snapshot from real data.
+    const { error: snapErr } = await client.from('snapshots').delete().gte('date', '1900-01-01');
+    if (snapErr) throw snapErr;
+    snapshotAttempted.current = false;
     await refresh();
   }, [refresh, state.benchmarkDeposits, exampleData]);
 
