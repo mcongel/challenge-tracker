@@ -92,14 +92,6 @@ export function Rules() {
     <div className="max-w-3xl">
       <PageHeader title="The Rules" />
 
-      {/* The epigraph — why this page exists */}
-      <blockquote className="mb-6 border-l-4 border-green-600 pl-4 py-1">
-        <p className="font-display text-lg sm:text-xl italic text-gray-700 leading-relaxed" style={{ letterSpacing: '-0.01em' }}>
-          Written while calm. The person who wrote these is smarter about risk than the person
-          staring at a big number later.
-        </p>
-      </blockquote>
-
       {/* The goal */}
       <div className="bg-white rounded-lg shadow-lg p-6 sm:p-8 mb-4">
         <h2 className="font-display text-xl font-bold text-gray-900 mb-3" style={{ letterSpacing: '-0.01em' }}>
