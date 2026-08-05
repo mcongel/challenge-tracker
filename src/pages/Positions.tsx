@@ -8,7 +8,7 @@ import { useData } from '../contexts/DataContext';
 import { priceMapFor } from '../lib/alerts';
 import type { CloseAllocation, PositionLot } from '../lib/engine';
 import {
-  closeShares, costBasis, daysHeld, longTermDate, marketValue, roundCents,
+  addDays, closeShares, costBasis, daysHeld, longTermDate, marketValue, roundCents,
   unrealized, unrealizedPct, washSaleConflicts,
 } from '../lib/engine';
 import {
@@ -138,7 +138,15 @@ export function Positions() {
                         </td>
                         <td className="px-4 py-2 text-right tabular-nums">{daysHeld(lot, today)}</td>
                         <td className="px-4 py-2 tabular-nums text-gray-500">{longTermDate(lot.buyDate)}</td>
-                        <td className="px-4 py-2 text-right tabular-nums text-gray-500">{formatCurrency(lot.exitTarget)}</td>
+                        <td className={cn('px-4 py-2 text-right tabular-nums',
+                          price >= lot.exitTarget
+                            ? 'font-bold text-green-600'
+                            : 'text-gray-500')}>
+                          {formatCurrency(lot.exitTarget)}
+                          {price >= lot.exitTarget && (
+                            <span className="block text-[10px] font-bold uppercase">target hit</span>
+                          )}
+                        </td>
                       </tr>
                     );
                   }),
@@ -416,6 +424,13 @@ function ClosePositionModal({ ticker, onClose }: { ticker: string; onClose: () =
                 {formatCurrency(roundCents(realizedTotal))}
               </span>
             </p>
+            {realizedTotal < 0 && (
+              <p className="text-xs text-amber-800 bg-amber-50 rounded px-2 py-1">
+                Selling at a loss: rebuying {ticker} anywhere — any brokerage — before{' '}
+                <span className="font-bold tabular-nums">{addDays(closeDate, 31)}</span> disallows
+                this loss (Rule 9).
+              </p>
+            )}
             <p className="text-xs text-gray-400">
               Writes the trades to the Trade Log and the Sell to the Cash Ledger. Remaining shares
               keep their original buy dates.

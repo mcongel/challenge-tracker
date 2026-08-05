@@ -105,6 +105,12 @@ export function Help() {
             The Buy hits the ledger automatically.
           </p>
           <p>
+            <strong className="text-gray-900">When the target hits</strong>, the app tells you: a
+            green banner on the Dashboard and a "target hit" flag on the position the moment the
+            live price crosses your written exit target. Selling at a loss? The close form shows
+            the exact date before which a rebuy anywhere disallows it.
+          </p>
+          <p>
             <strong className="text-gray-900">Close</strong> (Close button on the ticker): shares —
             partial is fine — price, date. Oldest lots go first (FIFO); "customize per lot"
             overrides. Remaining shares keep their buy dates. The trades and the Sell event are

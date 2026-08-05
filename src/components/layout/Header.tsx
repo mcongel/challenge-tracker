@@ -96,21 +96,26 @@ export function Header({ onMenuClick }: HeaderProps) {
 
 function ExportModal({ onClose }: { onClose: () => void }) {
   const {
-    cashEvents, lots, trades, milestones, benchmarkDeposits, parked, snapshots,
-    carryforwards, overrides,
+    cashEvents, lots, trades, milestones, benchmarkDeposits, parked, parkedLots, parkedSales,
+    accounts, outsideSales, snapshots, carryforwards, overrides, settings,
   } = useData();
   const stamp = todayISO();
 
   const tables: [string, Record<string, unknown>[]][] = [
+    ['accounts', accounts as unknown as Record<string, unknown>[]],
     ['cash-events', cashEvents as unknown as Record<string, unknown>[]],
     ['position-lots', lots as unknown as Record<string, unknown>[]],
     ['trades', trades as unknown as Record<string, unknown>[]],
+    ['outside-sales', outsideSales as unknown as Record<string, unknown>[]],
     ['milestones', milestones as unknown as Record<string, unknown>[]],
     ['benchmark-deposits', benchmarkDeposits as unknown as Record<string, unknown>[]],
     ['parked-positions', parked as unknown as Record<string, unknown>[]],
+    ['parked-lots', parkedLots as unknown as Record<string, unknown>[]],
+    ['parked-sales', parkedSales as unknown as Record<string, unknown>[]],
     ['snapshots', snapshots as unknown as Record<string, unknown>[]],
     ['loss-carryforwards', carryforwards as unknown as Record<string, unknown>[]],
     ['price-overrides', Object.entries(overrides).map(([ticker, price]) => ({ ticker, price }))],
+    ['app-settings', Object.entries(settings).map(([key, value]) => ({ key, value }))],
   ];
 
   return (

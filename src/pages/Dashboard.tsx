@@ -41,6 +41,7 @@ const compactUsd = (v: number) =>
 
 const ALERT_STYLES: Record<string, string> = {
   MILESTONE: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+  TARGET: 'bg-green-50 text-green-700 border-green-200',
   TAX: 'bg-yellow-50 text-yellow-800 border-amber-300 border',
   CAP: 'bg-red-50 text-red-700 border-red-200',
 };
@@ -48,7 +49,7 @@ const ALERT_STYLES: Record<string, string> = {
 export function Dashboard() {
   const {
     lots, cashEvents, trades, milestones, benchmarkDeposits, parked, snapshots,
-    carryforwards, overrides, quotes, contributionCap, loading, error,
+    carryforwards, overrides, quotes, contributionCap, concentrationCap, loading, error,
   } = useData();
   const isDark = useIsDark();
   const today = todayISO();
@@ -63,7 +64,8 @@ export function Dashboard() {
   const next = nextMilestone(account);
   const ytd = netRealizedYTD(trades, taxYearOf(today));
   const alerts = activeAlerts({
-    lots, cashEvents, trades, milestones, parked, carryforwards, overrides, quotes, today,
+    lots, cashEvents, trades, milestones, parked, carryforwards, overrides, quotes,
+    concentrationCap, today,
   });
 
   const chartData = snapshots.map((s) => ({

@@ -7,13 +7,16 @@ import { AccountSelect } from '../components/ui/AccountSelect';
 import { ErrorCard, SkeletonTable } from './CashLedger';
 import { useData } from '../contexts/DataContext';
 import {
-  computeCheck, formatQuarterLabel, quarterOf, quartersEnded, reservedByAccount, roundCents,
-  taxYearOf,
+  computeCheck, estimatedPileTax, formatQuarterLabel, quarterOf, quartersEnded,
+  reservedByAccount, roundCents, taxYearOf,
 } from '../lib/engine';
 import { cn, formatCurrency, primaryBtnCls, todayISO } from '../lib/utils';
 
 export function TaxReserve() {
-  const { trades, cashEvents, carryforwards, accounts, loading, error } = useData();
+  const { trades, cashEvents, carryforwards, accounts, parkedSales, loading, error } = useData();
+  const pileEstTax = parkedSales
+    .filter((s) => s.costBasis != null)
+    .reduce((sum, s) => sum + estimatedPileTax(s.proceeds - (s.costBasis as number), s.shares, s.ltShares), 0);
   const [rowError, setRowError] = useState<string | null>(null);
   const [pendingSkim, setPendingSkim] = useState<{ label: string; amount: number } | null>(null);
 
@@ -129,6 +132,12 @@ export function TaxReserve() {
             "Mark moved" writes the TaxSkim to the Cash Ledger — the money leaves the score's account
             column and joins the reserved column. There is no off switch.
           </p>
+          {pileEstTax > 0 && (
+            <p className="px-4 pb-3 text-xs text-gray-400">
+              Separately: parked-pile sales carry est. tax of ~{formatCurrency(roundCents(pileEstTax))}{' '}
+              — the skim never covers the pile; set that aside yourself.
+            </p>
+          )}
         </div>
       )}
 

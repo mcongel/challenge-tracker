@@ -27,7 +27,11 @@ const CATEGORY_STYLES: Record<ParkedPosition['category'], string> = {
 const fmtSh = (n: number) => String(Number(n.toFixed(4)));
 
 export function ParkedPile() {
-  const { parked, parkedLots, parkedSales, accounts, tickerNames, deleteParkedSale, loading, error } = useData();
+  const {
+    parked, parkedLots, parkedSales, accounts, tickerNames, deleteParkedSale, concentrationCap,
+    updateSetting, loading, error,
+  } = useData();
+  const [capOpen, setCapOpen] = useState(false);
   const [deletingSale, setDeletingSale] = useState<ParkedSale | null>(null);
   const [editingSale, setEditingSale] = useState<ParkedSale | null>(null);
 
@@ -52,7 +56,7 @@ export function ParkedPile() {
   const divTotal = dividendsCollected(parkedLots);
 
   const today = todayISO();
-  const c = concentration(parked);
+  const c = concentration(parked, concentrationCap);
   const totalBasis = parked.reduce((s, p) => s + parkedCostBasis(p), 0);
   const ordered = [...parked].sort((a, b) => {
     if (a.trimRank != null && b.trimRank != null) return a.trimRank - b.trimRank;
@@ -97,7 +101,10 @@ export function ParkedPile() {
           <p className={cn('mt-0.5 text-xl font-bold tabular-nums', c.overCap ? 'text-red-600' : 'text-gray-900')}>
             {formatPercent(c.semiPct)}
           </p>
-          <p className="text-xs text-gray-400 mt-0.5">cap 50%</p>
+          <button onClick={() => setCapOpen(true)}
+            className="text-xs text-gray-400 mt-0.5 hover:text-green-700 hover:underline">
+            cap {formatPercent(concentrationCap, 0)} — edit
+          </button>
         </div>
         <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
           <p className="text-xs font-medium text-gray-500">Semi/AI + adjacent</p>
@@ -332,7 +339,60 @@ export function ParkedPile() {
         />
       )}
       {editingSale && <EditSaleModal sale={editingSale} onClose={() => setEditingSale(null)} />}
+      {capOpen && (
+        <CapModal
+          current={concentrationCap}
+          onSave={(v) => updateSetting('concentration_cap', v)}
+          onClose={() => setCapOpen(false)}
+        />
+      )}
     </div>
+  );
+}
+
+function CapModal({
+  current, onSave, onClose,
+}: {
+  current: number;
+  onSave: (v: number) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [pct, setPct] = useState(String(Math.round(current * 100)));
+  const [formError, setFormError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const v = Number(pct);
+    if (!v || v <= 0 || v > 100) return setFormError('Enter a percentage between 1 and 100.');
+    setBusy(true);
+    try {
+      await onSave(v / 100);
+      onClose();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal isOpen onClose={onClose} title="Semi/AI concentration cap">
+      <form onSubmit={submit} className="space-y-3">
+        <div>
+          <label className={labelCls}>Cap (% of pile)</label>
+          <input type="number" min="1" max="100" step="1" required value={pct} autoFocus
+            onChange={(e) => setPct(e.target.value)} className={inputCls} />
+        </div>
+        <p className="text-xs text-gray-400">
+          Above this share of the pile in Semi/AI, the OVER CAP banner fires — trim semis first.
+        </p>
+        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
+        <div className="flex justify-end">
+          <button type="submit" disabled={busy} className={primaryBtnCls}>{busy ? 'Saving…' : 'Save cap'}</button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

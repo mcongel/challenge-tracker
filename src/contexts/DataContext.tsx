@@ -85,8 +85,11 @@ const EMPTY: DataState = {
 interface DataContextValue extends DataState {
   loading: boolean;
   error: string | null;
-  /** Rule 11 cap from app_settings; null (feature off) if the row is missing. */
+  /** Rule 12 cap from app_settings; null (feature off) if the row is missing. */
   contributionCap: number | null;
+  /** Semi/AI concentration cap (editable, default 50%). */
+  concentrationCap: number;
+  updateSetting: (key: string, value: unknown) => Promise<void>;
   /** Delayed API quotes (override-free). Merged view: overrides win. */
   quotes: Record<string, number>;
   quotesAsOf: number | null;
@@ -111,7 +114,11 @@ interface DataContextValue extends DataState {
   setTradeWashSale: (id: string, washSale: boolean) => Promise<void>;
   deleteTrade: (id: string) => Promise<void>;
   updateParked: (id: string, patch: Partial<Omit<ParkedPosition, 'id'>>) => Promise<void>;
-  recordMilestone: (m: MilestoneRecord) => Promise<void>;
+  /** Optionally finishes the story: the 25% buys VOO in the parked pile. */
+  recordMilestone: (
+    m: MilestoneRecord,
+    voo?: { accountId: string; price: number },
+  ) => Promise<void>;
   addAccount: (name: string, kind: AccountKind, broker?: string) => Promise<void>;
   addOutsideSale: (sale: Omit<OutsideSale, 'id'>) => Promise<void>;
   deleteOutsideSale: (id: string) => Promise<void>;
@@ -779,7 +786,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, [refresh, state.benchmarkDeposits, exampleData]);
 
   const recordMilestone = useCallback(
-    async (m: MilestoneRecord) => {
+    async (m: MilestoneRecord, voo?: { accountId: string; price: number }) => {
       const client = db();
       const { error: err } = await client.from('milestones').insert(milestonePayload(m));
       if (err) throw err;
@@ -789,10 +796,61 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           type: 'MilestoneBank',
           amount: m.amountBanked,
           sourceDestination: m.parkedDestination ?? 'VOO (parked pile)',
+          destinationAccountId: voo?.accountId ?? null,
           notes: `Milestone ${m.level} banked`,
         }),
       );
       if (cashErr) throw cashErr;
+
+      // The banked 25% buys VOO in the pile — record the position too.
+      if (voo && voo.price > 0) {
+        const shares = m.amountBanked / voo.price;
+        const existing = state.parked.find(
+          (p) => p.ticker === 'VOO' && p.accountId === voo.accountId,
+        );
+        let positionId = existing?.id;
+        if (!positionId) {
+          const { data, error: posErr } = await client
+            .from('parked_positions')
+            .insert({
+              ticker: 'VOO',
+              account_id: voo.accountId,
+              category: 'Other',
+              shares,
+              avg_cost: voo.price,
+              current_price: voo.price,
+              notes: 'Banked floors — never trim fuel',
+            })
+            .select('id')
+            .single();
+          if (posErr) throw posErr;
+          positionId = data.id as string;
+        }
+        const { error: lotErr } = await client.from('parked_lots').insert(
+          parkedLotPayload({
+            parkedPositionId: positionId,
+            date: m.dateHit,
+            source: 'purchase',
+            shares,
+            price: voo.price,
+            amount: roundCents(m.amountBanked),
+            notes: `Milestone ${m.level} bank`,
+          }),
+        );
+        if (lotErr) throw lotErr;
+        if (existing) await recomputeParkedAggregate(positionId);
+      }
+      await refresh();
+    },
+    [refresh, state.parked, recomputeParkedAggregate],
+  );
+
+  const updateSetting = useCallback(
+    async (key: string, value: unknown) => {
+      const { error: err } = await db()
+        .from('app_settings')
+        .upsert({ key, value, updated_at: new Date().toISOString() });
+      if (err) throw err;
       await refresh();
     },
     [refresh],
@@ -820,6 +878,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const contributionCap =
     typeof state.settings.contribution_cap === 'number' ? state.settings.contribution_cap : null;
+  const concentrationCap =
+    typeof state.settings.concentration_cap === 'number' ? state.settings.concentration_cap : 0.5;
 
   const value = useMemo(
     () => ({
@@ -830,6 +890,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       refreshQuotes,
       tickerNames,
       contributionCap,
+      concentrationCap,
+      updateSetting,
       loading,
       error,
       refresh,
@@ -858,7 +920,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       state, mergedParked, quotes, quotesAsOf, refreshQuotes, tickerNames, contributionCap,
-      loading, error,
+      concentrationCap, updateSetting, loading, error,
       refresh, addCashEvent, deleteCashEvent, addLot, closePosition, recordSplit,
       setTradeWashSale, deleteTrade, updateParked, recordMilestone, addAccount, addOutsideSale,
       deleteOutsideSale, recordTrim, addParkedLot, deleteParkedLot, addParkedPosition,

@@ -1,0 +1,22 @@
+name: Daily snapshot
+
+on:
+  schedule:
+    # 21:20 UTC weekdays ≈ shortly after US market close (4:20/5:20pm ET).
+    - cron: '20 21 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsx scripts/daily-snapshot.ts
+        env:
+          SUPABASE_URL: https://mlvntnbgboinjhmavwao.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

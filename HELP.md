@@ -24,6 +24,8 @@ The app is a scoreboard that enforces the rules. **Total Score = account value +
 - The wash-sale check runs as you type: any loss-sale of that ticker in the past 31 days — challenge account or a recorded outside sale — gets cited with its date and account (Rule 9).
 - The Buy is written to the Cash Ledger automatically.
 
+**When the target hits**, the app tells you: a green banner on the Dashboard and a "target hit" flag on the position the moment the live price crosses your written exit target. Selling at a loss? The close form shows the exact date before which a rebuy anywhere disallows it.
+
 **Closing** (Close button on the ticker):
 - Enter shares (partial is fine), price, date. Oldest lots close first (FIFO); "customize per lot" overrides that. Remaining shares keep their original buy dates.
 - The app writes the Trade Log entries and the Sell cash event. After a big win or loss (|gain| > 25%), a quiet link appears: *read the rules*. Especially after the wins.

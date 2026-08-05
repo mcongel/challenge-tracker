@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Landmark } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Modal } from '../components/ui/Modal';
+import { AccountSelect } from '../components/ui/AccountSelect';
 import { ErrorCard, SkeletonTable } from './CashLedger';
 import { useData } from '../contexts/DataContext';
 import { priceMapFor } from '../lib/alerts';
@@ -143,11 +144,16 @@ function RecordBankingModal({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const { recordMilestone } = useData();
+  const { recordMilestone, accounts, overrides, quotes } = useData();
+  const outsideAccounts = accounts.filter((a) => a.kind === 'outside');
   const [valueAtHit, setValueAtHit] = useState(String(roundCents(accountValue)));
   const [amount, setAmount] = useState(String(skimDue(accountValue)));
   const [dateHit, setDateHit] = useState(todayISO());
   const [destination, setDestination] = useState('VOO (parked pile)');
+  const [recordVoo, setRecordVoo] = useState(true);
+  const [vooAccountId, setVooAccountId] = useState(outsideAccounts[0]?.id ?? '');
+  const vooQuote = overrides['VOO'] ?? quotes['VOO'];
+  const [vooPrice, setVooPrice] = useState(vooQuote ? String(vooQuote) : '');
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -156,15 +162,21 @@ function RecordBankingModal({
     setFormError(null);
     const banked = Number(amount);
     if (!banked || banked <= 0) return setFormError('Banked amount must be positive.');
+    if (recordVoo && (!vooAccountId || !Number(vooPrice) || Number(vooPrice) <= 0)) {
+      return setFormError('Recording the VOO purchase needs the account and the VOO price paid.');
+    }
     setBusy(true);
     try {
-      await recordMilestone({
-        level: row.level,
-        accountValueAtHit: Number(valueAtHit),
-        dateHit,
-        amountBanked: roundCents(banked),
-        parkedDestination: destination || null,
-      });
+      await recordMilestone(
+        {
+          level: row.level,
+          accountValueAtHit: Number(valueAtHit),
+          dateHit,
+          amountBanked: roundCents(banked),
+          parkedDestination: destination || null,
+        },
+        recordVoo ? { accountId: vooAccountId, price: Number(vooPrice) } : undefined,
+      );
       onDone();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : String(err));
@@ -199,6 +211,28 @@ function RecordBankingModal({
             <input value={destination} onChange={(e) => setDestination(e.target.value)} className={inputCls} />
           </div>
         </div>
+        <label className="flex items-center gap-2 text-sm text-gray-700">
+          <input type="checkbox" checked={recordVoo} onChange={(e) => setRecordVoo(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-600" />
+          Also record the VOO purchase in the parked pile
+        </label>
+        {recordVoo && (
+          <div className="grid grid-cols-2 gap-3">
+            <AccountSelect accounts={accounts} value={vooAccountId} onChange={setVooAccountId}
+              label="Pile account" kinds={['outside']} allowNone={false} />
+            <div>
+              <label className={labelCls}>VOO price paid ($)</label>
+              <input type="number" step="any" min="0.01" value={vooPrice}
+                onChange={(e) => setVooPrice(e.target.value)} className={inputCls} />
+            </div>
+          </div>
+        )}
+        {recordVoo && Number(amount) > 0 && Number(vooPrice) > 0 && (
+          <p className="text-xs text-gray-400 tabular-nums">
+            Buys {(Number(amount) / Number(vooPrice)).toFixed(4)} sh of VOO — its own dated pile lot,
+            marked never-trim-fuel.
+          </p>
+        )}
         <div className="flex gap-2 text-xs text-gray-400">
           <Landmark className="h-4 w-4 flex-shrink-0" />
           <span>Writes the MilestoneBank event to the Cash Ledger. This money never comes back to the trading account.</span>
