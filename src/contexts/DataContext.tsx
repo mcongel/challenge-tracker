@@ -191,6 +191,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     void refresh();
   }, [refresh]);
 
+  const lastQuoteFetchAt = useRef(0);
   const refreshQuotes = useCallback(async () => {
     const tickers = [
       ...new Set([...state.lots.map((l) => l.ticker), ...state.parked.map((p) => p.ticker), 'VOO']),
@@ -204,13 +205,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         asOf?: number;
       };
       if (body.quotes) {
-        setQuotes(Object.fromEntries(Object.entries(body.quotes).map(([t, q]) => [t, q.price])));
+        // Merge instead of replace: a throttled fetch that misses a ticker
+        // shouldn't blank out the price we already had.
+        setQuotes((prev) => ({
+          ...prev,
+          ...Object.fromEntries(Object.entries(body.quotes).map(([t, q]) => [t, q.price])),
+        }));
         setQuotesAsOf(body.asOf ?? Date.now());
+        lastQuoteFetchAt.current = Date.now();
       }
     } catch {
       // Local dev without the Pages Function, or the API is down — silently fine.
     }
   }, [state.lots, state.parked]);
+
+  const refreshQuotesRef = useRef(refreshQuotes);
+  useEffect(() => {
+    refreshQuotesRef.current = refreshQuotes;
+  }, [refreshQuotes]);
 
   const quotesFetched = useRef(false);
   useEffect(() => {
@@ -218,6 +230,29 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     quotesFetched.current = true;
     void refreshQuotes();
   }, [loading, error, refreshQuotes]);
+
+  // Keep an open tab honest: refetch every 30 minutes (the server cache TTL)
+  // and when the tab regains focus after going stale. Cache hits cost nothing.
+  useEffect(() => {
+    const THIRTY_MIN = 30 * 60 * 1000;
+    const FOCUS_STALE = 5 * 60 * 1000;
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') void refreshQuotesRef.current();
+    }, THIRTY_MIN);
+    const onVisibility = () => {
+      if (
+        document.visibilityState === 'visible' &&
+        Date.now() - lastQuoteFetchAt.current > FOCUS_STALE
+      ) {
+        void refreshQuotesRef.current();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, []);
 
   // Daily snapshot: one row per calendar day, written on first load. Skipped
   // until a VOO price exists — recording shadowValue = 0 would poison the
