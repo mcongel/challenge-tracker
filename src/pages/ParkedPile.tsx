@@ -132,7 +132,6 @@ export function ParkedPile() {
                 <th className="px-2 py-3 w-8" />
                 <th className="px-4 py-3">Ticker</th>
                 <th className="px-4 py-3">Account</th>
-                <th className="px-4 py-3">Category</th>
                 <th className="px-4 py-3 text-right">Shares</th>
                 <th className="px-4 py-3 text-right">Avg cost</th>
                 <th className="px-4 py-3 text-right">Price</th>
@@ -141,7 +140,6 @@ export function ParkedPile() {
                 <th className="px-4 py-3" title="Shares held >1 year sell at long-term rates — the only legitimate funding trims (Rule 5). Expand a row for the lot-by-lot schedule.">
                   Funding unlock
                 </th>
-                <th className="px-4 py-3 text-right">Trim rank</th>
                 <th className="px-2 py-3" />
               </tr>
             </thead>
@@ -163,15 +161,20 @@ export function ParkedPile() {
                         )}
                       </td>
                       <td className="px-4 py-3 font-medium">
-                        {p.ticker}
+                        <span className="flex items-center gap-1.5">
+                          {p.ticker}
+                          <span className={cn('inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium', CATEGORY_STYLES[p.category])}>
+                            {p.category}
+                          </span>
+                          {p.trimRank != null && (
+                            <span className="inline-block rounded-full bg-gray-100 text-gray-500 px-1.5 py-0.5 text-[10px] font-bold" title={`Trim rank ${p.trimRank}`}>
+                              #{p.trimRank}
+                            </span>
+                          )}
+                        </span>
                         {p.notes && <p className="text-xs font-normal text-gray-400 max-w-[14rem] truncate">{p.notes}</p>}
                       </td>
                       <td className="px-4 py-3 text-gray-500">{p.account}</td>
-                      <td className="px-4 py-3">
-                        <span className={cn('inline-block rounded-full px-2 py-0.5 text-xs font-medium', CATEGORY_STYLES[p.category])}>
-                          {p.category}
-                        </span>
-                      </td>
                       <td className="px-4 py-3 text-right tabular-nums">{fmtSh(p.shares)}</td>
                       <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(p.avgCost)}</td>
                       <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(p.currentPrice)}</td>
@@ -183,7 +186,6 @@ export function ParkedPile() {
                       <td className="px-4 py-3 whitespace-nowrap">
                         <UnlockCell summary={summ} />
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-gray-500">{p.trimRank ?? '—'}</td>
                       <td className="px-2 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <button onClick={() => setTrimming(p)} className="p-1 rounded hover:bg-green-50" aria-label={`Trim ${p.ticker}`} title="Record trim">
                           <Scissors className="h-4 w-4 text-gray-300 hover:text-green-700" />
@@ -195,7 +197,7 @@ export function ParkedPile() {
                     </tr>
                     {expanded && (
                       <tr>
-                        <td colSpan={12} className="bg-gray-50 px-4 sm:px-6 py-4">
+                        <td colSpan={10} className="bg-gray-50 px-4 sm:px-6 py-4">
                           <LotPanel position={p} summary={summ} />
                         </td>
                       </tr>
