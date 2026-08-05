@@ -132,7 +132,9 @@ export function ParkedPile() {
                 <th className="px-4 py-3 text-right">Price</th>
                 <th className="px-4 py-3 text-right">Value</th>
                 <th className="px-4 py-3 text-right">Unreal %</th>
-                <th className="px-4 py-3">Funding unlock</th>
+                <th className="px-4 py-3" title="Shares held >1 year sell at long-term rates — the only legitimate funding trims (Rule 5). Expand a row for the lot-by-lot schedule.">
+                  Funding unlock
+                </th>
                 <th className="px-4 py-3 text-right">Trim rank</th>
                 <th className="px-2 py-3" />
               </tr>
@@ -309,29 +311,31 @@ function AddHoldingModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** One short line; the full story lives in the row's expansion panel. */
+/** One readable pill; hover for the full sentence, expand the row for detail.
+ * "Unlocked" = held >1 year = sellable at long-term rates (Rule 5 trim fuel). */
 function UnlockCell({ summary: s }: { summary: UnlockSummary }) {
+  const pill = (cls: string, text: string) => (
+    <span
+      title={unlockSentence(s)}
+      className={cn('inline-block rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap', cls)}
+    >
+      {text}
+    </span>
+  );
   if (s.totalShares <= 0) return <span className="text-xs text-gray-400">—</span>;
   if (s.unknownShares >= s.totalShares - 1e-9) {
-    return <span className="text-xs text-amber-800">add dates</span>;
+    return pill('bg-amber-50 text-amber-800', 'needs lot dates');
   }
   if (s.unlockedShares >= s.totalShares - 1e-9) {
-    return (
-      <span className="inline-block rounded-full bg-green-50 text-green-700 px-2 py-0.5 text-xs font-medium">
-        UNLOCKED
-      </span>
-    );
+    return pill('bg-green-50 text-green-700', 'all unlocked');
   }
   if (s.unlockedShares > 0) {
-    return (
-      <span className="text-xs font-medium text-green-700 tabular-nums">
-        {fmtSh(s.unlockedShares)}/{fmtSh(s.totalShares)} sh
-      </span>
-    );
+    return pill('bg-green-50 text-green-700', `${fmtSh(s.unlockedShares)} sh unlocked`);
   }
-  return (
-    <span className="text-xs text-gray-500 tabular-nums">→ {s.nextUnlock?.date ?? 'locked'}</span>
-  );
+  if (s.nextUnlock) {
+    return pill('bg-gray-100 text-gray-600', `locked until ${s.nextUnlock.date}`);
+  }
+  return pill('bg-gray-100 text-gray-600', 'locked');
 }
 
 function unlockSentence(s: UnlockSummary): string {
