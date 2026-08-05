@@ -11,6 +11,7 @@ import {
   pileTotal, reservedTotal, roundCents, shadowValue, taxYearOf, totalScore,
 } from '../lib/engine';
 import { ErrorCard } from './CashLedger';
+import { ContributionCapBadge } from '../components/ui/ContributionCapBadge';
 import { cn, formatCurrency, formatCurrencyWhole, todayISO } from '../lib/utils';
 
 /** Chart palette — validated (dataviz six checks) for both surfaces.
@@ -46,7 +47,7 @@ const ALERT_STYLES: Record<string, string> = {
 export function Dashboard() {
   const {
     lots, cashEvents, trades, milestones, benchmarkDeposits, parked, snapshots,
-    carryforwards, overrides, quotes, loading, error,
+    carryforwards, overrides, quotes, contributionCap, loading, error,
   } = useData();
   const isDark = useIsDark();
   const today = todayISO();
@@ -152,7 +153,10 @@ export function Dashboard() {
           <p className="mt-0.5 text-xl font-bold tabular-nums text-gray-900">
             {formatCurrency(netContributed(cashEvents))}
           </p>
-          <p className="text-xs text-gray-400 mt-0.5">true stake so far</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            true stake so far{contributionCap !== null && ` · ${formatCurrencyWhole(contributionCap)} cap`}
+          </p>
+          <ContributionCapBadge netContributed={netContributed(cashEvents)} cap={contributionCap} />
         </div>
         <Link to="/benchmark" className="bg-white rounded-lg shadow-lg p-4 density-aware-card block hover:bg-gray-50 transition-colors">
           <p className="text-xs font-medium text-gray-500">Lead vs VOO shadow</p>

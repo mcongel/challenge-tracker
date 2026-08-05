@@ -43,6 +43,8 @@ interface DataState {
   carryforwards: LossCarryforward[];
   /** Pinned manual prices — beat API quotes until cleared. */
   overrides: Record<string, number>;
+  /** challenge.app_settings rows, key → jsonb value. */
+  settings: Record<string, unknown>;
 }
 
 const EMPTY: DataState = {
@@ -55,11 +57,14 @@ const EMPTY: DataState = {
   snapshots: [],
   carryforwards: [],
   overrides: {},
+  settings: {},
 };
 
 interface DataContextValue extends DataState {
   loading: boolean;
   error: string | null;
+  /** Rule 11 cap from app_settings; null (feature off) if the row is missing. */
+  contributionCap: number | null;
   /** Delayed API quotes (override-free). Merged view: overrides win. */
   quotes: Record<string, number>;
   quotesAsOf: number | null;
@@ -100,7 +105,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     try {
       setError(null);
       const client = db();
-      const [cash, lots, trades, milestones, bench, parked, snaps, carry, overrides] =
+      const [cash, lots, trades, milestones, bench, parked, snaps, carry, overrides, settings] =
         await Promise.all([
           client.from('cash_events').select('*').order('date').order('created_at'),
           client.from('position_lots').select('*').order('buy_date'),
@@ -111,10 +116,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           client.from('snapshots').select('*').order('date'),
           client.from('loss_carryforwards').select('*'),
           client.from('price_overrides').select('*'),
+          client.from('app_settings').select('*'),
         ]);
       const firstError =
         cash.error ?? lots.error ?? trades.error ?? milestones.error ?? bench.error ??
-        parked.error ?? snaps.error ?? carry.error ?? overrides.error;
+        parked.error ?? snaps.error ?? carry.error ?? overrides.error ?? settings.error;
       if (firstError) throw firstError;
       setState({
         cashEvents: (cash.data ?? []).map(mapCashEvent),
@@ -128,6 +134,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         overrides: Object.fromEntries(
           (overrides.data ?? []).map((r) => [r.ticker, Number(r.price)]),
         ),
+        settings: Object.fromEntries((settings.data ?? []).map((r) => [r.key, r.value])),
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -425,6 +432,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [refresh],
   );
 
+  const contributionCap =
+    typeof state.settings.contribution_cap === 'number' ? state.settings.contribution_cap : null;
+
   const value = useMemo(
     () => ({
       ...state,
@@ -432,6 +442,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       quotes,
       quotesAsOf,
       refreshQuotes,
+      contributionCap,
       loading,
       error,
       refresh,
@@ -448,9 +459,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       clearOverride,
     }),
     [
-      state, mergedParked, quotes, quotesAsOf, refreshQuotes, loading, error, refresh,
-      addCashEvent, deleteCashEvent, addLot, closePosition, recordSplit, setTradeWashSale,
-      deleteTrade, updateParked, recordMilestone, setOverride, clearOverride,
+      state, mergedParked, quotes, quotesAsOf, refreshQuotes, contributionCap, loading, error,
+      refresh, addCashEvent, deleteCashEvent, addLot, closePosition, recordSplit,
+      setTradeWashSale, deleteTrade, updateParked, recordMilestone, setOverride, clearOverride,
     ],
   );
 

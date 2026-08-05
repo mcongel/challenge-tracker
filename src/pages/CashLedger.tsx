@@ -4,9 +4,15 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
 import { useData } from '../contexts/DataContext';
+import { ContributionCapBadge } from '../components/ui/ContributionCapBadge';
 import type { CashEventType } from '../lib/engine';
-import { cashSummary, roundCents, withRunningBalance } from '../lib/engine';
-import { cn, formatCurrency, inputCls, labelCls, primaryBtnCls, todayISO } from '../lib/utils';
+import {
+  cashSummary, contributionStatus, depositExceedsCap, netContributed, roundCents,
+  withRunningBalance,
+} from '../lib/engine';
+import {
+  cn, formatCurrency, formatCurrencyWhole, inputCls, labelCls, primaryBtnCls, todayISO,
+} from '../lib/utils';
 
 const TYPES: CashEventType[] = [
   'Deposit', 'Withdrawal', 'Buy', 'Sell', 'Dividend', 'TaxSkim', 'MilestoneBank', 'Fee',
@@ -26,7 +32,7 @@ const TYPE_STYLES: Record<CashEventType, string> = {
 const ADDS_CASH: CashEventType[] = ['Deposit', 'Sell', 'Dividend'];
 
 export function CashLedger() {
-  const { cashEvents, addCashEvent, deleteCashEvent, loading, error } = useData();
+  const { cashEvents, addCashEvent, deleteCashEvent, contributionCap, loading, error } = useData();
   const [modalOpen, setModalOpen] = useState(false);
   const [rowError, setRowError] = useState<string | null>(null);
 
@@ -71,6 +77,9 @@ export function CashLedger() {
               (value as number) < 0 ? 'text-red-600' : 'text-gray-900')}>
               {formatCurrency(value as number)}
             </p>
+            {label === 'Net contributed' && (
+              <ContributionCapBadge netContributed={summary.netContributed} cap={contributionCap} />
+            )}
           </div>
         ))}
       </div>
@@ -145,6 +154,7 @@ function AddEventModal({
   onClose: () => void;
   onAdd: (e: Parameters<ReturnType<typeof useData>['addCashEvent']>[0], voo?: number) => Promise<void>;
 }) {
+  const { cashEvents, contributionCap } = useData();
   const [date, setDate] = useState(todayISO());
   const [type, setType] = useState<CashEventType>('Deposit');
   const [amount, setAmount] = useState('');
@@ -164,6 +174,18 @@ function AddEventModal({
     if (!amt || amt <= 0) return setFormError('Amount must be positive — the type sets direction.');
     if (type === 'Deposit' && (!vooPrice || Number(vooPrice) <= 0)) {
       return setFormError("Deposits need that day's VOO price — it creates the shadow purchase for the honest test.");
+    }
+    // Rule 11: net contributed caps at the configured value. Refuse, don't warn.
+    if (type === 'Deposit' && contributionCap !== null) {
+      const contributed = netContributed(cashEvents);
+      if (depositExceedsCap(contributed, amt, contributionCap)) {
+        const room = contributionStatus(contributed, contributionCap).remaining;
+        return setFormError(
+          room > 0
+            ? `Rule 11: this deposit would exceed the ${formatCurrencyWhole(contributionCap)} contribution cap — only ${formatCurrency(roundCents(room))} of room remains.`
+            : `Rule 11: the ${formatCurrencyWhole(contributionCap)} contribution cap is reached — growth by trading only. Raising the cap requires beating VOO over a trailing 12 months.`,
+        );
+      }
     }
     setBusy(true);
     try {

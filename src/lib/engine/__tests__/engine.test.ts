@@ -186,6 +186,19 @@ describe('holding-period boundaries', () => {
   });
 });
 
+describe('contribution cap — Rule 11', () => {
+  it('OK below 80%, NEARING at 80%, REACHED at the cap', async () => {
+    const { contributionStatus, depositExceedsCap } = await import('../contribution');
+    expect(contributionStatus(10_000, 25_000).state).toBe('OK');
+    expect(contributionStatus(19_999, 25_000).state).toBe('OK');
+    expect(contributionStatus(20_000, 25_000)).toMatchObject({ state: 'NEARING', remaining: 5_000 });
+    expect(contributionStatus(25_000, 25_000)).toMatchObject({ state: 'REACHED', remaining: 0 });
+    expect(contributionStatus(26_000, 25_000).remaining).toBe(0);
+    expect(depositExceedsCap(20_000, 5_000, 25_000)).toBe(false);
+    expect(depositExceedsCap(20_000, 5_000.01, 25_000)).toBe(true);
+  });
+});
+
 describe('benchmark — rolling 12-month verdict', () => {
   const snap = (date: string, totalScore: number, shadowVooValue: number): Snapshot => ({
     date, totalScore, shadowVooValue,

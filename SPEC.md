@@ -23,7 +23,7 @@ Reference implementation: `Challenge_Account_Tracker.xlsx` in this repo — the 
 ### Milestone ratchet
 - Below $100,000 account value: everything rides. No skims except tax reserve.
 - Milestones: $100k, $200k, $400k, $800k, $1M (extendable by doubling).
-- When account value crosses a milestone: bank **25% of account value at hit** into VOO in the parked pile. Banked money NEVER returns to the trading account. The app must surface "MILESTONE HIT — BANK NOW" prominently and nag until the banking event is recorded.
+- When account value crosses a milestone: bank **25% of account value at the moment of hit** into VOO in the parked pile. Banked money NEVER returns to the trading account. The app must surface "MILESTONE HIT — BANK NOW" prominently and nag until the banking event is recorded.
 
 ### Tax reserve
 - Quarterly: reserve **30% of net realized gains YTD** (challenge account only), moved out of play. If YTD net realized is negative, reserve nothing.
@@ -31,13 +31,15 @@ Reference implementation: `Challenge_Account_Tracker.xlsx` in this repo — the 
 - This rule is non-negotiable in the UI — no setting to disable it.
 
 ### Funding rules
-- Stake additions come ONLY from: (a) long-term trims of the parked pile (held > 1 year, ~21% combined tax vs ~28–30% short-term), or (b) fresh income. NEVER from selling parked winners short-term, and NEVER refilling after losses from the parked pile.
+- **Timing:** the bankroll is never refilled in response to losses. A drawdown or round-trip is a result, not a reason to add money. Additions happen only on the pre-planned schedule.
+- **Source:** stake additions come only from long-term trims of the parked pile (held > 1 year, planned in advance; ~21% combined tax vs ~28–30% short-term) or fresh income. Never from selling parked winners at short-term rates. NVDA, TSLA, and the MSTR conviction hold are never trim fuel.
+- **Contribution cap:** net contributed caps at $25,000. Once reached, the account grows only by trading; raising the cap requires beating VOO after tax over a trailing 12 months. The cap is a config value (`contribution_cap` in `challenge.app_settings`), not a hardcoded constant. UI: at 80% of the cap the Dashboard and Cash Ledger show a subtle badge with remaining room; at 100% they show a persistent "Contribution cap reached — growth by trading only" state, and Deposit entries that would exceed the cap are refused.
 - The parked pile is tracked for context and funding-calendar purposes but is walled off from all scoreboard math.
 
 ### Trading guardrails (the Xu rules)
 - No margin. No options. No chasing stocks that have already run.
 - Every position requires an **exit target** and **bail point** entered at open. The app should refuse (or loudly warn on) a position entry without them.
-- Wash sale rule: selling at a loss then rebuying the same ticker within 31 days — in ANY account (Robinhood, Cash App, Stash) — disallows the loss. The app should warn when a buy is entered for a ticker with a loss-sale in the past 31 days.
+- Wash sale rule: selling at a loss then rebuying the same ticker within 31 days — in ANY account (Robinhood, Cash App, Stash) — disallows the loss. This applies in both directions — don't buy a name in the challenge account within 31 days of selling it at a loss anywhere else. The app should warn when a buy is entered for a ticker with a loss-sale in the past 31 days.
 
 ### Benchmark (the honest test)
 - Every deposit into the challenge account creates a "shadow" VOO purchase: shares = deposit / VOO price that day.

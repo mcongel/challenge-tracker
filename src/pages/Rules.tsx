@@ -22,7 +22,7 @@ const SECTIONS: { heading: string; rules: Rule[] }[] = [
       {
         n: 2,
         text: (
-          <>At $100,000 and at every double after (200k, 400k, 800k): <strong>bank 25% of the account</strong> into VOO in the parked pile. Banked money <strong>NEVER returns to the table</strong>.</>
+          <>At $100,000 and at every double after (200k, 400k, 800k): <strong>bank 25% of account value at the moment of hit</strong> into VOO in the parked pile. Banked money <strong>NEVER returns to the table</strong>.</>
         ),
       },
       {
@@ -34,13 +34,13 @@ const SECTIONS: { heading: string; rules: Rule[] }[] = [
       {
         n: 4,
         text: (
-          <>The bankroll is <strong>never refilled from the parked pile</strong> (NVDA, TSLA, MU, AMAT, and the other winners). New money comes only from scheduled long-term trims or fresh income.</>
+          <>The bankroll is <strong>never refilled in response to losses</strong>. A drawdown or round-trip is a result, not a reason to add money. Additions happen only on the pre-planned schedule.</>
         ),
       },
       {
         n: 5,
         text: (
-          <>Stake additions: only from <strong>long-term trims</strong> (held &gt;1 year) to avoid short-term tax rates.</>
+          <>Stake additions come only from <strong>long-term trims of the parked pile</strong> (held &gt;1 year, planned in advance) or fresh income. Never from selling parked winners at short-term rates. <strong>NVDA, TSLA, and the MSTR conviction hold are never trim fuel.</strong></>
         ),
       },
     ],
@@ -63,7 +63,7 @@ const SECTIONS: { heading: string; rules: Rule[] }[] = [
       {
         n: 8,
         text: (
-          <>No rebuying a name sold at a loss within <strong>31 days</strong> — in ANY account (Robinhood, Cash App, Stash). Wash sales cross brokerages.</>
+          <>No rebuying a name sold at a loss within <strong>31 days</strong> — in ANY account (Robinhood, Cash App, Stash). Wash sales cross brokerages. This applies <strong>in both directions</strong> — don't buy a name in the challenge account within 31 days of selling it at a loss anywhere else.</>
         ),
       },
     ],
@@ -80,7 +80,13 @@ const SECTIONS: { heading: string; rules: Rule[] }[] = [
       {
         n: 10,
         text: (
-          <><strong>Success = banked pile + account value when done.</strong> Ending at $180k means winning $180k, not missing 82% of a million.</>
+          <><strong>Success = Total Score: account value + banked floors + tax reserved.</strong> Ending at $180k means winning $180k, not missing 82% of a million.</>
+        ),
+      },
+      {
+        n: 11,
+        text: (
+          <><strong>Net contributed caps at $25,000.</strong> Once reached, the account grows only by trading. Raising the cap requires <strong>beating VOO after tax over a trailing 12 months</strong> — not wanting to.</>
         ),
       },
     ],
