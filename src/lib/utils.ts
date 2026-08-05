@@ -9,6 +9,17 @@ export function formatCurrency(value: number): string {
   return usd.format(value);
 }
 
+const usdWhole = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  maximumFractionDigits: 0,
+});
+
+/** Whole dollars — for hero numbers where cents are noise. */
+export function formatCurrencyWhole(value: number): string {
+  return usdWhole.format(value);
+}
+
 export function formatPercent(fraction: number, digits = 1): string {
   return `${(fraction * 100).toFixed(digits)}%`;
 }

@@ -11,7 +11,7 @@ import {
   pileTotal, reservedTotal, roundCents, shadowValue, taxYearOf, totalScore,
 } from '../lib/engine';
 import { ErrorCard } from './CashLedger';
-import { cn, formatCurrency, todayISO } from '../lib/utils';
+import { cn, formatCurrency, formatCurrencyWhole, todayISO } from '../lib/utils';
 
 /** Chart palette — validated (dataviz six checks) for both surfaces.
  * You = brand green (green-600 both modes); Shadow VOO = indigo 600/500.
@@ -96,7 +96,7 @@ export function Dashboard() {
       <div className="bg-white rounded-lg shadow-lg p-6 sm:p-8 text-center">
         <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Total Score</p>
         <p className="mt-1 text-5xl sm:text-6xl font-bold tabular-nums text-gray-900">
-          {loading ? '…' : formatCurrency(roundCents(score))}
+          {loading ? '…' : formatCurrencyWhole(score)}
         </p>
         <p className="mt-2 text-xs text-gray-400">
           account + banked floors + tax reserved · every banked dollar is already won
