@@ -1,4 +1,4 @@
-import type { Trade } from './types';
+import type { OutsideSale, Trade } from './types';
 import { addDays } from './dates';
 import { realizedGain } from './trades';
 
@@ -6,8 +6,8 @@ export const WASH_SALE_WINDOW_DAYS = 31;
 
 /**
  * Loss-sales of this ticker whose close date falls within the 31 days before
- * a proposed buy — rebuying now would disallow those losses. Only sees trades
- * recorded in the app; sales in outside accounts can't be detected.
+ * a proposed buy — rebuying now would disallow those losses. Challenge-account
+ * trades only; use washSaleConflicts for the cross-account picture.
  */
 export function washSaleWarnings(trades: Trade[], ticker: string, buyDate: string): Trade[] {
   const windowStart = addDays(buyDate, -WASH_SALE_WINDOW_DAYS);
@@ -18,4 +18,28 @@ export function washSaleWarnings(trades: Trade[], ticker: string, buyDate: strin
       t.closeDate >= windowStart &&
       t.closeDate <= buyDate,
   );
+}
+
+export interface WashSaleConflicts {
+  /** Challenge-account loss-sales inside the window. */
+  trades: Trade[];
+  /** Recorded outside-account loss-sales inside the window (Rule 8 crosses brokerages). */
+  outside: OutsideSale[];
+}
+
+/** The full Rule 8 check for a proposed buy: loss-sales of the ticker in the
+ * past 31 days from the challenge account AND any recorded outside account. */
+export function washSaleConflicts(
+  trades: Trade[],
+  outsideSales: OutsideSale[],
+  ticker: string,
+  buyDate: string,
+): WashSaleConflicts {
+  const windowStart = addDays(buyDate, -WASH_SALE_WINDOW_DAYS);
+  return {
+    trades: washSaleWarnings(trades, ticker, buyDate),
+    outside: outsideSales.filter(
+      (s) => s.ticker === ticker && s.loss && s.saleDate >= windowStart && s.saleDate <= buyDate,
+    ),
+  };
 }

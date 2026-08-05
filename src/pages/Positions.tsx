@@ -9,7 +9,7 @@ import { priceMapFor } from '../lib/alerts';
 import type { CloseAllocation, PositionLot } from '../lib/engine';
 import {
   closeShares, costBasis, daysHeld, longTermDate, marketValue, roundCents,
-  unrealized, unrealizedPct, washSaleWarnings,
+  unrealized, unrealizedPct, washSaleConflicts,
 } from '../lib/engine';
 import {
   cn, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls, secondaryBtnCls, todayISO,
@@ -160,7 +160,7 @@ export function Positions() {
 }
 
 function AddPositionModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
-  const { addLot, trades } = useData();
+  const { addLot, trades, outsideSales, accounts } = useData();
   const [ticker, setTicker] = useState('');
   const [buyDate, setBuyDate] = useState(todayISO());
   const [shares, setShares] = useState('');
@@ -171,7 +171,15 @@ function AddPositionModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const washWarnings = ticker ? washSaleWarnings(trades, ticker.toUpperCase(), buyDate) : [];
+  const conflicts = ticker
+    ? washSaleConflicts(trades, outsideSales, ticker.toUpperCase(), buyDate)
+    : { trades: [], outside: [] };
+  const washCitations = [
+    ...conflicts.trades.map((t) => `${t.closeDate} (challenge account)`),
+    ...conflicts.outside.map(
+      (s) => `${s.saleDate} (${accounts.find((a) => a.id === s.accountId)?.name ?? 'outside'})`,
+    ),
+  ];
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -216,13 +224,13 @@ function AddPositionModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
           </div>
         </div>
 
-        {washWarnings.length > 0 && (
+        {washCitations.length > 0 && (
           <div className="flex gap-2 bg-amber-50 text-amber-800 rounded-md px-3 py-2 text-sm">
             <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
             <span>
               Wash-sale window: {ticker.toUpperCase()} was sold at a loss on{' '}
-              {washWarnings.map((t) => t.closeDate).join(', ')} — rebuying within 31 days disallows
-              that loss. This crosses brokerages.
+              {washCitations.join(', ')} — buying within 31 days disallows that loss. Rule 8
+              crosses brokerages.
             </span>
           </div>
         )}

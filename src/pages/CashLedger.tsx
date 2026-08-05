@@ -4,6 +4,7 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
 import { useData } from '../contexts/DataContext';
+import { AccountSelect } from '../components/ui/AccountSelect';
 import { ContributionCapBadge } from '../components/ui/ContributionCapBadge';
 import type { CashEventType } from '../lib/engine';
 import {
@@ -31,8 +32,14 @@ const TYPE_STYLES: Record<CashEventType, string> = {
 
 const ADDS_CASH: CashEventType[] = ['Deposit', 'Sell', 'Dividend'];
 
+function accountName(accounts: { id: string; name: string }[], id?: string | null): string | null {
+  if (!id) return null;
+  return accounts.find((a) => a.id === id)?.name ?? null;
+}
+
 export function CashLedger() {
-  const { cashEvents, addCashEvent, deleteCashEvent, contributionCap, loading, error } = useData();
+  const { cashEvents, addCashEvent, deleteCashEvent, contributionCap, accounts, loading, error } =
+    useData();
   const [modalOpen, setModalOpen] = useState(false);
   const [rowError, setRowError] = useState<string | null>(null);
 
@@ -117,7 +124,12 @@ export function CashLedger() {
                   </td>
                   <td className="px-4 py-3 font-medium">{e.ticker ?? ''}</td>
                   <td className="px-4 py-3 text-gray-500 max-w-[16rem] truncate">
-                    {[e.sourceDestination, e.notes].filter(Boolean).join(' · ')}
+                    {[
+                      accountName(accounts, e.accountId) && `from ${accountName(accounts, e.accountId)}`,
+                      accountName(accounts, e.destinationAccountId) && `→ ${accountName(accounts, e.destinationAccountId)}`,
+                      e.sourceDestination,
+                      e.notes,
+                    ].filter(Boolean).join(' · ')}
                   </td>
                   <td className={cn('px-4 py-3 text-right tabular-nums font-medium',
                     ADDS_CASH.includes(e.type) ? 'text-green-600' : 'text-gray-900')}>
@@ -154,7 +166,7 @@ function AddEventModal({
   onClose: () => void;
   onAdd: (e: Parameters<ReturnType<typeof useData>['addCashEvent']>[0], voo?: number) => Promise<void>;
 }) {
-  const { cashEvents, contributionCap } = useData();
+  const { cashEvents, contributionCap, accounts } = useData();
   const [date, setDate] = useState(todayISO());
   const [type, setType] = useState<CashEventType>('Deposit');
   const [amount, setAmount] = useState('');
@@ -162,10 +174,13 @@ function AddEventModal({
   const [source, setSource] = useState('');
   const [notes, setNotes] = useState('');
   const [vooPrice, setVooPrice] = useState('');
+  const [fromAccount, setFromAccount] = useState('');
+  const [toAccount, setToAccount] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const needsTicker = ['Buy', 'Sell', 'Dividend'].includes(type);
+  const hasDestination = ['Withdrawal', 'TaxSkim', 'MilestoneBank'].includes(type);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -196,6 +211,8 @@ function AddEventModal({
           amount: roundCents(amt),
           ticker: needsTicker && ticker ? ticker.toUpperCase() : null,
           sourceDestination: source || null,
+          accountId: type === 'Deposit' && fromAccount ? fromAccount : null,
+          destinationAccountId: hasDestination && toAccount ? toAccount : null,
           notes: notes || null,
         },
         type === 'Deposit' ? Number(vooPrice) : undefined,
@@ -243,8 +260,16 @@ function AddEventModal({
             </div>
           ) : <div />}
         </div>
+        {type === 'Deposit' && (
+          <AccountSelect accounts={accounts} value={fromAccount} onChange={setFromAccount}
+            label="From account" kinds={['bank', 'outside']} />
+        )}
+        {hasDestination && (
+          <AccountSelect accounts={accounts} value={toAccount} onChange={setToAccount}
+            label="To account" kinds={type === 'TaxSkim' ? ['bank'] : ['bank', 'outside']} />
+        )}
         <div>
-          <label className={labelCls}>Source / destination</label>
+          <label className={labelCls}>Source / destination note</label>
           <input value={source} onChange={(e) => setSource(e.target.value)} className={inputCls} placeholder="Cash App sales" />
         </div>
         <div>

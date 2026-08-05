@@ -2,10 +2,12 @@
  * Numeric columns are coerced with Number() defensively. */
 import { supabase } from './supabase';
 import type {
+  Account,
   BenchmarkDeposit,
   CashEvent,
   LossCarryforward,
   MilestoneRecord,
+  OutsideSale,
   ParkedPosition,
   PositionLot,
   Snapshot,
@@ -26,6 +28,8 @@ export const mapCashEvent = (r: any): CashEvent => ({
   amount: Number(r.amount),
   ticker: r.ticker,
   sourceDestination: r.source_destination,
+  accountId: r.account_id,
+  destinationAccountId: r.destination_account_id,
   notes: r.notes,
 });
 
@@ -35,7 +39,34 @@ export const cashEventPayload = (e: Omit<CashEvent, 'id'>) => ({
   amount: e.amount,
   ticker: e.ticker ?? null,
   source_destination: e.sourceDestination ?? null,
+  account_id: e.accountId ?? null,
+  destination_account_id: e.destinationAccountId ?? null,
   notes: e.notes ?? null,
+});
+
+export const mapAccount = (r: any): Account => ({
+  id: r.id,
+  name: r.name,
+  broker: r.broker,
+  kind: r.kind,
+  notes: r.notes,
+});
+
+export const mapOutsideSale = (r: any): OutsideSale => ({
+  id: r.id,
+  accountId: r.account_id,
+  ticker: r.ticker,
+  saleDate: r.sale_date,
+  loss: r.loss,
+  notes: r.notes,
+});
+
+export const outsideSalePayload = (s: Omit<OutsideSale, 'id'>) => ({
+  account_id: s.accountId,
+  ticker: s.ticker,
+  sale_date: s.saleDate,
+  loss: s.loss,
+  notes: s.notes ?? null,
 });
 
 export const mapLot = (r: any): PositionLot => ({
@@ -104,10 +135,12 @@ export const mapBenchmarkDeposit = (r: any): BenchmarkDeposit => ({
   vooPriceThatDay: Number(r.voo_price_that_day),
 });
 
+/** Expects rows selected with `*, account:accounts(name)`. */
 export const mapParked = (r: any): ParkedPosition => ({
   id: r.id,
   ticker: r.ticker,
-  account: r.account,
+  accountId: r.account_id,
+  account: r.account?.name ?? '',
   category: r.category,
   shares: Number(r.shares),
   avgCost: Number(r.avg_cost),
@@ -117,9 +150,9 @@ export const mapParked = (r: any): ParkedPosition => ({
   notes: r.notes,
 });
 
-export const parkedPayload = (p: Omit<ParkedPosition, 'id'>) => ({
+export const parkedPayload = (p: Omit<ParkedPosition, 'id' | 'account'>) => ({
   ticker: p.ticker,
-  account: p.account,
+  account_id: p.accountId,
   category: p.category,
   shares: p.shares,
   avg_cost: p.avgCost,

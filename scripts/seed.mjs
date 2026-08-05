@@ -38,9 +38,26 @@ async function fail(step, error) {
 }
 
 // ------------------------------------------------------------ parked pile
+// Accounts are FK references; resolve fixture names to ids (creating any
+// missing outside accounts first).
+const accountIds = new Map();
+{
+  const names = [...new Set(fixture.positions.map((p) => p.account))];
+  const { error: insErr } = await supabase
+    .from('accounts')
+    .upsert(names.map((name) => ({ name, kind: 'outside' })), {
+      onConflict: 'name',
+      ignoreDuplicates: true,
+    });
+  if (insErr) await fail('accounts upsert', insErr);
+  const { data, error } = await supabase.from('accounts').select('id, name');
+  if (error) await fail('accounts read', error);
+  for (const a of data) accountIds.set(a.name, a.id);
+}
+
 const parkedRows = fixture.positions.map((p) => ({
   ticker: p.ticker,
-  account: p.account,
+  account_id: accountIds.get(p.account),
   category: p.category,
   shares: p.shares,
   avg_cost: p.avgCost,
@@ -51,7 +68,7 @@ const parkedRows = fixture.positions.map((p) => ({
 {
   const { error } = await supabase
     .from('parked_positions')
-    .upsert(parkedRows, { onConflict: 'ticker,account' });
+    .upsert(parkedRows, { onConflict: 'ticker,account_id' });
   if (error) await fail('parked_positions upsert', error);
   console.log(`Parked pile: upserted ${parkedRows.length} positions.`);
 }

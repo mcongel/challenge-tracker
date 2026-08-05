@@ -1,16 +1,17 @@
 import { useState } from 'react';
-import { Archive, Pencil } from 'lucide-react';
+import { Archive, Pencil, Settings2 } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
+import { AccountSelect } from '../components/ui/AccountSelect';
 import { ErrorCard, SkeletonTable } from './CashLedger';
 import { useData } from '../contexts/DataContext';
-import type { ParkedPosition } from '../lib/engine';
+import type { AccountKind, ParkedPosition } from '../lib/engine';
 import {
-  concentration, ltStatus, parkedCostBasis, parkedMarketValue, roundCents,
+  concentration, ltStatus, parkedCostBasis, parkedMarketValue, roundCents, trackedBalance,
 } from '../lib/engine';
 import {
-  cn, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls, todayISO,
+  cn, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls, secondaryBtnCls, todayISO,
 } from '../lib/utils';
 
 const CATEGORY_STYLES: Record<ParkedPosition['category'], string> = {
@@ -23,6 +24,7 @@ const CATEGORY_STYLES: Record<ParkedPosition['category'], string> = {
 export function ParkedPile() {
   const { parked, loading, error } = useData();
   const [editing, setEditing] = useState<ParkedPosition | null>(null);
+  const [accountsOpen, setAccountsOpen] = useState(false);
 
   const today = todayISO();
   const c = concentration(parked);
@@ -39,6 +41,12 @@ export function ParkedPile() {
       <PageHeader
         title="Parked Pile"
         subtitle="The foundation — context only, never in the score. Funding source and skim destination; never refill fuel."
+        actions={
+          <button onClick={() => setAccountsOpen(true)}
+            className={cn(secondaryBtnCls, 'flex items-center gap-1.5')} title="Manage accounts">
+            <Settings2 className="h-4 w-4" /> Accounts
+          </button>
+        }
       />
 
       {error && <ErrorCard message={error} />}
@@ -156,17 +164,107 @@ export function ParkedPile() {
       )}
 
       {editing && <EditParkedModal position={editing} onClose={() => setEditing(null)} />}
+      {accountsOpen && <AccountsModal onClose={() => setAccountsOpen(false)} />}
     </div>
   );
 }
 
+const KIND_STYLES: Record<AccountKind, string> = {
+  challenge: 'bg-green-50 text-green-700',
+  outside: 'bg-indigo-50 text-indigo-700',
+  bank: 'bg-sky-50 text-sky-700',
+};
+
+function AccountsModal({ onClose }: { onClose: () => void }) {
+  const { accounts, cashEvents, addAccount } = useData();
+  const [name, setName] = useState('');
+  const [kind, setKind] = useState<AccountKind>('bank');
+  const [broker, setBroker] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    setBusy(true);
+    try {
+      await addAccount(name.trim(), kind, broker.trim() || undefined);
+      setName(''); setBroker('');
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal isOpen onClose={onClose} title="Accounts">
+      <div className="space-y-4">
+        <div className="space-y-1.5">
+          {accounts.map((a) => {
+            const tracked = a.kind === 'bank' ? trackedBalance(a.id, cashEvents) : null;
+            return (
+              <div key={a.id} className="flex items-center justify-between rounded-md border border-gray-200 px-3 py-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-sm font-medium text-gray-700 truncate">{a.name}</span>
+                  <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', KIND_STYLES[a.kind])}>
+                    {a.kind}
+                  </span>
+                </div>
+                {tracked !== null && (
+                  <span className="text-xs text-gray-500 tabular-nums" title="Tracked strategy cash — not the real account balance">
+                    {formatCurrency(roundCents(tracked))} tracked
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <form onSubmit={submit} className="space-y-3 border-t border-gray-100 pt-3">
+          <p className="text-xs font-medium text-gray-500">Add account</p>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="col-span-2">
+              <label className={labelCls}>Name</label>
+              <input required value={name} onChange={(e) => setName(e.target.value)}
+                className={inputCls} placeholder="Ally Savings" />
+            </div>
+            <div>
+              <label className={labelCls}>Kind</label>
+              <select value={kind} onChange={(e) => setKind(e.target.value as AccountKind)} className={inputCls}>
+                <option value="bank">bank</option>
+                <option value="outside">outside</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className={labelCls}>Broker / institution (optional)</label>
+            <input value={broker} onChange={(e) => setBroker(e.target.value)} className={inputCls} />
+          </div>
+          {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
+          <div className="flex justify-end">
+            <button type="submit" disabled={busy} className={primaryBtnCls}>
+              {busy ? 'Adding…' : 'Add account'}
+            </button>
+          </div>
+        </form>
+        <p className="text-xs text-gray-400">
+          Accounts are labels for where money lives — they never change the score. Bank balances
+          show tracked strategy cash only, not your real balance.
+        </p>
+      </div>
+    </Modal>
+  );
+}
+
 function EditParkedModal({ position: p, onClose }: { position: ParkedPosition; onClose: () => void }) {
-  const { updateParked } = useData();
+  const { updateParked, accounts } = useData();
   const [price, setPrice] = useState(String(p.currentPrice || ''));
   const [shares, setShares] = useState(String(p.shares));
   const [avgCost, setAvgCost] = useState(String(p.avgCost));
   const [buyDate, setBuyDate] = useState(p.buyDate ?? '');
   const [trimRank, setTrimRank] = useState(p.trimRank != null ? String(p.trimRank) : '');
+  const [accountId, setAccountId] = useState(p.accountId);
   const [notes, setNotes] = useState(p.notes ?? '');
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -182,6 +280,7 @@ function EditParkedModal({ position: p, onClose }: { position: ParkedPosition; o
         avgCost: Number(avgCost),
         buyDate: buyDate || null,
         trimRank: trimRank === '' ? null : Number(trimRank),
+        accountId,
         notes: notes || null,
       });
       onClose();
@@ -223,6 +322,8 @@ function EditParkedModal({ position: p, onClose }: { position: ParkedPosition; o
               onChange={(e) => setTrimRank(e.target.value)} className={inputCls} placeholder="1 = trim first" />
           </div>
         </div>
+        <AccountSelect accounts={accounts} value={accountId} onChange={setAccountId}
+          label="Account (e.g. after an ACATS transfer)" kinds={['outside', 'challenge']} allowNone={false} />
         <div>
           <label className={labelCls}>Notes</label>
           <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls} />

@@ -18,6 +18,31 @@ export interface CashEvent {
   amount: number;
   ticker?: string | null;
   sourceDestination?: string | null;
+  /** Where the money came from (Deposits). Context only — never score math. */
+  accountId?: string | null;
+  /** Where the money went (TaxSkim / MilestoneBank / Withdrawal). */
+  destinationAccountId?: string | null;
+  notes?: string | null;
+}
+
+export type AccountKind = 'challenge' | 'outside' | 'bank';
+
+export interface Account {
+  id: string;
+  name: string;
+  broker?: string | null;
+  kind: AccountKind;
+  notes?: string | null;
+}
+
+/** A sale in an outside brokerage — recorded only so Rule 8's cross-account
+ * wash-sale window has teeth. Never part of score or YTD math. */
+export interface OutsideSale {
+  id: string;
+  accountId: string;
+  ticker: string;
+  saleDate: string;
+  loss: boolean;
   notes?: string | null;
 }
 
@@ -75,6 +100,8 @@ export type ParkedCategory = 'Semi/AI' | 'AI-adjacent' | 'BTC' | 'Other';
 export interface ParkedPosition {
   id: string;
   ticker: string;
+  accountId: string;
+  /** Display name resolved from the accounts table. */
   account: string;
   category: ParkedCategory;
   shares: number;

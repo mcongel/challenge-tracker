@@ -175,6 +175,7 @@ describe('Milestones tab — nothing hit yet', () => {
 describe('Parked Pile tab — full seed', () => {
   const positions: ParkedPosition[] = parkedFixture.positions.map((p, i) => ({
     id: `p${i}`,
+    accountId: `a${i}`,
     buyDate: null,
     ...p,
     category: p.category as ParkedPosition['category'],

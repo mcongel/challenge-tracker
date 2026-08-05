@@ -168,6 +168,40 @@ describe('wash-sale window — 31 days, rebuy direction', () => {
     expect(washSaleWarnings([gainSale], 'MU', '2026-02-01')).toHaveLength(0);
     expect(washSaleWarnings([lossSale], 'AMD', '2026-02-01')).toHaveLength(0);
   });
+
+  it('crosses brokerages: recorded outside loss-sales trigger too', async () => {
+    const { washSaleConflicts } = await import('../washSale');
+    const outside = [
+      { id: 'o1', accountId: 'cashapp', ticker: 'MU', saleDate: '2026-02-01', loss: true },
+      { id: 'o2', accountId: 'cashapp', ticker: 'MU', saleDate: '2026-02-01', loss: false },
+      { id: 'o3', accountId: 'stash', ticker: 'AMD', saleDate: '2026-02-01', loss: true },
+    ];
+    const hits = washSaleConflicts([lossSale], outside, 'MU', '2026-02-15');
+    expect(hits.trades).toHaveLength(1);
+    // Only the loss-flagged MU sale counts; the gain and the AMD sale don't.
+    expect(hits.outside.map((s) => s.id)).toEqual(['o1']);
+    const outOfWindow = washSaleConflicts([], outside, 'MU', '2026-03-05');
+    expect(outOfWindow.outside).toHaveLength(0);
+  });
+});
+
+describe('accounts — tracked strategy cash', () => {
+  it('destination adds, source subtracts, others ignored', async () => {
+    const { trackedBalance, reservedByAccount } = await import('../accounts');
+    const events = [
+      { id: 'e1', date: '2026-08-10', type: 'Deposit', amount: 6000, accountId: 'bank1' },
+      { id: 'e2', date: '2026-10-05', type: 'TaxSkim', amount: 436.53, destinationAccountId: 'bank1' },
+      { id: 'e3', date: '2026-10-06', type: 'TaxSkim', amount: 100, destinationAccountId: 'bank2' },
+      { id: 'e4', date: '2026-10-07', type: 'TaxSkim', amount: 50 },
+      { id: 'e5', date: '2026-11-01', type: 'Buy', amount: 999, ticker: 'MU' },
+    ] as import('../types').CashEvent[];
+    expect(trackedBalance('bank1', events)).toBeCloseTo(436.53 - 6000, 9);
+    expect(trackedBalance('bank2', events)).toBe(100);
+    const grouped = reservedByAccount(events);
+    expect(grouped.get('bank1')).toBeCloseTo(436.53, 9);
+    expect(grouped.get('bank2')).toBe(100);
+    expect(grouped.get(null)).toBe(50);
+  });
 });
 
 describe('holding-period boundaries', () => {
@@ -178,7 +212,7 @@ describe('holding-period boundaries', () => {
   });
 
   it('parked LT status: countdown, unlocked, and missing buy date', () => {
-    const p = { id: 'p', ticker: 'MU', account: 'Cash App', category: 'Semi/AI' as const, shares: 1, avgCost: 1, currentPrice: 1 };
+    const p = { id: 'p', ticker: 'MU', accountId: 'a1', account: 'Cash App', category: 'Semi/AI' as const, shares: 1, avgCost: 1, currentPrice: 1 };
     expect(ltStatus({ ...p, buyDate: '2025-08-03' }, '2026-08-04').kind).toBe('UNLOCKED');
     const counting = ltStatus({ ...p, buyDate: '2026-08-01' }, '2026-08-04');
     expect(counting).toMatchObject({ kind: 'COUNTDOWN', daysLeft: 363, unlockDate: '2027-08-02' });

@@ -1,10 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type {
+  Account,
+  AccountKind,
   BenchmarkDeposit,
   CashEvent,
   CloseAllocation,
   LossCarryforward,
   MilestoneRecord,
+  OutsideSale,
   ParkedPosition,
   PositionLot,
   Snapshot,
@@ -20,15 +23,18 @@ import {
   cashEventPayload,
   db,
   lotPayload,
+  mapAccount,
   mapBenchmarkDeposit,
   mapCarryforward,
   mapCashEvent,
   mapLot,
   mapMilestone,
+  mapOutsideSale,
   mapParked,
   mapSnapshot,
   mapTrade,
   milestonePayload,
+  outsideSalePayload,
   tradePayload,
 } from '../lib/db';
 
@@ -45,6 +51,9 @@ interface DataState {
   overrides: Record<string, number>;
   /** challenge.app_settings rows, key → jsonb value. */
   settings: Record<string, unknown>;
+  /** Where money lives. Labels and context only — never score math. */
+  accounts: Account[];
+  outsideSales: OutsideSale[];
 }
 
 const EMPTY: DataState = {
@@ -58,6 +67,8 @@ const EMPTY: DataState = {
   carryforwards: [],
   overrides: {},
   settings: {},
+  accounts: [],
+  outsideSales: [],
 };
 
 interface DataContextValue extends DataState {
@@ -88,6 +99,9 @@ interface DataContextValue extends DataState {
   deleteTrade: (id: string) => Promise<void>;
   updateParked: (id: string, patch: Partial<Omit<ParkedPosition, 'id'>>) => Promise<void>;
   recordMilestone: (m: MilestoneRecord) => Promise<void>;
+  addAccount: (name: string, kind: AccountKind, broker?: string) => Promise<void>;
+  addOutsideSale: (sale: Omit<OutsideSale, 'id'>) => Promise<void>;
+  deleteOutsideSale: (id: string) => Promise<void>;
   setOverride: (ticker: string, price: number) => Promise<void>;
   clearOverride: (ticker: string) => Promise<void>;
 }
@@ -105,22 +119,27 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     try {
       setError(null);
       const client = db();
-      const [cash, lots, trades, milestones, bench, parked, snaps, carry, overrides, settings] =
-        await Promise.all([
-          client.from('cash_events').select('*').order('date').order('created_at'),
-          client.from('position_lots').select('*').order('buy_date'),
-          client.from('trades').select('*').order('close_date'),
-          client.from('milestones').select('*').order('level'),
-          client.from('benchmark_deposits').select('*').order('date'),
-          client.from('parked_positions').select('*').order('ticker'),
-          client.from('snapshots').select('*').order('date'),
-          client.from('loss_carryforwards').select('*'),
-          client.from('price_overrides').select('*'),
-          client.from('app_settings').select('*'),
-        ]);
+      const [
+        cash, lots, trades, milestones, bench, parked, snaps, carry, overrides, settings,
+        accounts, outsideSales,
+      ] = await Promise.all([
+        client.from('cash_events').select('*').order('date').order('created_at'),
+        client.from('position_lots').select('*').order('buy_date'),
+        client.from('trades').select('*').order('close_date'),
+        client.from('milestones').select('*').order('level'),
+        client.from('benchmark_deposits').select('*').order('date'),
+        client.from('parked_positions').select('*, account:accounts(name)').order('ticker'),
+        client.from('snapshots').select('*').order('date'),
+        client.from('loss_carryforwards').select('*'),
+        client.from('price_overrides').select('*'),
+        client.from('app_settings').select('*'),
+        client.from('accounts').select('*').order('name'),
+        client.from('outside_sales').select('*').order('sale_date'),
+      ]);
       const firstError =
         cash.error ?? lots.error ?? trades.error ?? milestones.error ?? bench.error ??
-        parked.error ?? snaps.error ?? carry.error ?? overrides.error ?? settings.error;
+        parked.error ?? snaps.error ?? carry.error ?? overrides.error ?? settings.error ??
+        accounts.error ?? outsideSales.error;
       if (firstError) throw firstError;
       setState({
         cashEvents: (cash.data ?? []).map(mapCashEvent),
@@ -135,6 +154,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           (overrides.data ?? []).map((r) => [r.ticker, Number(r.price)]),
         ),
         settings: Object.fromEntries((settings.data ?? []).map((r) => [r.key, r.value])),
+        accounts: (accounts.data ?? []).map(mapAccount),
+        outsideSales: (outsideSales.data ?? []).map(mapOutsideSale),
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -385,7 +406,37 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (patch.trimRank !== undefined) payload.trim_rank = patch.trimRank;
       if (patch.notes !== undefined) payload.notes = patch.notes;
       if (patch.category !== undefined) payload.category = patch.category;
+      if (patch.accountId !== undefined) payload.account_id = patch.accountId;
       const { error: err } = await db().from('parked_positions').update(payload).eq('id', id);
+      if (err) throw err;
+      await refresh();
+    },
+    [refresh],
+  );
+
+  const addAccount = useCallback(
+    async (name: string, kind: AccountKind, broker?: string) => {
+      const { error: err } = await db()
+        .from('accounts')
+        .insert({ name, kind, broker: broker || null });
+      if (err) throw err;
+      await refresh();
+    },
+    [refresh],
+  );
+
+  const addOutsideSale = useCallback(
+    async (sale: Omit<OutsideSale, 'id'>) => {
+      const { error: err } = await db().from('outside_sales').insert(outsideSalePayload(sale));
+      if (err) throw err;
+      await refresh();
+    },
+    [refresh],
+  );
+
+  const deleteOutsideSale = useCallback(
+    async (id: string) => {
+      const { error: err } = await db().from('outside_sales').delete().eq('id', id);
       if (err) throw err;
       await refresh();
     },
@@ -455,13 +506,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       deleteTrade,
       updateParked,
       recordMilestone,
+      addAccount,
+      addOutsideSale,
+      deleteOutsideSale,
       setOverride,
       clearOverride,
     }),
     [
       state, mergedParked, quotes, quotesAsOf, refreshQuotes, contributionCap, loading, error,
       refresh, addCashEvent, deleteCashEvent, addLot, closePosition, recordSplit,
-      setTradeWashSale, deleteTrade, updateParked, recordMilestone, setOverride, clearOverride,
+      setTradeWashSale, deleteTrade, updateParked, recordMilestone, addAccount, addOutsideSale,
+      deleteOutsideSale, setOverride, clearOverride,
     ],
   );
 

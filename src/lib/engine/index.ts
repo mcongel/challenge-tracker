@@ -11,3 +11,4 @@ export * from './score';
 export * from './parked';
 export * from './washSale';
 export * from './contribution';
+export * from './accounts';

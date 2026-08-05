@@ -1,18 +1,26 @@
 import { Link } from 'react-router-dom';
 import { useState } from 'react';
-import { ScrollText, Trash2 } from 'lucide-react';
+import { Plus, ScrollText, Trash2 } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
+import { Modal } from '../components/ui/Modal';
+import { AccountSelect } from '../components/ui/AccountSelect';
 import { ErrorCard, SkeletonTable } from './CashLedger';
 import { useData } from '../contexts/DataContext';
 import {
   netRealizedYTD, realizedGain, realizedPct, roundCents, stLt, taxYearOf, tradeDaysHeld,
 } from '../lib/engine';
-import { cn, formatCurrency, formatPercent, todayISO } from '../lib/utils';
+import {
+  cn, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls, secondaryBtnCls, todayISO,
+} from '../lib/utils';
 
 export function TradeLog() {
-  const { trades, setTradeWashSale, deleteTrade, loading, error } = useData();
+  const {
+    trades, setTradeWashSale, deleteTrade, outsideSales, accounts, deleteOutsideSale,
+    loading, error,
+  } = useData();
   const [rowError, setRowError] = useState<string | null>(null);
+  const [outsideOpen, setOutsideOpen] = useState(false);
 
   const currentYear = taxYearOf(todayISO());
   const ytd = netRealizedYTD(trades, currentYear);
@@ -32,6 +40,12 @@ export function TradeLog() {
       <PageHeader
         title="Trade Log"
         subtitle="Every close. ST = held 365 days or less; wash-sale losses don't count toward YTD."
+        actions={
+          <button onClick={() => setOutsideOpen(true)}
+            className={cn(secondaryBtnCls, 'flex items-center gap-1.5')}>
+            <Plus className="h-4 w-4" /> Record outside sale
+          </button>
+        }
       />
 
       {error && <ErrorCard message={error} />}
@@ -129,6 +143,123 @@ export function TradeLog() {
           </table>
         </div>
       )}
+
+      {/* Outside sales — the cross-brokerage wash-sale radar (Rule 8). */}
+      {outsideSales.length > 0 && (
+        <div className="mt-4 bg-white rounded-lg shadow-lg overflow-x-auto">
+          <p className="px-4 pt-3 text-xs font-semibold uppercase tracking-wider text-gray-400">
+            Outside sales — wash-sale radar only, never in the score
+          </p>
+          <table className="w-full text-sm compact-table">
+            <tbody className="divide-y divide-gray-100">
+              {[...outsideSales].reverse().map((s) => (
+                <tr key={s.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-2 tabular-nums text-gray-500 w-28">{s.saleDate}</td>
+                  <td className="px-4 py-2 font-medium w-20">{s.ticker}</td>
+                  <td className="px-4 py-2 text-gray-500">
+                    {accounts.find((a) => a.id === s.accountId)?.name ?? '—'}
+                  </td>
+                  <td className="px-4 py-2">
+                    {s.loss ? (
+                      <span className="inline-block rounded-full bg-red-50 text-red-700 px-2 py-0.5 text-xs font-medium">
+                        loss — 31-day window
+                      </span>
+                    ) : (
+                      <span className="inline-block rounded-full bg-gray-100 text-gray-500 px-2 py-0.5 text-xs font-medium">
+                        gain
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2 text-gray-500 max-w-[12rem] truncate">{s.notes}</td>
+                  <td className="px-2 py-2 w-10">
+                    <button
+                      onClick={() => deleteOutsideSale(s.id).catch((e) =>
+                        setRowError(e instanceof Error ? e.message : String(e)))}
+                      className="p-1 rounded hover:bg-red-50" aria-label="Delete outside sale">
+                      <Trash2 className="h-4 w-4 text-gray-300 hover:text-red-600" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {outsideOpen && <OutsideSaleModal onClose={() => setOutsideOpen(false)} />}
     </div>
+  );
+}
+
+function OutsideSaleModal({ onClose }: { onClose: () => void }) {
+  const { accounts, addOutsideSale } = useData();
+  const outsideAccounts = accounts.filter((a) => a.kind === 'outside');
+  const [ticker, setTicker] = useState('');
+  const [accountId, setAccountId] = useState(outsideAccounts[0]?.id ?? '');
+  const [saleDate, setSaleDate] = useState(todayISO());
+  const [loss, setLoss] = useState(true);
+  const [notes, setNotes] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    if (!accountId) return setFormError('Pick the account the sale happened in.');
+    setBusy(true);
+    try {
+      await addOutsideSale({
+        ticker: ticker.toUpperCase(),
+        accountId,
+        saleDate,
+        loss,
+        notes: notes || null,
+      });
+      onClose();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal isOpen onClose={onClose} title="Record outside sale">
+      <form onSubmit={submit} className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={labelCls}>Ticker</label>
+            <input required value={ticker} onChange={(e) => setTicker(e.target.value)}
+              className={inputCls} placeholder="GLW" />
+          </div>
+          <div>
+            <label className={labelCls}>Sale date</label>
+            <input type="date" required value={saleDate}
+              onChange={(e) => setSaleDate(e.target.value)} className={inputCls} />
+          </div>
+        </div>
+        <AccountSelect accounts={accounts} value={accountId} onChange={setAccountId}
+          label="Account" kinds={['outside']} allowNone={false} />
+        <label className="flex items-center gap-2 text-sm text-gray-700">
+          <input type="checkbox" checked={loss} onChange={(e) => setLoss(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-600" />
+          Sold at a loss (starts the 31-day wash-sale window — Rule 8 crosses brokerages)
+        </label>
+        <div>
+          <label className={labelCls}>Notes</label>
+          <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls} />
+        </div>
+        <p className="text-xs text-gray-400">
+          Radar only: this never touches the score, YTD realized, or the tax skim. It exists so a
+          challenge-account buy inside the window gets called out.
+        </p>
+        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
+        <div className="flex justify-end">
+          <button type="submit" disabled={busy} className={primaryBtnCls}>
+            {busy ? 'Saving…' : 'Record sale'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
