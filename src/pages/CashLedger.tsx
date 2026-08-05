@@ -5,6 +5,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
 import { useData } from '../contexts/DataContext';
 import { AccountSelect } from '../components/ui/AccountSelect';
+import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { ContributionCapBadge } from '../components/ui/ContributionCapBadge';
 import type { CashEventType } from '../lib/engine';
 import {
@@ -41,19 +42,10 @@ export function CashLedger() {
   const { cashEvents, addCashEvent, deleteCashEvent, contributionCap, accounts, loading, error } =
     useData();
   const [modalOpen, setModalOpen] = useState(false);
-  const [rowError, setRowError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const rows = withRunningBalance(cashEvents);
   const summary = cashSummary(cashEvents);
-
-  const remove = async (id: string) => {
-    if (!confirm('Delete this event? A deposit’s shadow VOO twin goes with it.')) return;
-    try {
-      await deleteCashEvent(id);
-    } catch (e) {
-      setRowError(e instanceof Error ? e.message : String(e));
-    }
-  };
 
   return (
     <div>
@@ -68,7 +60,6 @@ export function CashLedger() {
       />
 
       {error && <ErrorCard message={error} />}
-      {rowError && <ErrorCard message={rowError} />}
 
       {/* Summary block */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
@@ -140,7 +131,7 @@ export function CashLedger() {
                     {formatCurrency(roundCents(balance))}
                   </td>
                   <td className="px-2 py-3">
-                    <button onClick={() => remove(e.id)} className="p-1 rounded hover:bg-red-50"
+                    <button onClick={() => setDeletingId(e.id)} className="p-1 rounded hover:bg-red-50"
                       aria-label="Delete event">
                       <Trash2 className="h-4 w-4 text-gray-300 hover:text-red-600" />
                     </button>
@@ -153,6 +144,19 @@ export function CashLedger() {
       )}
 
       <AddEventModal isOpen={modalOpen} onClose={() => setModalOpen(false)} onAdd={addCashEvent} />
+
+      {deletingId && (
+        <ConfirmModal
+          title="Delete cash event"
+          message={
+            cashEvents.find((e) => e.id === deletingId)?.type === 'Deposit'
+              ? "Delete this deposit? Its shadow VOO twin goes with it, and net contributed drops."
+              : 'Delete this event? The running balance recomputes without it.'
+          }
+          onConfirm={() => deleteCashEvent(deletingId)}
+          onClose={() => setDeletingId(null)}
+        />
+      )}
     </div>
   );
 }

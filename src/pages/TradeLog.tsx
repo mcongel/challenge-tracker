@@ -5,6 +5,7 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
 import { AccountSelect } from '../components/ui/AccountSelect';
+import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { ErrorCard, SkeletonTable } from './CashLedger';
 import { useData } from '../contexts/DataContext';
 import {
@@ -21,19 +22,12 @@ export function TradeLog() {
   } = useData();
   const [rowError, setRowError] = useState<string | null>(null);
   const [outsideOpen, setOutsideOpen] = useState(false);
+  const [deletingTradeId, setDeletingTradeId] = useState<string | null>(null);
+  const [deletingOutsideId, setDeletingOutsideId] = useState<string | null>(null);
 
   const currentYear = taxYearOf(todayISO());
   const ytd = netRealizedYTD(trades, currentYear);
   const ordered = [...trades].sort((a, b) => b.closeDate.localeCompare(a.closeDate));
-
-  const remove = async (id: string) => {
-    if (!confirm('Delete this trade? The YTD realized number feeds the tax skim.')) return;
-    try {
-      await deleteTrade(id);
-    } catch (e) {
-      setRowError(e instanceof Error ? e.message : String(e));
-    }
-  };
 
   return (
     <div>
@@ -132,7 +126,7 @@ export function TradeLog() {
                     </td>
                     <td className="px-4 py-3 text-gray-500 max-w-[12rem] truncate">{t.notes}</td>
                     <td className="px-2 py-3">
-                      <button onClick={() => remove(t.id)} className="p-1 rounded hover:bg-red-50" aria-label="Delete trade">
+                      <button onClick={() => setDeletingTradeId(t.id)} className="p-1 rounded hover:bg-red-50" aria-label="Delete trade">
                         <Trash2 className="h-4 w-4 text-gray-300 hover:text-red-600" />
                       </button>
                     </td>
@@ -173,8 +167,7 @@ export function TradeLog() {
                   <td className="px-4 py-2 text-gray-500 max-w-[12rem] truncate">{s.notes}</td>
                   <td className="px-2 py-2 w-10">
                     <button
-                      onClick={() => deleteOutsideSale(s.id).catch((e) =>
-                        setRowError(e instanceof Error ? e.message : String(e)))}
+                      onClick={() => setDeletingOutsideId(s.id)}
                       className="p-1 rounded hover:bg-red-50" aria-label="Delete outside sale">
                       <Trash2 className="h-4 w-4 text-gray-300 hover:text-red-600" />
                     </button>
@@ -187,6 +180,23 @@ export function TradeLog() {
       )}
 
       {outsideOpen && <OutsideSaleModal onClose={() => setOutsideOpen(false)} />}
+
+      {deletingTradeId && (
+        <ConfirmModal
+          title="Delete trade"
+          message="Delete this trade? The YTD realized number — and with it the tax skim target — recomputes without it."
+          onConfirm={() => deleteTrade(deletingTradeId)}
+          onClose={() => setDeletingTradeId(null)}
+        />
+      )}
+      {deletingOutsideId && (
+        <ConfirmModal
+          title="Delete outside sale"
+          message="Delete this outside sale? The wash-sale radar forgets it — a rebuy inside its 31-day window won't be flagged."
+          onConfirm={() => deleteOutsideSale(deletingOutsideId)}
+          onClose={() => setDeletingOutsideId(null)}
+        />
+      )}
     </div>
   );
 }
