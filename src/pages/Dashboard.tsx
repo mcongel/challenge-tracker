@@ -12,6 +12,7 @@ import {
 } from '../lib/engine';
 import { ErrorCard } from './CashLedger';
 import { ContributionCapBadge } from '../components/ui/ContributionCapBadge';
+import { GettingStarted } from '../components/GettingStarted';
 import { cn, formatCurrency, formatCurrencyWhole, todayISO } from '../lib/utils';
 
 /** Chart palette — validated (dataviz six checks) for both surfaces.
@@ -80,6 +81,8 @@ export function Dashboard() {
   return (
     <div className="space-y-4 sm:space-y-6">
       {error && <ErrorCard message={error} />}
+
+      <GettingStarted />
 
       {/* Active alerts */}
       {alerts.map((a) => (

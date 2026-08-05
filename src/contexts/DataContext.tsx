@@ -102,6 +102,19 @@ interface DataContextValue extends DataState {
   addAccount: (name: string, kind: AccountKind, broker?: string) => Promise<void>;
   addOutsideSale: (sale: Omit<OutsideSale, 'id'>) => Promise<void>;
   deleteOutsideSale: (id: string) => Promise<void>;
+  /** The trim flow in one action: shrink (or remove) the parked position,
+   * log the outside sale for the wash-sale radar, and optionally deposit the
+   * proceeds into the challenge account (with its shadow VOO twin). */
+  recordTrim: (args: {
+    parkedId: string;
+    shares: number;
+    pricePerShare: number;
+    date: string;
+    depositVooPrice?: number;
+  }) => Promise<void>;
+  /** Rows seeded from the workbook, identified by EXAMPLE in their notes. */
+  exampleData: { cashEvents: CashEvent[]; lots: PositionLot[]; trades: Trade[]; total: number };
+  clearExampleData: () => Promise<void>;
   setOverride: (ticker: string, price: number) => Promise<void>;
   clearOverride: (ticker: string) => Promise<void>;
 }
@@ -443,6 +456,97 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [refresh],
   );
 
+  const recordTrim = useCallback(
+    async ({
+      parkedId, shares, pricePerShare, date, depositVooPrice,
+    }: {
+      parkedId: string;
+      shares: number;
+      pricePerShare: number;
+      date: string;
+      depositVooPrice?: number;
+    }) => {
+      const client = db();
+      const p = state.parked.find((x) => x.id === parkedId);
+      if (!p) throw new Error('Parked position not found');
+      if (shares <= 0) throw new Error('Shares must be positive');
+      if (shares > p.shares + 1e-9) {
+        throw new Error(`Only ${p.shares} shares parked; cannot trim ${shares}`);
+      }
+
+      const remaining = p.shares - shares;
+      if (remaining > 1e-9) {
+        const { error: err } = await client
+          .from('parked_positions').update({ shares: remaining }).eq('id', p.id);
+        if (err) throw err;
+      } else {
+        const { error: err } = await client.from('parked_positions').delete().eq('id', p.id);
+        if (err) throw err;
+      }
+
+      const { error: saleErr } = await client.from('outside_sales').insert(
+        outsideSalePayload({
+          accountId: p.accountId,
+          ticker: p.ticker,
+          saleDate: date,
+          loss: pricePerShare < p.avgCost,
+          notes: `Trim: ${shares} sh @ ${pricePerShare}`,
+        }),
+      );
+      if (saleErr) throw saleErr;
+
+      if (depositVooPrice) {
+        const amount = roundCents(shares * pricePerShare);
+        const { error: cashErr } = await client.from('cash_events').insert(
+          cashEventPayload({
+            date,
+            type: 'Deposit',
+            amount,
+            sourceDestination: `${p.ticker} trim (${p.account})`,
+            accountId: p.accountId,
+          }),
+        );
+        if (cashErr) throw cashErr;
+        const { error: benchErr } = await client
+          .from('benchmark_deposits')
+          .insert({ date, amount, voo_price_that_day: depositVooPrice });
+        if (benchErr) throw benchErr;
+      }
+      await refresh();
+    },
+    [refresh, state.parked],
+  );
+
+  const exampleData = useMemo(() => {
+    const isEx = (notes?: string | null) => Boolean(notes && notes.toUpperCase().includes('EXAMPLE'));
+    const cashEvents = state.cashEvents.filter((e) => isEx(e.notes));
+    const lots = state.lots.filter((l) => isEx(l.thesis));
+    const trades = state.trades.filter((t) => isEx(t.notes));
+    return { cashEvents, lots, trades, total: cashEvents.length + lots.length + trades.length };
+  }, [state.cashEvents, state.lots, state.trades]);
+
+  const clearExampleData = useCallback(async () => {
+    const client = db();
+    // Shadow twins of example deposits go too (benchmark rows carry no notes).
+    const benchIds = state.benchmarkDeposits
+      .filter((b) =>
+        exampleData.cashEvents.some(
+          (e) => e.type === 'Deposit' && e.date === b.date && e.amount === b.amount,
+        ),
+      )
+      .map((b) => b.id);
+    const wipe = async (table: string, ids: string[]) => {
+      if (ids.length === 0) return;
+      const { error: err } = await client.from(table).delete().in('id', ids);
+      if (err) throw err;
+    };
+    await wipe('trades', exampleData.trades.map((t) => t.id));
+    await wipe('position_lots', exampleData.lots.map((l) => l.id));
+    await wipe('cash_events', exampleData.cashEvents.map((e) => e.id));
+    await wipe('benchmark_deposits', benchIds);
+    await refresh();
+  }, [refresh, state.benchmarkDeposits, exampleData]);
+
   const recordMilestone = useCallback(
     async (m: MilestoneRecord) => {
       const client = db();
@@ -509,6 +613,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       addAccount,
       addOutsideSale,
       deleteOutsideSale,
+      recordTrim,
+      exampleData,
+      clearExampleData,
       setOverride,
       clearOverride,
     }),
@@ -516,7 +623,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       state, mergedParked, quotes, quotesAsOf, refreshQuotes, contributionCap, loading, error,
       refresh, addCashEvent, deleteCashEvent, addLot, closePosition, recordSplit,
       setTradeWashSale, deleteTrade, updateParked, recordMilestone, addAccount, addOutsideSale,
-      deleteOutsideSale, setOverride, clearOverride,
+      deleteOutsideSale, recordTrim, exampleData, clearExampleData, setOverride, clearOverride,
     ],
   );
 

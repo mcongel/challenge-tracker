@@ -179,6 +179,12 @@ export function Help() {
             and NVDA/TSLA/MSTR are never trim fuel <Rule n="4–5" />.
           </li>
           <li>
+            <strong className="text-gray-900">Trim</strong> (scissors icon on a row) does the whole
+            thing in one form: shrinks the position, logs the sale in the wash-sale radar, and —
+            if you check "deposit the proceeds" — writes the Deposit and its shadow VOO twin. It
+            warns before unlock and refuses to blow the contribution cap.
+          </li>
+          <li>
             <strong className="text-gray-900">Concentration watch</strong>: Semi/AI past the 50%
             cap turns the banner red — trim semis first; it funds the account <em>and</em> fixes
             the concentration.
@@ -225,7 +231,8 @@ export function Help() {
           </li>
           <li>
             <strong className="text-gray-900">Example data</strong>: rows marked "EXAMPLE" came
-            from the workbook seed — delete them from the UI when real trading starts.
+            from the workbook seed. The Dashboard's getting-started checklist clears them all in
+            one click when you're ready to start for real.
           </li>
         </ul>
       </Card>

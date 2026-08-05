@@ -52,6 +52,7 @@ The floor rises permanently, the staircase chart gets a step, and the banner is 
 
 - Everything here is **walled off from the score**. The pile total appears on the Dashboard small and labeled "context only."
 - Each holding shows a **funding unlock** countdown (366 days from buy — enter buy dates!). FUNDING UNLOCKED means a *planned* trim can fund the challenge account at long-term rates — Rules 4 and 5: on schedule, never in response to losses, and NVDA/TSLA/MSTR are never trim fuel.
+- **Trim** (scissors icon on a row) does the whole flow in one form: shrinks the position, logs the sale in the wash-sale radar, and — if you check "deposit the proceeds" — writes the Deposit and its shadow VOO twin. It warns before unlock and refuses to blow the contribution cap.
 - **Concentration watch**: Semi/AI over the 50% cap turns the banner red — trim semis first; it funds the account *and* fixes the concentration.
 - **Accounts** button: manage where money lives — brokerages and bank accounts. Bank accounts show *tracked strategy cash* (what the ledger has routed there), which is deliberately not your real bank balance.
 - ACATS transfer landed? Edit the position and change its account.
@@ -65,7 +66,7 @@ Every deposit bought shadow VOO the same day. The Benchmark screen shows the rac
 - **Prices**: pinned manual prices (pencil icon) beat API quotes until cleared — for delisted tickers or corrections. Everything else auto-refreshes.
 - **Export** (download icon, header): full JSON or CSV per table, any time. It doubles as your backup.
 - **Phone**: the site installs as an app — Share/menu → Add to Home Screen.
-- **Example data**: rows marked "EXAMPLE" in their notes came from the workbook seed. Delete them from the UI when real trading starts.
+- **Example data**: rows marked "EXAMPLE" came from the workbook seed. The Dashboard's getting-started checklist clears them all in one click when you're ready to start for real.
 - **Dark mode**: moon icon. **Sign out**: door icon.
 
 ## Screen cheat sheet

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Archive, Pencil, Settings2 } from 'lucide-react';
+import { AlertTriangle, Archive, Pencil, Scissors, Settings2 } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
@@ -8,7 +8,8 @@ import { ErrorCard, SkeletonTable } from './CashLedger';
 import { useData } from '../contexts/DataContext';
 import type { AccountKind, ParkedPosition } from '../lib/engine';
 import {
-  concentration, ltStatus, parkedCostBasis, parkedMarketValue, roundCents, trackedBalance,
+  concentration, contributionStatus, depositExceedsCap, ltStatus, netContributed,
+  parkedCostBasis, parkedMarketValue, roundCents, trackedBalance,
 } from '../lib/engine';
 import {
   cn, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls, secondaryBtnCls, todayISO,
@@ -24,6 +25,7 @@ const CATEGORY_STYLES: Record<ParkedPosition['category'], string> = {
 export function ParkedPile() {
   const { parked, loading, error } = useData();
   const [editing, setEditing] = useState<ParkedPosition | null>(null);
+  const [trimming, setTrimming] = useState<ParkedPosition | null>(null);
   const [accountsOpen, setAccountsOpen] = useState(false);
 
   const today = todayISO();
@@ -150,7 +152,10 @@ export function ParkedPile() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums text-gray-500">{p.trimRank ?? '—'}</td>
-                    <td className="px-2 py-3">
+                    <td className="px-2 py-3 whitespace-nowrap">
+                      <button onClick={() => setTrimming(p)} className="p-1 rounded hover:bg-green-50" aria-label={`Trim ${p.ticker}`} title="Record trim">
+                        <Scissors className="h-4 w-4 text-gray-300 hover:text-green-700" />
+                      </button>
                       <button onClick={() => setEditing(p)} className="p-1 rounded hover:bg-gray-100" aria-label={`Edit ${p.ticker}`}>
                         <Pencil className="h-4 w-4 text-gray-300 hover:text-gray-600" />
                       </button>
@@ -164,8 +169,142 @@ export function ParkedPile() {
       )}
 
       {editing && <EditParkedModal position={editing} onClose={() => setEditing(null)} />}
+      {trimming && <TrimModal position={trimming} onClose={() => setTrimming(null)} />}
       {accountsOpen && <AccountsModal onClose={() => setAccountsOpen(false)} />}
     </div>
+  );
+}
+
+const NEVER_TRIM = new Set(['NVDA', 'TSLA', 'MSTR']);
+
+function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose: () => void }) {
+  const { recordTrim, cashEvents, contributionCap } = useData();
+  const [shares, setShares] = useState('');
+  const [price, setPrice] = useState(p.currentPrice ? String(p.currentPrice) : '');
+  const [date, setDate] = useState(todayISO());
+  const [fund, setFund] = useState(true);
+  const [vooPrice, setVooPrice] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const numShares = Number(shares);
+  const numPrice = Number(price);
+  const proceeds = numShares > 0 && numPrice > 0 ? roundCents(numShares * numPrice) : 0;
+  const fullTrim = numShares >= p.shares - 1e-9;
+  const lt = ltStatus(p, date);
+  const notUnlocked = lt.kind !== 'UNLOCKED';
+  const neverTrimFuel = NEVER_TRIM.has(p.ticker) || p.category === 'BTC';
+  const isLoss = numPrice > 0 && numPrice < p.avgCost;
+
+  const contributed = netContributed(cashEvents);
+  const overCap =
+    fund && proceeds > 0 && contributionCap !== null &&
+    depositExceedsCap(contributed, proceeds, contributionCap);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    if (!numShares || numShares <= 0) return setFormError('Enter shares to trim.');
+    if (numShares > p.shares + 1e-9) return setFormError(`Only ${p.shares} shares parked.`);
+    if (!numPrice || numPrice <= 0) return setFormError('Enter the sale price.');
+    if (fund && (!Number(vooPrice) || Number(vooPrice) <= 0)) {
+      return setFormError("Funding the challenge account needs that day's VOO price for the shadow purchase.");
+    }
+    if (overCap && contributionCap !== null) {
+      const room = contributionStatus(contributed, contributionCap).remaining;
+      return setFormError(
+        `Rule 12: depositing ${formatCurrency(proceeds)} would exceed the contribution cap — only ${formatCurrency(roundCents(room))} of room remains. Uncheck funding or trim less.`,
+      );
+    }
+    setBusy(true);
+    try {
+      await recordTrim({
+        parkedId: p.id,
+        shares: numShares,
+        pricePerShare: numPrice,
+        date,
+        depositVooPrice: fund ? Number(vooPrice) : undefined,
+      });
+      onClose();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal isOpen onClose={onClose} title={`Trim ${p.ticker} (${p.account})`}>
+      <form onSubmit={submit} className="space-y-3">
+        {neverTrimFuel && (
+          <div className="flex gap-2 bg-red-50 text-red-700 rounded-md px-3 py-2 text-sm font-medium">
+            <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+            <span>{p.ticker} is never trim fuel — Rule 5. The conviction holds stay parked.</span>
+          </div>
+        )}
+        {notUnlocked && !neverTrimFuel && (
+          <div className="flex gap-2 bg-amber-50 text-amber-800 rounded-md px-3 py-2 text-sm">
+            <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+            <span>
+              {lt.kind === 'COUNTDOWN'
+                ? `Not FUNDING UNLOCKED yet — ${lt.daysLeft} days to long-term (${lt.unlockDate}). Selling now pays short-term rates; Rule 5 says planned long-term trims.`
+                : 'No buy date on this position — the app can\'t tell if this is a long-term trim. Rule 5 says planned long-term trims only.'}
+            </span>
+          </div>
+        )}
+
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label className={labelCls}>Shares (of {p.shares})</label>
+            <input type="number" step="any" min="0.00000001" required value={shares}
+              onChange={(e) => setShares(e.target.value)} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Price / share ($)</label>
+            <input type="number" step="0.01" min="0.01" required value={price}
+              onChange={(e) => setPrice(e.target.value)} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Date</label>
+            <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
+          </div>
+        </div>
+
+        <label className="flex items-center gap-2 text-sm text-gray-700">
+          <input type="checkbox" checked={fund} onChange={(e) => setFund(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-600" />
+          Deposit the proceeds into the challenge account
+        </label>
+        {fund && (
+          <div>
+            <label className={labelCls}>VOO price on {date}</label>
+            <input type="number" step="0.01" min="0.01" value={vooPrice}
+              onChange={(e) => setVooPrice(e.target.value)} className={inputCls} placeholder="for the shadow purchase" />
+          </div>
+        )}
+
+        {proceeds > 0 && (
+          <div className="bg-gray-50 rounded-md px-3 py-2 text-sm space-y-1">
+            <p className="text-gray-600">
+              Proceeds <span className="font-medium tabular-nums">{formatCurrency(proceeds)}</span>
+              {isLoss && <span className="ml-2 text-red-600 font-medium">below cost — arms the 31-day wash-sale window</span>}
+              {fullTrim && <span className="ml-2 text-gray-500">· sells the whole position (row removed)</span>}
+            </p>
+            <p className="text-xs text-gray-400">
+              One action: shrinks the parked position, logs the sale in the wash-sale radar
+              {fund ? ', and writes the Deposit + shadow VOO twin to the ledger.' : '.'}
+            </p>
+          </div>
+        )}
+
+        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
+        <div className="flex justify-end">
+          <button type="submit" disabled={busy} className={primaryBtnCls}>
+            {busy ? 'Recording…' : 'Record trim'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
