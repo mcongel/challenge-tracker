@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { AlertTriangle, Archive, History, Pencil, Scissors, Settings2, Trash2 } from 'lucide-react';
+import { Fragment, useMemo, useState } from 'react';
+import { AlertTriangle, Archive, ChevronDown, ChevronRight, Pencil, Scissors, Settings2, Trash2 } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
@@ -29,7 +29,7 @@ export function ParkedPile() {
   const { parked, parkedLots, loading, error } = useData();
   const [editing, setEditing] = useState<ParkedPosition | null>(null);
   const [trimming, setTrimming] = useState<ParkedPosition | null>(null);
-  const [lotsFor, setLotsFor] = useState<ParkedPosition | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [accountsOpen, setAccountsOpen] = useState(false);
 
   const lotsByPosition = useMemo(() => {
@@ -116,6 +116,7 @@ export function ParkedPile() {
           <table className="w-full text-sm compact-table">
             <thead className="bg-gray-50 sticky top-0">
               <tr className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                <th className="px-2 py-3 w-8" />
                 <th className="px-4 py-3">Ticker</th>
                 <th className="px-4 py-3">Account</th>
                 <th className="px-4 py-3">Category</th>
@@ -134,42 +135,57 @@ export function ParkedPile() {
                 const value = parkedMarketValue(p);
                 const basis = parkedCostBasis(p);
                 const summ = unlockSummary(lotsByPosition.get(p.id) ?? [], today);
+                const expanded = expandedId === p.id;
+                const toggle = () => setExpandedId(expanded ? null : p.id);
                 return (
-                  <tr key={p.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium">
-                      {p.ticker}
-                      {p.notes && <p className="text-xs font-normal text-gray-400 max-w-[14rem] truncate">{p.notes}</p>}
-                    </td>
-                    <td className="px-4 py-3 text-gray-500">{p.account}</td>
-                    <td className="px-4 py-3">
-                      <span className={cn('inline-block rounded-full px-2 py-0.5 text-xs font-medium', CATEGORY_STYLES[p.category])}>
-                        {p.category}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right tabular-nums">{p.shares}</td>
-                    <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(p.avgCost)}</td>
-                    <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(p.currentPrice)}</td>
-                    <td className="px-4 py-3 text-right tabular-nums font-medium">{formatCurrency(roundCents(value))}</td>
-                    <td className={cn('px-4 py-3 text-right tabular-nums',
-                      value - basis >= 0 ? 'text-green-600' : 'text-red-600')}>
-                      {basis === 0 ? '—' : formatPercent((value - basis) / basis)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <UnlockCell summary={summ} onAddDates={() => setLotsFor(p)} />
-                    </td>
-                    <td className="px-4 py-3 text-right tabular-nums text-gray-500">{p.trimRank ?? '—'}</td>
-                    <td className="px-2 py-3 whitespace-nowrap">
-                      <button onClick={() => setLotsFor(p)} className="p-1 rounded hover:bg-gray-100" aria-label={`Lots and dividends for ${p.ticker}`} title="Lots & dividends">
-                        <History className="h-4 w-4 text-gray-300 hover:text-gray-600" />
-                      </button>
-                      <button onClick={() => setTrimming(p)} className="p-1 rounded hover:bg-green-50" aria-label={`Trim ${p.ticker}`} title="Record trim">
-                        <Scissors className="h-4 w-4 text-gray-300 hover:text-green-700" />
-                      </button>
-                      <button onClick={() => setEditing(p)} className="p-1 rounded hover:bg-gray-100" aria-label={`Edit ${p.ticker}`}>
-                        <Pencil className="h-4 w-4 text-gray-300 hover:text-gray-600" />
-                      </button>
-                    </td>
-                  </tr>
+                  <Fragment key={p.id}>
+                    <tr className="hover:bg-gray-50 cursor-pointer" onClick={toggle}>
+                      <td className="px-2 py-3">
+                        {expanded ? (
+                          <ChevronDown className="h-4 w-4 text-gray-400" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 text-gray-300" />
+                        )}
+                      </td>
+                      <td className="px-4 py-3 font-medium">
+                        {p.ticker}
+                        {p.notes && <p className="text-xs font-normal text-gray-400 max-w-[14rem] truncate">{p.notes}</p>}
+                      </td>
+                      <td className="px-4 py-3 text-gray-500">{p.account}</td>
+                      <td className="px-4 py-3">
+                        <span className={cn('inline-block rounded-full px-2 py-0.5 text-xs font-medium', CATEGORY_STYLES[p.category])}>
+                          {p.category}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums">{fmtSh(p.shares)}</td>
+                      <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(p.avgCost)}</td>
+                      <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(p.currentPrice)}</td>
+                      <td className="px-4 py-3 text-right tabular-nums font-medium">{formatCurrency(roundCents(value))}</td>
+                      <td className={cn('px-4 py-3 text-right tabular-nums',
+                        value - basis >= 0 ? 'text-green-600' : 'text-red-600')}>
+                        {basis === 0 ? '—' : formatPercent((value - basis) / basis)}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <UnlockCell summary={summ} />
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums text-gray-500">{p.trimRank ?? '—'}</td>
+                      <td className="px-2 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <button onClick={() => setTrimming(p)} className="p-1 rounded hover:bg-green-50" aria-label={`Trim ${p.ticker}`} title="Record trim">
+                          <Scissors className="h-4 w-4 text-gray-300 hover:text-green-700" />
+                        </button>
+                        <button onClick={() => setEditing(p)} className="p-1 rounded hover:bg-gray-100" aria-label={`Edit ${p.ticker}`}>
+                          <Pencil className="h-4 w-4 text-gray-300 hover:text-gray-600" />
+                        </button>
+                      </td>
+                    </tr>
+                    {expanded && (
+                      <tr>
+                        <td colSpan={12} className="bg-gray-50 px-4 sm:px-6 py-4">
+                          <LotPanel position={p} summary={summ} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
               })}
             </tbody>
@@ -179,46 +195,46 @@ export function ParkedPile() {
 
       {editing && <EditParkedModal position={editing} onClose={() => setEditing(null)} />}
       {trimming && <TrimModal position={trimming} onClose={() => setTrimming(null)} />}
-      {lotsFor && <LotsModal position={lotsFor} onClose={() => setLotsFor(null)} />}
       {accountsOpen && <AccountsModal onClose={() => setAccountsOpen(false)} />}
     </div>
   );
 }
 
-function UnlockCell({ summary: s, onAddDates }: { summary: UnlockSummary; onAddDates: () => void }) {
+/** One short line; the full story lives in the row's expansion panel. */
+function UnlockCell({ summary: s }: { summary: UnlockSummary }) {
   if (s.totalShares <= 0) return <span className="text-xs text-gray-400">—</span>;
   if (s.unknownShares >= s.totalShares - 1e-9) {
-    return (
-      <button onClick={onAddDates} className="text-xs text-amber-800 hover:underline">
-        add lot dates
-      </button>
-    );
+    return <span className="text-xs text-amber-800">add dates</span>;
   }
   if (s.unlockedShares >= s.totalShares - 1e-9) {
     return (
       <span className="inline-block rounded-full bg-green-50 text-green-700 px-2 py-0.5 text-xs font-medium">
-        FUNDING UNLOCKED
+        UNLOCKED
+      </span>
+    );
+  }
+  if (s.unlockedShares > 0) {
+    return (
+      <span className="text-xs font-medium text-green-700 tabular-nums">
+        {fmtSh(s.unlockedShares)}/{fmtSh(s.totalShares)} sh
       </span>
     );
   }
   return (
-    <span className="text-xs tabular-nums">
-      <span className={cn('font-medium', s.unlockedShares > 0 ? 'text-green-700' : 'text-gray-500')}>
-        {fmtSh(s.unlockedShares)}/{fmtSh(s.totalShares)} sh unlocked
-      </span>
-      {s.nextUnlock && (
-        <span className="block text-gray-400">next {fmtSh(s.nextUnlock.shares)} sh on {s.nextUnlock.date}</span>
-      )}
-      {s.unknownShares > 0 && (
-        <button onClick={onAddDates} className="block text-amber-800 hover:underline">
-          {fmtSh(s.unknownShares)} sh undated
-        </button>
-      )}
-    </span>
+    <span className="text-xs text-gray-500 tabular-nums">→ {s.nextUnlock?.date ?? 'locked'}</span>
   );
 }
 
-function LotsModal({ position: p, onClose }: { position: ParkedPosition; onClose: () => void }) {
+function unlockSentence(s: UnlockSummary): string {
+  if (s.totalShares <= 0) return 'No shares.';
+  const parts: string[] = [];
+  parts.push(`${fmtSh(s.unlockedShares)} of ${fmtSh(s.totalShares)} sh are long-term (funding unlocked)`);
+  if (s.nextUnlock) parts.push(`next ${fmtSh(s.nextUnlock.shares)} sh unlock ${s.nextUnlock.date}`);
+  if (s.unknownShares > 0) parts.push(`${fmtSh(s.unknownShares)} sh undated — add dates below`);
+  return parts.join(' · ') + '.';
+}
+
+function LotPanel({ position: p, summary }: { position: ParkedPosition; summary: UnlockSummary }) {
   const { parkedLots, addParkedLot, deleteParkedLot, overrides, quotes } = useData();
   const lots = parkedLots
     .filter((l) => l.parkedPositionId === p.id)
@@ -308,9 +324,13 @@ function LotsModal({ position: p, onClose }: { position: ParkedPosition; onClose
   };
 
   return (
-    <Modal isOpen onClose={onClose} title={`${p.ticker} — lots & dividends`}>
-      <div className="space-y-3">
-        <div className="max-h-64 overflow-y-auto rounded-md border border-gray-200">
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">
+        {p.ticker} — lots &amp; dividends
+      </p>
+      <p className="text-sm text-gray-600 mb-3">{unlockSentence(summary)}</p>
+      <div className="grid lg:grid-cols-2 gap-4 items-start">
+        <div className="max-h-64 overflow-y-auto rounded-md border border-gray-200 bg-white">
           <table className="w-full text-sm">
             <tbody className="divide-y divide-gray-100">
               {lots.map((l) => (
@@ -342,13 +362,14 @@ function LotsModal({ position: p, onClose }: { position: ParkedPosition; onClose
           </table>
         </div>
 
+        <div>
         {mode === null ? (
           <div className="flex gap-2">
             <button onClick={() => openForm('purchase')} className={secondaryBtnCls}>Add past purchase</button>
             <button onClick={() => openForm('dividend')} className={secondaryBtnCls}>Add dividend</button>
           </div>
         ) : (
-          <form onSubmit={submit} className="space-y-3 border-t border-gray-100 pt-3">
+          <form onSubmit={submit} className="space-y-3">
             <p className="text-xs font-medium text-gray-500">
               {mode === 'purchase' ? 'Past purchase' : 'Dividend'}
             </p>
@@ -416,10 +437,11 @@ function LotsModal({ position: p, onClose }: { position: ParkedPosition; onClose
           </form>
         )}
 
-        <p className="text-xs text-gray-400">
+        <p className="text-xs text-gray-400 mt-3">
           Shares and cost basis derive from these lots. To fix a wrong entry, delete it and re-add.
           Leave the date blank only if it's truly unknown — dated lots drive the unlock countdowns.
         </p>
+        </div>
       </div>
 
       {deleting && (
@@ -430,7 +452,7 @@ function LotsModal({ position: p, onClose }: { position: ParkedPosition; onClose
           onClose={() => setDeleting(null)}
         />
       )}
-    </Modal>
+    </div>
   );
 }
 
