@@ -136,6 +136,11 @@ interface DataContextValue extends DataState {
     notes?: string | null;
   }) => Promise<void>;
   deleteParkedSale: (id: string) => Promise<void>;
+  /** History corrections: basis, term, funded flag, date, notes. */
+  updateParkedSale: (
+    id: string,
+    patch: Partial<Pick<ParkedSale, 'date' | 'costBasis' | 'ltShares' | 'fundedChallenge' | 'notes'>>,
+  ) => Promise<void>;
   /** Rows seeded from the workbook, identified by EXAMPLE in their notes. */
   exampleData: { cashEvents: CashEvent[]; lots: PositionLot[]; trades: Trade[]; total: number };
   clearExampleData: () => Promise<void>;
@@ -614,6 +619,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [refresh],
   );
 
+  const updateParkedSale = useCallback(
+    async (
+      id: string,
+      patch: Partial<Pick<ParkedSale, 'date' | 'costBasis' | 'ltShares' | 'fundedChallenge' | 'notes'>>,
+    ) => {
+      const payload: Record<string, unknown> = {};
+      if (patch.date !== undefined) payload.date = patch.date;
+      if (patch.costBasis !== undefined) payload.cost_basis = patch.costBasis;
+      if (patch.ltShares !== undefined) payload.lt_shares = patch.ltShares;
+      if (patch.fundedChallenge !== undefined) payload.funded_challenge = patch.fundedChallenge;
+      if (patch.notes !== undefined) payload.notes = patch.notes;
+      const { error: err } = await db().from('parked_sales').update(payload).eq('id', id);
+      if (err) throw err;
+      await refresh();
+    },
+    [refresh],
+  );
+
   const recordTrim = useCallback(
     async ({
       parkedId, shares, pricePerShare, date, depositVooPrice,
@@ -809,6 +832,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       deleteParkedLot,
       addParkedPosition,
       deleteParkedSale,
+      updateParkedSale,
       exampleData,
       clearExampleData,
       setOverride,
@@ -819,7 +843,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       refresh, addCashEvent, deleteCashEvent, addLot, closePosition, recordSplit,
       setTradeWashSale, deleteTrade, updateParked, recordMilestone, addAccount, addOutsideSale,
       deleteOutsideSale, recordTrim, addParkedLot, deleteParkedLot, addParkedPosition,
-      deleteParkedSale, exampleData, clearExampleData,
+      deleteParkedSale, updateParkedSale, exampleData, clearExampleData,
       setOverride, clearOverride,
     ],
   );

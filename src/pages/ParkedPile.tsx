@@ -28,6 +28,11 @@ const fmtSh = (n: number) => String(Number(n.toFixed(4)));
 export function ParkedPile() {
   const { parked, parkedLots, parkedSales, accounts, deleteParkedSale, loading, error } = useData();
   const [deletingSale, setDeletingSale] = useState<ParkedSale | null>(null);
+  const [editingSale, setEditingSale] = useState<ParkedSale | null>(null);
+
+  const realized = parkedSales.filter((s) => s.costBasis != null);
+  const realizedTotal = realized.reduce((sum, s) => sum + (s.proceeds - (s.costBasis as number)), 0);
+  const unknownBasisCount = parkedSales.length - realized.length;
   const [editing, setEditing] = useState<ParkedPosition | null>(null);
   const [trimming, setTrimming] = useState<ParkedPosition | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -206,9 +211,20 @@ export function ParkedPile() {
       {/* The pile's own sale log — its own little tracker, never in the score. */}
       {parkedSales.length > 0 && (
         <div className="mt-4 bg-white rounded-lg shadow-lg overflow-x-auto">
-          <p className="px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">
-            Sale history — pile only, never in the score
-          </p>
+          <div className="px-4 pt-3 pb-1 flex flex-wrap items-baseline justify-between gap-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+              Sale history — pile only, never in the score
+            </p>
+            <p className="text-sm tabular-nums">
+              <span className="text-gray-500">Realized: </span>
+              <span className={cn('font-bold', realizedTotal >= 0 ? 'text-green-600' : 'text-red-600')}>
+                {formatCurrency(roundCents(realizedTotal))}
+              </span>
+              {unknownBasisCount > 0 && (
+                <span className="text-xs text-gray-400"> · {unknownBasisCount} sale{unknownBasisCount > 1 ? 's' : ''} with unknown basis excluded</span>
+              )}
+            </p>
+          </div>
           <table className="w-full text-sm compact-table">
             <thead>
               <tr className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
@@ -268,7 +284,10 @@ export function ParkedPile() {
                         <span className="text-xs text-gray-400">stayed outside</span>
                       )}
                     </td>
-                    <td className="px-2 py-2">
+                    <td className="px-2 py-2 whitespace-nowrap">
+                      <button onClick={() => setEditingSale(s)} className="p-1 rounded hover:bg-gray-100" aria-label="Edit sale record">
+                        <Pencil className="h-4 w-4 text-gray-300 hover:text-gray-600" />
+                      </button>
                       <button onClick={() => setDeletingSale(s)} className="p-1 rounded hover:bg-red-50" aria-label="Delete sale record">
                         <Trash2 className="h-4 w-4 text-gray-300 hover:text-red-600" />
                       </button>
@@ -293,7 +312,93 @@ export function ParkedPile() {
           onClose={() => setDeletingSale(null)}
         />
       )}
+      {editingSale && <EditSaleModal sale={editingSale} onClose={() => setEditingSale(null)} />}
     </div>
+  );
+}
+
+function EditSaleModal({ sale: s, onClose }: { sale: ParkedSale; onClose: () => void }) {
+  const { updateParkedSale } = useData();
+  const [date, setDate] = useState(s.date);
+  const [basis, setBasis] = useState(s.costBasis != null ? String(s.costBasis) : '');
+  const [ltShares, setLtShares] = useState(s.ltShares != null ? String(s.ltShares) : '');
+  const [funded, setFunded] = useState(s.fundedChallenge);
+  const [notes, setNotes] = useState(s.notes ?? '');
+  const [formError, setFormError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const numBasis = Number(basis);
+  const gainPreview = basis !== '' && numBasis >= 0 ? s.proceeds - numBasis : null;
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    if (ltShares !== '' && Number(ltShares) > s.shares + 1e-9) {
+      return setFormError(`Long-term shares can't exceed the ${fmtSh(s.shares)} sh sold.`);
+    }
+    setBusy(true);
+    try {
+      await updateParkedSale(s.id, {
+        date,
+        costBasis: basis === '' ? null : roundCents(numBasis),
+        ltShares: ltShares === '' ? null : Number(ltShares),
+        fundedChallenge: funded,
+        notes: notes || null,
+      });
+      onClose();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal isOpen onClose={onClose} title={`Edit sale — ${s.ticker} (${fmtSh(s.shares)} sh, ${formatCurrency(s.proceeds)})`}>
+      <form onSubmit={submit} className="space-y-3">
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label className={labelCls}>Date</label>
+            <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Cost basis ($)</label>
+            <input type="number" step="any" min="0" value={basis} placeholder="unknown"
+              onChange={(e) => setBasis(e.target.value)} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Long-term shares (of {fmtSh(s.shares)})</label>
+            <input type="number" step="any" min="0" value={ltShares} placeholder="unknown"
+              onChange={(e) => setLtShares(e.target.value)} className={inputCls} />
+          </div>
+        </div>
+        {gainPreview !== null && (
+          <p className="text-sm text-gray-600">
+            Realized gain:{' '}
+            <span className={cn('font-medium tabular-nums', gainPreview >= 0 ? 'text-green-600' : 'text-red-600')}>
+              {formatCurrency(roundCents(gainPreview))}
+            </span>
+          </p>
+        )}
+        <label className="flex items-center gap-2 text-sm text-gray-700">
+          <input type="checkbox" checked={funded} onChange={(e) => setFunded(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-600" />
+          Proceeds funded the challenge account
+        </label>
+        <p className="text-xs text-gray-400">
+          This flag is bookkeeping only — it does not create or remove ledger deposits. If a
+          deposit exists or is missing on the Cash Ledger, fix it there.
+        </p>
+        <div>
+          <label className={labelCls}>Notes</label>
+          <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls} />
+        </div>
+        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
+        <div className="flex justify-end">
+          <button type="submit" disabled={busy} className={primaryBtnCls}>{busy ? 'Saving…' : 'Save'}</button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
