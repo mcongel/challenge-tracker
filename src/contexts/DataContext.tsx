@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   BenchmarkDeposit,
   CashEvent,
@@ -10,7 +10,12 @@ import type {
   Snapshot,
   Trade,
 } from '../lib/engine';
-import { closeShares, roundCents } from '../lib/engine';
+import {
+  accountTotal, closeShares, concentration, cumulativeFloor, netContributed, pileTotal,
+  reservedTotal, roundCents, shadowValue, totalScore,
+} from '../lib/engine';
+import { priceMapFor } from '../lib/alerts';
+import { todayISO } from '../lib/utils';
 import {
   cashEventPayload,
   db,
@@ -128,6 +133,40 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Daily snapshot: one row per calendar day, written on first load. Skipped
+  // until a VOO price exists — recording shadowValue = 0 would poison the
+  // rolling-12-month verdict. The date PK makes concurrent writes harmless.
+  const snapshotAttempted = useRef(false);
+  useEffect(() => {
+    if (loading || error || snapshotAttempted.current) return;
+    const today = todayISO();
+    if (state.snapshots.some((s) => s.date === today)) return;
+    const voo = state.overrides['VOO'];
+    if (!voo) return;
+    snapshotAttempted.current = true;
+    const priceMap = priceMapFor(state.lots, state.overrides);
+    const account = accountTotal(state.lots, priceMap, state.cashEvents);
+    const payload = {
+      date: today,
+      account_value: roundCents(account),
+      banked_total: roundCents(cumulativeFloor(state.milestones)),
+      reserved_total: roundCents(reservedTotal(state.cashEvents)),
+      total_score: roundCents(
+        totalScore(state.lots, priceMap, state.cashEvents, state.milestones),
+      ),
+      shadow_voo_value: roundCents(shadowValue(state.benchmarkDeposits, voo)),
+      net_contributed: roundCents(netContributed(state.cashEvents)),
+      parked_pile_value: roundCents(pileTotal(state.parked)),
+      semi_ai_pct: Number(concentration(state.parked).semiPct.toFixed(6)),
+    };
+    void db()
+      .from('snapshots')
+      .upsert(payload, { onConflict: 'date', ignoreDuplicates: true })
+      .then(({ error: err }) => {
+        if (!err) void refresh();
+      });
+  }, [loading, error, state, refresh]);
 
   const addCashEvent = useCallback(
     async (e: Omit<CashEvent, 'id'>, vooPriceThatDay?: number) => {
