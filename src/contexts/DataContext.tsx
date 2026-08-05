@@ -120,6 +120,16 @@ interface DataContextValue extends DataState {
   }) => Promise<void>;
   addParkedLot: (lot: Omit<ParkedLot, 'id'>) => Promise<void>;
   deleteParkedLot: (id: string) => Promise<void>;
+  /** New parked holding: creates the position and its first purchase lot. */
+  addParkedPosition: (args: {
+    ticker: string;
+    accountId: string;
+    category: ParkedPosition['category'];
+    date: string | null;
+    shares: number;
+    price: number;
+    notes?: string | null;
+  }) => Promise<void>;
   /** Rows seeded from the workbook, identified by EXAMPLE in their notes. */
   exampleData: { cashEvents: CashEvent[]; lots: PositionLot[]; trades: Trade[]; total: number };
   clearExampleData: () => Promise<void>;
@@ -532,6 +542,49 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [refresh, recomputeParkedAggregate],
   );
 
+  const addParkedPosition = useCallback(
+    async ({
+      ticker, accountId, category, date, shares, price, notes,
+    }: {
+      ticker: string;
+      accountId: string;
+      category: ParkedPosition['category'];
+      date: string | null;
+      shares: number;
+      price: number;
+      notes?: string | null;
+    }) => {
+      const client = db();
+      const { data, error: posErr } = await client
+        .from('parked_positions')
+        .insert({
+          ticker: ticker.toUpperCase(),
+          account_id: accountId,
+          category,
+          shares,
+          avg_cost: price,
+          current_price: price,
+          notes: notes ?? null,
+        })
+        .select('id')
+        .single();
+      if (posErr) throw posErr;
+      const { error: lotErr } = await client.from('parked_lots').insert(
+        parkedLotPayload({
+          parkedPositionId: data.id,
+          date,
+          source: 'purchase',
+          shares,
+          price,
+          amount: roundCents(shares * price),
+        }),
+      );
+      if (lotErr) throw lotErr;
+      await refresh();
+    },
+    [refresh],
+  );
+
   const deleteParkedLot = useCallback(
     async (id: string) => {
       const lot = state.parkedLots.find((l) => l.id === id);
@@ -727,6 +780,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       recordTrim,
       addParkedLot,
       deleteParkedLot,
+      addParkedPosition,
       exampleData,
       clearExampleData,
       setOverride,
@@ -736,7 +790,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       state, mergedParked, quotes, quotesAsOf, refreshQuotes, contributionCap, loading, error,
       refresh, addCashEvent, deleteCashEvent, addLot, closePosition, recordSplit,
       setTradeWashSale, deleteTrade, updateParked, recordMilestone, addAccount, addOutsideSale,
-      deleteOutsideSale, recordTrim, addParkedLot, deleteParkedLot, exampleData, clearExampleData,
+      deleteOutsideSale, recordTrim, addParkedLot, deleteParkedLot, addParkedPosition,
+      exampleData, clearExampleData,
       setOverride, clearOverride,
     ],
   );

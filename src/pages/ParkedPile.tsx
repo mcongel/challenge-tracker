@@ -1,5 +1,5 @@
 import { Fragment, useMemo, useState } from 'react';
-import { AlertTriangle, Archive, ChevronDown, ChevronRight, Pencil, Scissors, Settings2, Trash2 } from 'lucide-react';
+import { AlertTriangle, Archive, ChevronDown, ChevronRight, Pencil, Plus, Scissors, Settings2, Trash2 } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
@@ -31,6 +31,7 @@ export function ParkedPile() {
   const [trimming, setTrimming] = useState<ParkedPosition | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [accountsOpen, setAccountsOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
 
   const lotsByPosition = useMemo(() => {
     const m = new Map<string, ParkedLot[]>();
@@ -55,10 +56,16 @@ export function ParkedPile() {
         title="Parked Pile"
         subtitle="The foundation — context only, never in the score. Funding source and skim destination; never refill fuel."
         actions={
-          <button onClick={() => setAccountsOpen(true)}
-            className={cn(secondaryBtnCls, 'flex items-center gap-1.5')} title="Manage accounts">
-            <Settings2 className="h-4 w-4" /> Accounts
-          </button>
+          <div className="flex gap-2">
+            <button onClick={() => setAccountsOpen(true)}
+              className={cn(secondaryBtnCls, 'flex items-center gap-1.5')} title="Manage accounts">
+              <Settings2 className="h-4 w-4" /> Accounts
+            </button>
+            <button onClick={() => setAddOpen(true)}
+              className={cn(primaryBtnCls, 'flex items-center gap-1.5')}>
+              <Plus className="h-4 w-4" /> Add holding
+            </button>
+          </div>
         }
       />
 
@@ -196,7 +203,109 @@ export function ParkedPile() {
       {editing && <EditParkedModal position={editing} onClose={() => setEditing(null)} />}
       {trimming && <TrimModal position={trimming} onClose={() => setTrimming(null)} />}
       {accountsOpen && <AccountsModal onClose={() => setAccountsOpen(false)} />}
+      {addOpen && <AddHoldingModal onClose={() => setAddOpen(false)} />}
     </div>
+  );
+}
+
+function AddHoldingModal({ onClose }: { onClose: () => void }) {
+  const { accounts, parked, addParkedPosition } = useData();
+  const outside = accounts.filter((a) => a.kind === 'outside');
+  const [ticker, setTicker] = useState('');
+  const [accountId, setAccountId] = useState(outside[0]?.id ?? '');
+  const [category, setCategory] = useState<ParkedPosition['category']>('Semi/AI');
+  const [date, setDate] = useState('');
+  const [shares, setShares] = useState('');
+  const [price, setPrice] = useState('');
+  const [notes, setNotes] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    const t = ticker.trim().toUpperCase();
+    if (parked.some((p) => p.ticker === t && p.accountId === accountId)) {
+      return setFormError(
+        `${t} is already parked in that account — expand its row and add a lot instead.`,
+      );
+    }
+    const sh = Number(shares);
+    const pr = Number(price);
+    if (!sh || sh <= 0 || !pr || pr <= 0) return setFormError('Enter shares and cost per share.');
+    setBusy(true);
+    try {
+      await addParkedPosition({
+        ticker: t,
+        accountId,
+        category,
+        date: date || null,
+        shares: sh,
+        price: pr,
+        notes: notes || null,
+      });
+      onClose();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal isOpen onClose={onClose} title="Add parked holding">
+      <form onSubmit={submit} className="space-y-3">
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label className={labelCls}>Ticker</label>
+            <input required value={ticker} onChange={(e) => setTicker(e.target.value)}
+              className={inputCls} placeholder="NVDA" />
+          </div>
+          <div>
+            <label className={labelCls}>Category</label>
+            <select value={category} onChange={(e) => setCategory(e.target.value as ParkedPosition['category'])}
+              className={inputCls}>
+              <option>Semi/AI</option>
+              <option>AI-adjacent</option>
+              <option>BTC</option>
+              <option>Other</option>
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Buy date</label>
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
+          </div>
+        </div>
+        <AccountSelect accounts={accounts} value={accountId} onChange={setAccountId}
+          label="Account" kinds={['outside']} allowNone={false} />
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={labelCls}>Shares</label>
+            <input type="number" step="any" min="0.00000001" required value={shares}
+              onChange={(e) => setShares(e.target.value)} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Cost per share ($)</label>
+            <input type="number" step="any" min="0" required value={price}
+              onChange={(e) => setPrice(e.target.value)} className={inputCls} />
+          </div>
+        </div>
+        <div>
+          <label className={labelCls}>Notes</label>
+          <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls} />
+        </div>
+        <p className="text-xs text-gray-400">
+          This becomes the first purchase lot. Add more purchases and dividends by expanding the
+          row afterward. Context only — never in the score.
+        </p>
+        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
+        <div className="flex justify-end">
+          <button type="submit" disabled={busy} className={primaryBtnCls}>
+            {busy ? 'Adding…' : 'Add holding'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
