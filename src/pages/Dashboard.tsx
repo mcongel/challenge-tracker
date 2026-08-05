@@ -14,10 +14,11 @@ import { ErrorCard } from './CashLedger';
 import { cn, formatCurrency, todayISO } from '../lib/utils';
 
 /** Chart palette — validated (dataviz six checks) for both surfaces.
- * Light: indigo-600 / amber-600 · Dark: indigo-500 / amber-600. */
+ * You = brand green (green-600 both modes); Shadow VOO = indigo 600/500.
+ * Green+amber failed protan CVD (ΔE 6.2); green+indigo passes cleanly. */
 const SERIES = {
-  you: { light: '#4f46e5', dark: '#6366f1' },
-  shadow: { light: '#d97706', dark: '#d97706' },
+  you: { light: '#16a34a', dark: '#16a34a' },
+  shadow: { light: '#4f46e5', dark: '#6366f1' },
   floor: { light: '#16a34a', dark: '#22c55e' },
 };
 
@@ -94,7 +95,7 @@ export function Dashboard() {
       {/* Hero: the one big honest number */}
       <div className="bg-white rounded-lg shadow-lg p-6 sm:p-8 text-center">
         <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Total Score</p>
-        <p className="mt-1 font-display text-5xl sm:text-6xl font-bold tabular-nums text-gray-900">
+        <p className="mt-1 text-5xl sm:text-6xl font-bold tabular-nums text-gray-900">
           {loading ? '…' : formatCurrency(roundCents(score))}
         </p>
         <p className="mt-2 text-xs text-gray-400">
@@ -135,7 +136,7 @@ export function Dashboard() {
         </div>
         <div className="mt-3 h-2 rounded-full bg-gray-100 overflow-hidden">
           <div
-            className="h-full bg-indigo-600 rounded-full transition-all"
+            className="h-full bg-green-600 rounded-full transition-all"
             style={{ width: `${Math.min(100, (score / 1_000_000) * 100)}%` }}
           />
         </div>

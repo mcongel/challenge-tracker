@@ -43,7 +43,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             cn(
               'flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors',
               isActive
-                ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-50'
+                ? 'bg-green-50 text-green-700'
                 : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900',
             )
           }
@@ -57,8 +57,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
   const brand = (
     <div className="h-14 flex items-center px-4 border-b border-gray-200">
-      <span className="font-display font-semibold text-lg tracking-tight">
-        Challenge<span className="text-indigo-600">Tracker</span>
+      <span className="font-display font-bold text-lg" style={{ letterSpacing: '-0.01em' }}>
+        Challenge<span className="text-green-600">Tracker</span>
       </span>
     </div>
   );

@@ -23,8 +23,8 @@ export function Login() {
     <div className="min-h-screen bg-gray-50 dark:bg-slate-950 flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-6">
-          <span className="font-display font-semibold text-2xl tracking-tight text-gray-900 dark:text-slate-100">
-            Challenge<span className="text-indigo-600">Tracker</span>
+          <span className="font-display font-bold text-2xl text-gray-900 dark:text-slate-100" style={{ letterSpacing: '-0.01em' }}>
+            Challenge<span className="text-green-600">Tracker</span>
           </span>
           <p className="mt-1 text-sm text-gray-500">The scoreboard. Sign in to see the score.</p>
         </div>
@@ -51,7 +51,7 @@ export function Login() {
                 autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-600"
               />
             </div>
             <div>
@@ -65,7 +65,7 @@ export function Login() {
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-600"
               />
             </div>
             {error && (
@@ -74,7 +74,7 @@ export function Login() {
             <button
               type="submit"
               disabled={busy}
-              className="w-full rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+              className="w-full rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
             >
               {busy ? 'Signing in…' : 'Sign in'}
             </button>

@@ -39,7 +39,7 @@ export function Milestones() {
             Milestone hit — {formatCurrency(row.level)} crossed
           </p>
           <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
-            <p className="font-display text-3xl sm:text-4xl font-bold text-emerald-700 tabular-nums">
+            <p className="font-display text-3xl sm:text-4xl font-bold text-emerald-700" style={{ letterSpacing: '-0.02em' }}>
               BANK {formatCurrency(row.skimDue)} NOW
             </p>
             <button onClick={() => setBanking(row)} className={primaryBtnCls}>

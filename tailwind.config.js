@@ -14,8 +14,9 @@ export default {
         'text-muted': 'rgb(var(--color-text-muted) / <alpha-value>)',
       },
       fontFamily: {
-        sans: ['"DM Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-        display: ['Fraunces', 'ui-serif', 'serif'],
+        sans: ['"DM Sans"', '-apple-system', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        // SpokenFor's display face for the wordmark, hero numbers, and headings.
+        display: ['Georgia', 'ui-serif', 'serif'],
       },
     },
   },

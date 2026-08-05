@@ -21,7 +21,7 @@ export function MobileBottomNav() {
           className={({ isActive }) =>
             cn(
               'flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium',
-              isActive ? 'text-indigo-600' : 'text-gray-500',
+              isActive ? 'text-green-700' : 'text-gray-500',
             )
           }
         >

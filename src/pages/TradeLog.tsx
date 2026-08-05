@@ -112,7 +112,7 @@ export function TradeLog() {
                         checked={t.washSale}
                         onChange={(e) => setTradeWashSale(t.id, e.target.checked).catch((err) =>
                           setRowError(err instanceof Error ? err.message : String(err)))}
-                        className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                        className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-600"
                         title="Wash sale — loss disallowed"
                       />
                     </td>

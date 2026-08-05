@@ -41,8 +41,8 @@ export function Header({ onMenuClick }: HeaderProps) {
         >
           <Menu className="h-5 w-5 text-gray-600" />
         </button>
-        <span className="lg:hidden font-display font-semibold tracking-tight">
-          Challenge<span className="text-indigo-600">Tracker</span>
+        <span className="lg:hidden font-display font-bold" style={{ letterSpacing: '-0.01em' }}>
+          Challenge<span className="text-green-600">Tracker</span>
         </span>
       </div>
 
@@ -120,7 +120,7 @@ function ExportModal({ onClose }: { onClose: () => void }) {
           onClick={() =>
             downloadJson(Object.fromEntries(tables.map(([n, rows]) => [n.replace(/-/g, '_'), rows])), stamp)
           }
-          className="w-full rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
+          className="w-full rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 transition-colors"
         >
           Download everything (JSON)
         </button>
