@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { DataProvider } from './contexts/DataContext';
 import { Layout } from './components/layout/Layout';
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
@@ -26,6 +27,14 @@ function Gate() {
 
   if (!session || !isSupabaseConfigured) return <Login />;
 
+  return (
+    <DataProvider>
+      <AppRoutes />
+    </DataProvider>
+  );
+}
+
+function AppRoutes() {
   return (
     <Layout>
       <Routes>
