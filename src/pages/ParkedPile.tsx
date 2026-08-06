@@ -66,6 +66,39 @@ export function ParkedPile() {
     return parkedMarketValue(b) - parkedMarketValue(a);
   });
 
+  // Two lenses on the same pile: by account (where things live — the default,
+  // matching SpokenFor's grouped accounts) or by ticker (across accounts).
+  const [groupBy, setGroupByState] = useState<'account' | 'ticker'>(() =>
+    localStorage.getItem('pileGroupBy') === 'ticker' ? 'ticker' : 'account',
+  );
+  const setGroupBy = (m: 'account' | 'ticker') => {
+    setGroupByState(m);
+    localStorage.setItem('pileGroupBy', m);
+  };
+
+  const groups = useMemo(() => {
+    if (groupBy === 'account') {
+      return [...accounts]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((a) => ({ key: a.id, label: a.name, positions: ordered.filter((p) => p.accountId === a.id) }))
+        .filter((g) => g.positions.length > 0);
+    }
+    const tickers = [...new Set(ordered.map((p) => p.ticker))];
+    return tickers
+      .map((t) => ({
+        key: t,
+        label: t,
+        positions: ordered
+          .filter((p) => p.ticker === t)
+          .sort((a, b) => a.account.localeCompare(b.account)),
+      }))
+      .sort(
+        (a, b) =>
+          b.positions.reduce((s, p) => s + parkedMarketValue(p), 0) -
+          a.positions.reduce((s, p) => s + parkedMarketValue(p), 0),
+      );
+  }, [groupBy, accounts, ordered]);
+
   return (
     <div>
       <PageHeader
@@ -139,12 +172,26 @@ export function ParkedPile() {
         />
       ) : (
         <div className="bg-white rounded-lg shadow-lg overflow-x-auto">
+          <div className="flex items-center gap-1 px-4 pt-3">
+            <span className="text-xs text-gray-400 mr-1">Group by</span>
+            {(['account', 'ticker'] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setGroupBy(m)}
+                className={cn(
+                  'rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors',
+                  groupBy === m ? 'bg-green-50 text-green-700' : 'text-gray-400 hover:bg-gray-100',
+                )}
+              >
+                {m === 'account' ? 'Account' : 'Ticker'}
+              </button>
+            ))}
+          </div>
           <table className="w-full text-sm compact-table">
             <thead className="bg-gray-50 sticky top-0">
               <tr className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
                 <th className="px-2 py-3 w-8" />
-                <th className="px-4 py-3">Ticker</th>
-                <th className="px-4 py-3">Account</th>
+                <th className="px-4 py-3">{groupBy === 'account' ? 'Ticker' : 'Account'}</th>
                 <th className="px-4 py-3 text-right">Shares</th>
                 <th className="px-4 py-3 text-right">Avg cost</th>
                 <th className="px-4 py-3 text-right">Price</th>
@@ -157,7 +204,46 @@ export function ParkedPile() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {ordered.map((p) => {
+              {groups.map((group) => {
+                const groupValue = group.positions.reduce((s, p) => s + parkedMarketValue(p), 0);
+                const groupShares = group.positions.reduce((s, p) => s + p.shares, 0);
+                const groupBasis = group.positions.reduce((s, p) => s + parkedCostBasis(p), 0);
+                const first = group.positions[0];
+                return (
+                  <Fragment key={group.key}>
+                    <tr className="bg-gray-50">
+                      <td colSpan={9} className="px-4 py-2">
+                        {groupBy === 'account' ? (
+                          <span className="font-bold text-gray-700">
+                            {group.label}
+                            <span className="ml-2 text-xs font-normal text-gray-400">
+                              {group.positions.length} holding{group.positions.length > 1 ? 's' : ''} ·{' '}
+                              <span className="tabular-nums">{formatCurrency(roundCents(groupValue))}</span>
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1.5 font-bold text-gray-700">
+                            {group.label}
+                            <span className={cn('inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium', CATEGORY_STYLES[first.category])}>
+                              {first.category}
+                            </span>
+                            {tickerNames[group.label] && (
+                              <span className="text-xs font-normal text-gray-400 truncate max-w-[12rem]">{tickerNames[group.label]}</span>
+                            )}
+                            <span className="text-xs font-normal text-gray-400 tabular-nums">
+                              · {fmtSh(groupShares)} sh across {group.positions.length} account{group.positions.length > 1 ? 's' : ''} ·{' '}
+                              {formatCurrency(roundCents(groupValue))}
+                              {groupBasis > 0 && (
+                                <span className={groupValue - groupBasis >= 0 ? ' text-green-600' : ' text-red-600'}>
+                                  {' '}· {formatPercent((groupValue - groupBasis) / groupBasis)}
+                                </span>
+                              )}
+                            </span>
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                    {group.positions.map((p) => {
                 const value = parkedMarketValue(p);
                 const basis = parkedCostBasis(p);
                 const summ = unlockSummary(lotsByPosition.get(p.id) ?? [], today);
@@ -173,28 +259,38 @@ export function ParkedPile() {
                           <ChevronRight className="h-4 w-4 text-gray-300" />
                         )}
                       </td>
-                      <td className="px-4 py-3 font-medium">
-                        <span className="flex items-center gap-1.5">
-                          {p.ticker}
-                          <span className={cn('inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium', CATEGORY_STYLES[p.category])}>
-                            {p.category}
+                      {groupBy === 'account' ? (
+                        <td className="px-4 py-3 font-medium">
+                          <span className="flex items-center gap-1.5">
+                            {p.ticker}
+                            <span className={cn('inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium', CATEGORY_STYLES[p.category])}>
+                              {p.category}
+                            </span>
+                            {p.trimRank != null && (
+                              <span className="inline-block rounded-full bg-gray-100 text-gray-500 px-1.5 py-0.5 text-[10px] font-bold" title={`Trim rank ${p.trimRank}`}>
+                                #{p.trimRank}
+                              </span>
+                            )}
                           </span>
+                          {(tickerNames[p.ticker] || p.notes) && (
+                            <p
+                              className="text-xs font-normal text-gray-400 max-w-[14rem] truncate"
+                              title={[tickerNames[p.ticker], p.notes].filter(Boolean).join(' · ')}
+                            >
+                              {[tickerNames[p.ticker], p.notes].filter(Boolean).join(' · ')}
+                            </p>
+                          )}
+                        </td>
+                      ) : (
+                        <td className="px-4 py-3 pl-8 text-gray-600">
+                          {p.account}
                           {p.trimRank != null && (
-                            <span className="inline-block rounded-full bg-gray-100 text-gray-500 px-1.5 py-0.5 text-[10px] font-bold" title={`Trim rank ${p.trimRank}`}>
+                            <span className="ml-1.5 inline-block rounded-full bg-gray-100 text-gray-500 px-1.5 py-0.5 text-[10px] font-bold" title={`Trim rank ${p.trimRank}`}>
                               #{p.trimRank}
                             </span>
                           )}
-                        </span>
-                        {(tickerNames[p.ticker] || p.notes) && (
-                          <p
-                            className="text-xs font-normal text-gray-400 max-w-[14rem] truncate"
-                            title={[tickerNames[p.ticker], p.notes].filter(Boolean).join(' · ')}
-                          >
-                            {[tickerNames[p.ticker], p.notes].filter(Boolean).join(' · ')}
-                          </p>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-gray-500">{p.account}</td>
+                        </td>
+                      )}
                       <td className="px-4 py-3 text-right tabular-nums">{fmtSh(p.shares)}</td>
                       <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(p.avgCost)}</td>
                       <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(p.currentPrice)}</td>
@@ -220,11 +316,14 @@ export function ParkedPile() {
                     </tr>
                     {expanded && (
                       <tr>
-                        <td colSpan={10} className="bg-gray-50 px-4 sm:px-6 py-4">
+                        <td colSpan={9} className="bg-gray-50 px-4 sm:px-6 py-4">
                           <LotPanel position={p} summary={summ} />
                         </td>
                       </tr>
                     )}
+                  </Fragment>
+                );
+                    })}
                   </Fragment>
                 );
               })}
