@@ -278,8 +278,8 @@ describe('parked lots — per-lot unlocks, aggregates, FIFO', () => {
     expect(r.deletes).toEqual(['old']);          // null date consumed first
     expect(r.updates).toEqual([{ id: 'mid', shares: 2, amount: 250 }]);
     expect(r.consumed).toEqual([
-      { id: 'old', date: null, shares: 4, amount: 400 },
-      { id: 'mid', date: '2025-06-01', shares: 2, amount: 250 },
+      { id: 'old', date: null, source: 'purchase', shares: 4, amount: 400 },
+      { id: 'mid', date: '2025-06-01', source: 'purchase', shares: 2, amount: 250 },
     ]);
     expect(() => consumeLotsFifo(lots, 11)).toThrow();
   });

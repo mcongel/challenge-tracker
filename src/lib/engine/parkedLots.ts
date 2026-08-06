@@ -67,8 +67,15 @@ export function dividendsCollected(lots: ParkedLot[]): number {
 export interface LotConsumption {
   updates: { id: string; shares: number; amount: number }[];
   deletes: string[];
-  /** What was actually sold, lot by lot — carries the basis and dates. */
-  consumed: { id: string; date: string | null; shares: number; amount: number }[];
+  /** What was taken, lot by lot — carries basis, dates, and origin (so a
+   * transfer can recreate DRIP slivers as DRIP slivers). */
+  consumed: {
+    id: string;
+    date: string | null;
+    source: 'purchase' | 'dividend';
+    shares: number;
+    amount: number;
+  }[];
 }
 
 /** Consume shares oldest-first (unknown dates count as oldest — they're the
@@ -101,12 +108,19 @@ export function consumeLotsFifo(lots: ParkedLot[], sharesToSell: number): LotCon
       consumed.push({
         id: lot.id,
         date: lot.date,
+        source: lot.source,
         shares: take,
         amount: Math.round((lot.amount - keptAmount) * 100) / 100,
       });
     } else {
       deletes.push(lot.id);
-      consumed.push({ id: lot.id, date: lot.date, shares: lot.shares, amount: lot.amount });
+      consumed.push({
+        id: lot.id,
+        date: lot.date,
+        source: lot.source,
+        shares: lot.shares,
+        amount: lot.amount,
+      });
     }
   }
   return { updates, deletes, consumed };

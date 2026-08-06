@@ -145,6 +145,15 @@ interface DataContextValue extends DataState {
     notes?: string | null;
   }) => Promise<void>;
   deleteParkedSale: (id: string) => Promise<void>;
+  /** ACATS-style move between accounts: lot slices keep their original dates
+   * and basis (holding periods survive a transfer), oldest lots first. Not a
+   * sale — no history entry, no wash-sale involvement. */
+  transferParked: (args: {
+    parkedId: string;
+    toAccountId: string;
+    shares: number;
+    date: string;
+  }) => Promise<void>;
   /** History corrections: basis, term, funded flag, date, notes. */
   updateParkedSale: (
     id: string,
@@ -643,6 +652,85 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [refresh],
   );
 
+  const transferParked = useCallback(
+    async ({
+      parkedId, toAccountId, shares, date,
+    }: {
+      parkedId: string;
+      toAccountId: string;
+      shares: number;
+      date: string;
+    }) => {
+      const client = db();
+      const p = state.parked.find((x) => x.id === parkedId);
+      if (!p) throw new Error('Parked position not found');
+      if (toAccountId === p.accountId) throw new Error('Pick a different destination account.');
+      if (shares <= 0) throw new Error('Shares must be positive');
+      if (shares > p.shares + 1e-9) {
+        throw new Error(`Only ${p.shares} shares parked; cannot transfer ${shares}`);
+      }
+      const positionLots = state.parkedLots.filter((l) => l.parkedPositionId === parkedId);
+      if (positionLots.length === 0) throw new Error('No lots to transfer — add lots first.');
+
+      const fromName = p.account;
+      const { updates, deletes, consumed } = consumeLotsFifo(positionLots, shares);
+
+      // Destination position: merge into an existing one or create it.
+      let destId = state.parked.find(
+        (x) => x.ticker === p.ticker && x.accountId === toAccountId,
+      )?.id;
+      if (!destId) {
+        const { data, error: posErr } = await client
+          .from('parked_positions')
+          .insert({
+            ticker: p.ticker,
+            account_id: toAccountId,
+            category: p.category,
+            shares: 0.00000001, // placeholder; recomputed from lots below
+            avg_cost: p.avgCost,
+            current_price: p.currentPrice,
+            trim_rank: p.trimRank ?? null,
+            notes: p.notes ?? null,
+          })
+          .select('id')
+          .single();
+        if (posErr) throw posErr;
+        destId = data.id as string;
+      }
+
+      // Recreate the slices at the destination with dates/basis/source intact.
+      const { error: lotErr } = await client.from('parked_lots').insert(
+        consumed.map((c) =>
+          parkedLotPayload({
+            parkedPositionId: destId as string,
+            date: c.date,
+            source: c.source,
+            shares: c.shares,
+            price: c.shares > 0 ? Math.round((c.amount / c.shares) * 10000) / 10000 : null,
+            amount: c.amount,
+            notes: `ACATS from ${fromName} ${date}`,
+          }),
+        ),
+      );
+      if (lotErr) throw lotErr;
+
+      // Then shrink the source.
+      for (const u of updates) {
+        const { error: err } = await client
+          .from('parked_lots').update({ shares: u.shares, amount: u.amount }).eq('id', u.id);
+        if (err) throw err;
+      }
+      if (deletes.length > 0) {
+        const { error: err } = await client.from('parked_lots').delete().in('id', deletes);
+        if (err) throw err;
+      }
+      await recomputeParkedAggregate(destId);
+      await recomputeParkedAggregate(parkedId);
+      await refresh();
+    },
+    [refresh, state.parked, state.parkedLots, recomputeParkedAggregate],
+  );
+
   const updateParkedSale = useCallback(
     async (
       id: string,
@@ -913,6 +1001,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       addParkedPosition,
       deleteParkedSale,
       updateParkedSale,
+      transferParked,
       exampleData,
       clearExampleData,
       setOverride,
@@ -924,7 +1013,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       refresh, addCashEvent, deleteCashEvent, addLot, closePosition, recordSplit,
       setTradeWashSale, deleteTrade, updateParked, recordMilestone, addAccount, addOutsideSale,
       deleteOutsideSale, recordTrim, addParkedLot, deleteParkedLot, addParkedPosition,
-      deleteParkedSale, updateParkedSale, exampleData, clearExampleData,
+      deleteParkedSale, updateParkedSale, transferParked, exampleData, clearExampleData,
       setOverride, clearOverride,
     ],
   );
