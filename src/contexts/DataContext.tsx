@@ -14,10 +14,11 @@ import type {
   Trade,
 } from '../lib/engine';
 import {
-  accountTotal, aggregateLots, closeShares, concentration, consumeLotsFifo, cumulativeFloor,
-  netContributed, pileTotal, reservedTotal, roundCents, shadowValue, totalScore, trimPreview,
+  accountTotal, aggregateLots, closeShares, computeAccountCash, concentration, consumeLotsFifo,
+  cumulativeFloor, netContributed, pileTotal, reservedTotal, roundCents, shadowValue, totalScore,
+  trimPreview,
 } from '../lib/engine';
-import type { ParkedLot, ParkedSale } from '../lib/engine';
+import type { AccountCashBreakdown, ParkedCashEvent, ParkedLot, ParkedSale } from '../lib/engine';
 import { priceMapFor } from '../lib/alerts';
 import { todayISO } from '../lib/utils';
 import {
@@ -28,6 +29,8 @@ import {
   parkedLotPayload,
   mapParkedSale,
   parkedSalePayload,
+  mapParkedCashEvent,
+  parkedCashEventPayload,
   mapAccount,
   mapBenchmarkDeposit,
   mapCarryforward,
@@ -63,6 +66,8 @@ interface DataState {
   parkedLots: ParkedLot[];
   /** The pile's own sale log — never score/YTD/tax math. */
   parkedSales: ParkedSale[];
+  /** Manual cash movements in non-challenge accounts. */
+  parkedCashEvents: ParkedCashEvent[];
 }
 
 const EMPTY: DataState = {
@@ -80,6 +85,7 @@ const EMPTY: DataState = {
   outsideSales: [],
   parkedLots: [],
   parkedSales: [],
+  parkedCashEvents: [],
 };
 
 interface DataContextValue extends DataState {
@@ -154,6 +160,12 @@ interface DataContextValue extends DataState {
     shares: number;
     date: string;
   }) => Promise<void>;
+  /** Tracked cash per non-challenge account (auto-flows + manual events). */
+  accountCash: (accountId: string) => AccountCashBreakdown;
+  addParkedCashEvent: (e: Omit<ParkedCashEvent, 'id'>) => Promise<void>;
+  deleteParkedCashEvent: (id: string) => Promise<void>;
+  /** The reconcile piece: writes an adjustment for actual − tracked. */
+  reconcileAccountCash: (accountId: string, actualBalance: number) => Promise<void>;
   /** History corrections: basis, term, funded flag, date, notes. */
   updateParkedSale: (
     id: string,
@@ -182,7 +194,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const client = db();
       const [
         cash, lots, trades, milestones, bench, parked, snaps, carry, overrides, settings,
-        accounts, outsideSales, parkedLots, parkedSales,
+        accounts, outsideSales, parkedLots, parkedSales, parkedCashEvents,
       ] = await Promise.all([
         client.from('cash_events').select('*').order('date').order('created_at'),
         client.from('position_lots').select('*').order('buy_date'),
@@ -198,11 +210,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         client.from('outside_sales').select('*').order('sale_date'),
         client.from('parked_lots').select('*').order('date', { nullsFirst: true }),
         client.from('parked_sales').select('*').order('date'),
+        client.from('parked_cash_events').select('*').order('date'),
       ]);
       const firstError =
         cash.error ?? lots.error ?? trades.error ?? milestones.error ?? bench.error ??
         parked.error ?? snaps.error ?? carry.error ?? overrides.error ?? settings.error ??
-        accounts.error ?? outsideSales.error ?? parkedLots.error ?? parkedSales.error;
+        accounts.error ?? outsideSales.error ?? parkedLots.error ?? parkedSales.error ??
+        parkedCashEvents.error;
       if (firstError) throw firstError;
       setState({
         cashEvents: (cash.data ?? []).map(mapCashEvent),
@@ -221,6 +235,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         outsideSales: (outsideSales.data ?? []).map(mapOutsideSale),
         parkedLots: (parkedLots.data ?? []).map(mapParkedLot),
         parkedSales: (parkedSales.data ?? []).map(mapParkedSale),
+        parkedCashEvents: (parkedCashEvents.data ?? []).map(mapParkedCashEvent),
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -731,6 +746,56 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [refresh, state.parked, state.parkedLots, recomputeParkedAggregate],
   );
 
+  const accountCash = useCallback(
+    (accountId: string) =>
+      computeAccountCash(accountId, {
+        parkedCashEvents: state.parkedCashEvents,
+        parkedSales: state.parkedSales,
+        parkedLots: state.parkedLots,
+        parked: state.parked,
+        cashEvents: state.cashEvents,
+      }),
+    [state.parkedCashEvents, state.parkedSales, state.parkedLots, state.parked, state.cashEvents],
+  );
+
+  const addParkedCashEvent = useCallback(
+    async (e: Omit<ParkedCashEvent, 'id'>) => {
+      const { error: err } = await db().from('parked_cash_events').insert(parkedCashEventPayload(e));
+      if (err) throw err;
+      await refresh();
+    },
+    [refresh],
+  );
+
+  const deleteParkedCashEvent = useCallback(
+    async (id: string) => {
+      const { error: err } = await db().from('parked_cash_events').delete().eq('id', id);
+      if (err) throw err;
+      await refresh();
+    },
+    [refresh],
+  );
+
+  const reconcileAccountCash = useCallback(
+    async (accountId: string, actualBalance: number) => {
+      const tracked = accountCash(accountId).balance;
+      const diff = roundCents(actualBalance - tracked);
+      if (Math.abs(diff) < 0.005) return; // already true
+      const { error: err } = await db().from('parked_cash_events').insert(
+        parkedCashEventPayload({
+          accountId,
+          date: todayISO(),
+          type: 'adjustment',
+          amount: diff,
+          notes: `Reconciled to actual ${roundCents(actualBalance)}`,
+        }),
+      );
+      if (err) throw err;
+      await refresh();
+    },
+    [refresh, accountCash],
+  );
+
   const updateParkedSale = useCallback(
     async (
       id: string,
@@ -1002,6 +1067,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       deleteParkedSale,
       updateParkedSale,
       transferParked,
+      accountCash,
+      addParkedCashEvent,
+      deleteParkedCashEvent,
+      reconcileAccountCash,
       exampleData,
       clearExampleData,
       setOverride,
@@ -1013,7 +1082,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       refresh, addCashEvent, deleteCashEvent, addLot, closePosition, recordSplit,
       setTradeWashSale, deleteTrade, updateParked, recordMilestone, addAccount, addOutsideSale,
       deleteOutsideSale, recordTrim, addParkedLot, deleteParkedLot, addParkedPosition,
-      deleteParkedSale, updateParkedSale, transferParked, exampleData, clearExampleData,
+      deleteParkedSale, updateParkedSale, transferParked, accountCash, addParkedCashEvent,
+      deleteParkedCashEvent, reconcileAccountCash, exampleData, clearExampleData,
       setOverride, clearOverride,
     ],
   );

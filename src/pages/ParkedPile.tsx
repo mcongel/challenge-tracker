@@ -6,11 +6,12 @@ import { Modal } from '../components/ui/Modal';
 import { AccountSelect } from '../components/ui/AccountSelect';
 import { ErrorCard, SkeletonTable } from './CashLedger';
 import { useData } from '../contexts/DataContext';
-import type { AccountKind, ParkedLot, ParkedPosition, ParkedSale, UnlockSummary } from '../lib/engine';
+import type {
+  Account, AccountKind, ParkedCashEvent, ParkedLot, ParkedPosition, ParkedSale, UnlockSummary,
+} from '../lib/engine';
 import {
   concentration, contributionStatus, depositExceedsCap, dividendsCollected, estimatedPileTax,
-  netContributed, parkedCostBasis, parkedMarketValue, roundCents, trackedBalance, trimPreview,
-  unlockSummary,
+  netContributed, parkedCostBasis, parkedMarketValue, roundCents, trimPreview, unlockSummary,
 } from '../lib/engine';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import {
@@ -29,7 +30,7 @@ const fmtSh = (n: number) => String(Number(n.toFixed(4)));
 export function ParkedPile() {
   const {
     parked, parkedLots, parkedSales, accounts, tickerNames, deleteParkedSale, concentrationCap,
-    updateSetting, loading, error,
+    updateSetting, accountCash, loading, error,
   } = useData();
   const [capOpen, setCapOpen] = useState(false);
   const [deletingSale, setDeletingSale] = useState<ParkedSale | null>(null);
@@ -219,6 +220,9 @@ export function ParkedPile() {
                             <span className="ml-2 text-xs font-normal text-gray-400">
                               {group.positions.length} holding{group.positions.length > 1 ? 's' : ''} ·{' '}
                               <span className="tabular-nums">{formatCurrency(roundCents(groupValue))}</span>
+                              <span className="tabular-nums" title="Tracked strategy cash — auto-flows from sales, dividends, buys, and challenge funding, plus your manual entries. Reconcile in the Accounts modal.">
+                                {' '}· {formatCurrency(roundCents(accountCash(group.key).balance))} cash
+                              </span>
                             </span>
                           </span>
                         ) : (
@@ -1182,10 +1186,11 @@ const KIND_STYLES: Record<AccountKind, string> = {
 };
 
 function AccountsModal({ onClose }: { onClose: () => void }) {
-  const { accounts, cashEvents, addAccount } = useData();
+  const { accounts, addAccount, accountCash } = useData();
   const [name, setName] = useState('');
   const [kind, setKind] = useState<AccountKind>('bank');
   const [broker, setBroker] = useState('');
+  const [cashFor, setCashFor] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -1218,7 +1223,7 @@ function AccountsModal({ onClose }: { onClose: () => void }) {
       <div className="space-y-4">
         <div className="space-y-1.5">
           {accounts.map((a) => {
-            const tracked = a.kind === 'bank' ? trackedBalance(a.id, cashEvents) : null;
+            const tracked = a.kind === 'challenge' ? null : accountCash(a.id).balance;
             return (
               <div key={a.id} className="flex items-center justify-between rounded-md border border-gray-200 px-3 py-2">
                 <div className="flex items-center gap-2 min-w-0">
@@ -1228,9 +1233,13 @@ function AccountsModal({ onClose }: { onClose: () => void }) {
                   </span>
                 </div>
                 {tracked !== null && (
-                  <span className="text-xs text-gray-500 tabular-nums" title="Tracked strategy cash — not the real account balance">
-                    {formatCurrency(roundCents(tracked))} tracked
-                  </span>
+                  <button
+                    onClick={() => setCashFor(a.id)}
+                    className="text-xs text-gray-500 tabular-nums hover:text-green-700 hover:underline"
+                    title="Tracked strategy cash — click for history and reconcile"
+                  >
+                    {formatCurrency(roundCents(tracked))} cash
+                  </button>
                 )}
               </div>
             );
@@ -1265,10 +1274,170 @@ function AccountsModal({ onClose }: { onClose: () => void }) {
           </div>
         </form>
         <p className="text-xs text-gray-400">
-          Accounts are labels for where money lives — they never change the score. Bank balances
-          show tracked strategy cash only, not your real balance.
+          Accounts are labels for where money lives — they never change the score. Cash figures are
+          tracked strategy cash, not a claim about your real balance — reconcile monthly.
         </p>
       </div>
+
+      {cashFor && (
+        <AccountCashModal
+          account={accounts.find((a) => a.id === cashFor)!}
+          onClose={() => setCashFor(null)}
+        />
+      )}
+    </Modal>
+  );
+}
+
+const CASH_TYPE_STYLES: Record<string, string> = {
+  deposit: 'bg-green-50 text-green-700',
+  interest: 'bg-sky-50 text-sky-700',
+  withdrawal: 'bg-orange-50 text-orange-700',
+  fee: 'bg-red-50 text-red-700',
+  adjustment: 'bg-gray-100 text-gray-600',
+};
+
+function AccountCashModal({ account, onClose }: { account: Account; onClose: () => void }) {
+  const {
+    accountCash, parkedCashEvents, addParkedCashEvent, deleteParkedCashEvent, reconcileAccountCash,
+  } = useData();
+  const cash = accountCash(account.id);
+  const events = parkedCashEvents.filter((e) => e.accountId === account.id).slice().reverse();
+
+  const [type, setType] = useState<ParkedCashEvent['type']>('deposit');
+  const [date, setDate] = useState(todayISO());
+  const [amount, setAmount] = useState('');
+  const [notes, setNotes] = useState('');
+  const [actual, setActual] = useState('');
+  const [deleting, setDeleting] = useState<ParkedCashEvent | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const addEvent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    const amt = Number(amount);
+    if (!amt || (type !== 'adjustment' && amt <= 0)) return setFormError('Amount must be positive (adjustments may be negative).');
+    setBusy(true);
+    try {
+      await addParkedCashEvent({ accountId: account.id, date, type, amount: roundCents(amt), notes: notes || null });
+      setAmount(''); setNotes('');
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reconcile = async () => {
+    setFormError(null);
+    const target = Number(actual);
+    if (actual === '' || Number.isNaN(target)) return setFormError('Enter the actual balance from the brokerage.');
+    setBusy(true);
+    try {
+      await reconcileAccountCash(account.id, target);
+      setActual('');
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal isOpen onClose={onClose} title={`${account.name} — tracked cash`}>
+      <div className="space-y-4">
+        <div>
+          <p className="text-2xl font-bold tabular-nums text-gray-900">{formatCurrency(roundCents(cash.balance))}</p>
+          <p className="text-xs text-gray-400 tabular-nums">
+            sales +{formatCurrency(roundCents(cash.saleProceeds))} · dividends +{formatCurrency(roundCents(cash.cashDividends))} ·
+            buys −{formatCurrency(roundCents(cash.purchases))} · challenge {cash.challengeFlows >= 0 ? '+' : '−'}{formatCurrency(roundCents(Math.abs(cash.challengeFlows)))} ·
+            manual {cash.manual >= 0 ? '+' : '−'}{formatCurrency(roundCents(Math.abs(cash.manual)))}
+          </p>
+        </div>
+
+        {/* Reconcile — the piece that keeps the number honest. */}
+        <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2.5">
+          <p className="text-xs font-semibold text-green-700 mb-1.5">
+            Reconcile to actual
+          </p>
+          <div className="flex gap-2">
+            <input type="number" step="0.01" value={actual} placeholder="balance from the brokerage"
+              onChange={(e) => setActual(e.target.value)}
+              className="flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-600" />
+            <button onClick={reconcile} disabled={busy} className={cn(primaryBtnCls, 'py-1.5')}>
+              Reconcile
+            </button>
+          </div>
+          <p className="text-[11px] text-green-700/80 mt-1">
+            Writes an adjustment for the difference. First time? This sets your opening balance.
+            A monthly glance keeps it true.
+          </p>
+        </div>
+
+        {events.length > 0 && (
+          <div className="max-h-40 overflow-y-auto rounded-md border border-gray-200">
+            <table className="w-full text-sm">
+              <tbody className="divide-y divide-gray-100">
+                {events.map((e) => (
+                  <tr key={e.id} className="hover:bg-gray-50">
+                    <td className="px-3 py-1.5 tabular-nums text-gray-500 w-24">{e.date}</td>
+                    <td className="px-3 py-1.5">
+                      <span className={cn('inline-block rounded-full px-2 py-0.5 text-xs font-medium', CASH_TYPE_STYLES[e.type])}>
+                        {e.type}
+                      </span>
+                    </td>
+                    <td className={cn('px-3 py-1.5 text-right tabular-nums font-medium',
+                      (e.type === 'withdrawal' || e.type === 'fee' || e.amount < 0) ? 'text-red-600' : 'text-green-600')}>
+                      {formatCurrency(e.amount)}
+                    </td>
+                    <td className="px-3 py-1.5 text-gray-400 text-xs max-w-[10rem] truncate">{e.notes}</td>
+                    <td className="px-1 py-1.5 w-8">
+                      <button onClick={() => setDeleting(e)} className="p-1 rounded hover:bg-red-50" aria-label="Delete cash event">
+                        <Trash2 className="h-3.5 w-3.5 text-gray-300 hover:text-red-600" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <form onSubmit={addEvent} className="space-y-2 border-t border-gray-100 pt-3">
+          <p className="text-xs font-medium text-gray-500">Add movement (external money, interest, fees)</p>
+          <div className="grid grid-cols-3 gap-2">
+            <select value={type} onChange={(e) => setType(e.target.value as ParkedCashEvent['type'])} className={inputCls}>
+              <option value="deposit">deposit</option>
+              <option value="withdrawal">withdrawal</option>
+              <option value="interest">interest</option>
+              <option value="fee">fee</option>
+              <option value="adjustment">adjustment</option>
+            </select>
+            <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
+            <input type="number" step="any" required value={amount} placeholder="$"
+              onChange={(e) => setAmount(e.target.value)} className={inputCls} />
+          </div>
+          <div className="flex gap-2">
+            <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="notes" className={inputCls} />
+            <button type="submit" disabled={busy} className={secondaryBtnCls}>Add</button>
+          </div>
+        </form>
+        <p className="text-xs text-gray-400">
+          Trims, buys, dividends, and challenge funding flow in automatically — only enter what the
+          app can't see. Tracked strategy cash, never a claim about the real balance.
+        </p>
+        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
+      </div>
+
+      {deleting && (
+        <ConfirmModal
+          title="Delete cash movement"
+          message={`Delete this ${deleting.type} (${formatCurrency(deleting.amount)}) from ${deleting.date}? The tracked balance recomputes without it.`}
+          onConfirm={() => deleteParkedCashEvent(deleting.id)}
+          onClose={() => setDeleting(null)}
+        />
+      )}
     </Modal>
   );
 }

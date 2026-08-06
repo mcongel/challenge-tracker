@@ -57,7 +57,7 @@ The floor rises permanently, the staircase chart gets a step, and the banner is 
 - **Dividends** go in from the same lots view: date, amount, and whether it reinvested (a DRIP buys its own dated sliver; cash just logs as income context). One entry per brokerage statement line.
 - **Trim** (scissors icon on a row) does the whole flow in one form: shrinks the position, logs the sale in the wash-sale radar, and — if you check "deposit the proceeds" — writes the Deposit and its shadow VOO twin. It warns before unlock and refuses to blow the contribution cap.
 - **Concentration watch**: Semi/AI over the 50% cap turns the banner red — trim semis first; it funds the account *and* fixes the concentration.
-- **Accounts** button: manage where money lives — brokerages and bank accounts. Bank accounts show *tracked strategy cash* (what the ledger has routed there), which is deliberately not your real bank balance.
+- **Accounts** button: manage where money lives, and each account's *tracked cash*. Trims, buys, dividends, and challenge funding flow in automatically; you enter only external deposits, interest, and fees. **Reconcile monthly**: click the cash figure, type the brokerage's actual balance, and an adjustment keeps the number true (first reconcile = your opening balance).
 - ACATS transfer landed? Edit the position and change its account.
 
 ## The honest test — Benchmark

@@ -8,6 +8,7 @@ import type {
   LossCarryforward,
   MilestoneRecord,
   OutsideSale,
+  ParkedCashEvent,
   ParkedLot,
   ParkedPosition,
   ParkedSale,
@@ -210,6 +211,23 @@ export const parkedSalePayload = (s: Omit<ParkedSale, 'id'>) => ({
   lt_shares: s.ltShares ?? null,
   funded_challenge: s.fundedChallenge,
   notes: s.notes ?? null,
+});
+
+export const mapParkedCashEvent = (r: any): ParkedCashEvent => ({
+  id: r.id,
+  accountId: r.account_id,
+  date: r.date,
+  type: r.type,
+  amount: Number(r.amount),
+  notes: r.notes,
+});
+
+export const parkedCashEventPayload = (e: Omit<ParkedCashEvent, 'id'>) => ({
+  account_id: e.accountId,
+  date: e.date,
+  type: e.type,
+  amount: e.amount,
+  notes: e.notes ?? null,
 });
 
 export const mapSnapshot = (r: any): Snapshot => ({

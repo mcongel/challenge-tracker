@@ -302,6 +302,42 @@ describe('parked lots — per-lot unlocks, aggregates, FIFO', () => {
   });
 });
 
+describe('parked cash — tracked balance with auto-flows', () => {
+  it('sales and cash dividends credit, purchases debit, transfers and milestone lots do not', async () => {
+    const { computeAccountCash } = await import('../parkedCash');
+    const acct = 'cashapp';
+    const result = computeAccountCash(acct, {
+      parkedCashEvents: [
+        { id: 'm1', accountId: acct, date: '2026-01-01', type: 'adjustment', amount: 500 },   // opening
+        { id: 'm2', accountId: acct, date: '2026-02-01', type: 'interest', amount: 10 },
+        { id: 'm3', accountId: acct, date: '2026-03-01', type: 'withdrawal', amount: 50 },
+        { id: 'm4', accountId: 'other', date: '2026-03-01', type: 'deposit', amount: 999 },   // different account
+      ],
+      parkedSales: [
+        { id: 's1', ticker: 'MU', accountId: acct, date: '2026-05-29', shares: 2, pricePerShare: 1000, proceeds: 2000, fundedChallenge: true },
+      ],
+      parked: [{ id: 'p1', ticker: 'GLW', accountId: acct, account: 'Cash App', category: 'AI-adjacent', shares: 4, avgCost: 100, currentPrice: 100 }],
+      parkedLots: [
+        { id: 'l1', parkedPositionId: 'p1', date: '2026-04-01', source: 'purchase', shares: 4, amount: 400 },
+        { id: 'l2', parkedPositionId: 'p1', date: '2026-06-01', source: 'dividend', shares: 0, amount: 25 },      // cash dividend
+        { id: 'l3', parkedPositionId: 'p1', date: '2026-06-15', source: 'dividend', shares: 0.1, amount: 15 },    // DRIP — no cash effect
+        { id: 'l4', parkedPositionId: 'p1', date: null, source: 'purchase', shares: 1, amount: 90, notes: 'ACATS from Stash 2026-08-06' },
+        { id: 'l5', parkedPositionId: 'p1', date: '2026-07-01', source: 'purchase', shares: 1, amount: 80, notes: 'Milestone 100000 bank' },
+      ],
+      cashEvents: [
+        { id: 'c1', date: '2026-05-29', type: 'Deposit', amount: 2000, accountId: acct },  // funded trim → debit
+      ] as import('../types').CashEvent[],
+    });
+    // 500 + 10 − 50 (manual) + 2000 (sale) + 25 (cash div) − 400 (buy) − 2000 (challenge deposit)
+    expect(result.manual).toBe(460);
+    expect(result.saleProceeds).toBe(2000);
+    expect(result.cashDividends).toBe(25);
+    expect(result.purchases).toBe(400);
+    expect(result.challengeFlows).toBe(-2000);
+    expect(result.balance).toBeCloseTo(85, 9);
+  });
+});
+
 describe('benchmark — rolling 12-month verdict', () => {
   const snap = (date: string, totalScore: number, shadowVooValue: number): Snapshot => ({
     date, totalScore, shadowVooValue,

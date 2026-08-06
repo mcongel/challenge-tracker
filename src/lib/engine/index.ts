@@ -13,3 +13,4 @@ export * from './washSale';
 export * from './contribution';
 export * from './accounts';
 export * from './parkedLots';
+export * from './parkedCash';
