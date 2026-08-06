@@ -1221,27 +1221,46 @@ function AccountsModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal isOpen onClose={onClose} title="Accounts">
       <div className="space-y-4">
+        <p className="text-sm text-gray-500 -mt-1">
+          Click an account to see its tracked cash, add movements, and reconcile.
+        </p>
         <div className="space-y-1.5">
           {accounts.map((a) => {
             const tracked = a.kind === 'challenge' ? null : accountCash(a.id).balance;
-            return (
-              <div key={a.id} className="flex items-center justify-between rounded-md border border-gray-200 px-3 py-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-sm font-medium text-gray-700 truncate">{a.name}</span>
-                  <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', KIND_STYLES[a.kind])}>
-                    {a.kind}
-                  </span>
+            if (tracked === null) {
+              return (
+                <div key={a.id} className="rounded-lg border border-gray-200 px-3 py-2.5">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-sm font-medium text-gray-700 truncate">{a.name}</span>
+                    <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', KIND_STYLES[a.kind])}>
+                      {a.kind}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-0.5">its cash lives on the Cash Ledger</p>
                 </div>
-                {tracked !== null && (
-                  <button
-                    onClick={() => setCashFor(a.id)}
-                    className="text-xs text-gray-500 tabular-nums hover:text-green-700 hover:underline"
-                    title="Tracked strategy cash — click for history and reconcile"
-                  >
-                    {formatCurrency(roundCents(tracked))} cash
-                  </button>
-                )}
-              </div>
+              );
+            }
+            return (
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => setCashFor(a.id)}
+                className="w-full text-left rounded-lg border border-gray-200 px-3 py-2.5 hover:bg-gray-50 transition-colors"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-sm font-medium text-gray-700 truncate">{a.name}</span>
+                    <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', KIND_STYLES[a.kind])}>
+                      {a.kind}
+                    </span>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                </div>
+                <p className="text-lg font-bold tabular-nums text-gray-900 mt-0.5">
+                  {formatCurrency(roundCents(tracked))}
+                </p>
+                <p className="text-xs text-gray-400">tracked cash · view history & reconcile</p>
+              </button>
             );
           })}
         </div>
