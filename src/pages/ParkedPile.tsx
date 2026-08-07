@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useMemo, useState } from 'react';
 import {
   AlertTriangle, Archive, ArrowDown, ArrowLeftRight, ArrowUp, ArrowUpDown, ChevronDown,
-  ChevronRight, Pencil, Plus, Scissors, Settings2, Trash2,
+  ChevronRight, Lock, Pencil, Plus, Scissors, Settings2, Trash2, Unlock,
 } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
@@ -32,7 +32,9 @@ const CATEGORY_STYLES: Record<ParkedPosition['category'], string> = {
 const fmtSh = (n: number) => String(Number(n.toFixed(4)));
 
 type GroupBy = 'account' | 'ticker' | 'flat';
-type SortKey = 'default' | 'label' | 'shares' | 'avgCost' | 'price' | 'value' | 'unrealPct' | 'unlock';
+type SortKey =
+  | 'default' | 'label' | 'shares' | 'avgCost' | 'price' | 'dayChange' | 'value' | 'unrealPct'
+  | 'unlock';
 interface SortState {
   key: SortKey;
   dir: 'asc' | 'desc';
@@ -45,6 +47,7 @@ const NATURAL_DIR: Record<SortKey, 'asc' | 'desc'> = {
   shares: 'desc',
   avgCost: 'desc',
   price: 'desc',
+  dayChange: 'desc',
   value: 'desc',
   unrealPct: 'desc',
   unlock: 'asc',
@@ -86,7 +89,7 @@ function SortHeader({
 export function ParkedPile() {
   const {
     parked, parkedLots, parkedSales, accounts, tickerNames, deleteParkedSale, concentrationCap,
-    updateSetting, accountCash, loading, error,
+    updateSetting, accountCash, dayChange, loading, error,
   } = useData();
   const [capOpen, setCapOpen] = useState(false);
   const [deletingSale, setDeletingSale] = useState<ParkedSale | null>(null);
@@ -161,6 +164,9 @@ export function ParkedPile() {
           return p.avgCost;
         case 'price':
           return p.currentPrice;
+        case 'dayChange':
+          // Sort by the day's percent move; unknown sinks to the bottom.
+          return dayChange[p.ticker]?.changePct ?? -Infinity;
         case 'value':
           return parkedMarketValue(p);
         case 'unrealPct': {
@@ -179,7 +185,7 @@ export function ParkedPile() {
           return 0;
       }
     },
-    [groupBy, lotsByPosition, today],
+    [groupBy, lotsByPosition, today, dayChange],
   );
 
   const sortPositions = useCallback(
@@ -343,10 +349,12 @@ export function ParkedPile() {
                 <SortHeader label="Shares" sortKey="shares" sort={sort} onSort={toggleSort} align="right" />
                 <SortHeader label="Avg cost" sortKey="avgCost" sort={sort} onSort={toggleSort} align="right" />
                 <SortHeader label="Price" sortKey="price" sort={sort} onSort={toggleSort} align="right" />
+                <SortHeader label="Change" sortKey="dayChange" sort={sort} onSort={toggleSort} align="right"
+                  title="Today's move from the quote feed (delayed)." />
                 <SortHeader label="Value" sortKey="value" sort={sort} onSort={toggleSort} align="right" />
                 <SortHeader label="Unreal %" sortKey="unrealPct" sort={sort} onSort={toggleSort} align="right" />
-                <SortHeader label="Funding unlock" sortKey="unlock" sort={sort} onSort={toggleSort}
-                  title="Shares held >1 year sell at long-term rates — the only legitimate funding trims (Rule 5). Sorts soonest-actionable first. Expand a row for the lot-by-lot schedule." />
+                <SortHeader label="LT" sortKey="unlock" sort={sort} onSort={toggleSort}
+                  title="Funding unlock: shares held >1 year sell at long-term rates — the only legitimate funding trims (Rule 5). Open lock = unlocked, amber = partly, closed = locked, warning = needs lot dates. Sorts soonest-actionable first; expand a row for the schedule." />
                 <th className="px-2 py-3" />
               </tr>
             </thead>
@@ -360,7 +368,7 @@ export function ParkedPile() {
                   <Fragment key={group.key}>
                     {groupBy !== 'flat' && (
                     <tr className="bg-gray-50">
-                      <td colSpan={9} className="px-4 py-2">
+                      <td colSpan={10} className="px-4 py-2">
                         {groupBy === 'account' ? (
                           <span className="font-bold text-gray-700">
                             {group.label}
@@ -432,7 +440,7 @@ export function ParkedPile() {
                               p.notes,
                             ].filter(Boolean);
                             return parts.length > 0 ? (
-                              <p className="text-xs font-normal text-gray-400 max-w-[14rem] truncate"
+                              <p className="text-xs font-normal text-gray-400 max-w-[9rem] truncate"
                                 title={parts.join(' · ')}>
                                 {parts.join(' · ')}
                               </p>
@@ -452,6 +460,9 @@ export function ParkedPile() {
                       <td className="px-4 py-3 text-right tabular-nums">{fmtSh(p.shares)}</td>
                       <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(p.avgCost)}</td>
                       <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(p.currentPrice)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <DayChangeCell move={dayChange[p.ticker]} />
+                      </td>
                       <td className="px-4 py-3 text-right tabular-nums font-medium">{formatCurrency(roundCents(value))}</td>
                       <td className={cn('px-4 py-3 text-right tabular-nums',
                         value - basis >= 0 ? 'text-green-600' : 'text-red-600')}>
@@ -474,7 +485,7 @@ export function ParkedPile() {
                     </tr>
                     {expanded && (
                       <tr>
-                        <td colSpan={9} className="bg-gray-50 px-4 sm:px-6 py-4">
+                        <td colSpan={10} className="bg-gray-50 px-4 sm:px-6 py-4">
                           <LotPanel position={p} summary={summ} />
                         </td>
                       </tr>
@@ -844,31 +855,49 @@ function AddHoldingModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** One readable pill; hover for the full sentence, expand the row for detail.
- * "Unlocked" = held >1 year = sellable at long-term rates (Rule 5 trim fuel). */
+/** A flag, not a sentence — hover for the summary, expand the row for the
+ * lot-by-lot schedule. "Unlocked" = held >1 year = Rule 5 trim fuel. */
 function UnlockCell({ summary: s }: { summary: UnlockSummary }) {
-  const pill = (cls: string, text: string) => (
-    <span
-      title={unlockSentence(s)}
-      className={cn('inline-block rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap', cls)}
-    >
-      {text}
+  if (s.totalShares <= 0) return <span className="text-xs text-gray-400">—</span>;
+  const flag = (icon: React.ReactNode, cls: string) => (
+    <span className={cn('inline-flex items-center', cls)} title={unlockSentence(s)}>
+      {icon}
     </span>
   );
-  if (s.totalShares <= 0) return <span className="text-xs text-gray-400">—</span>;
   if (s.unknownShares >= s.totalShares - 1e-9) {
-    return pill('bg-amber-50 text-amber-800', 'needs lot dates');
+    return flag(<AlertTriangle className="h-4 w-4" />, 'text-amber-600');
   }
   if (s.unlockedShares >= s.totalShares - 1e-9) {
-    return pill('bg-green-50 text-green-700', 'all unlocked');
+    return flag(<Unlock className="h-4 w-4" />, 'text-green-600');
   }
   if (s.unlockedShares > 0) {
-    return pill('bg-green-50 text-green-700', `${fmtSh(s.unlockedShares)} sh unlocked`);
+    // Partially unlocked: open lock, amber — some fuel, not all.
+    return flag(<Unlock className="h-4 w-4" />, 'text-amber-600');
   }
-  if (s.nextUnlock) {
-    return pill('bg-gray-100 text-gray-600', `locked until ${s.nextUnlock.date}`);
-  }
-  return pill('bg-gray-100 text-gray-600', 'locked');
+  return flag(<Lock className="h-4 w-4" />, 'text-gray-300');
+}
+
+/** The day's move, Google-Finance style: dollars then a tinted percent pill. */
+function DayChangeCell({
+  move,
+}: {
+  move?: { change: number | null; changePct: number | null };
+}) {
+  if (!move || move.change === null) return <span className="text-xs text-gray-300">—</span>;
+  const up = move.change >= 0;
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap tabular-nums">
+      <span className={up ? 'text-green-600' : 'text-red-600'}>
+        {up ? '+' : '−'}{formatCurrency(Math.abs(move.change))}
+      </span>
+      {move.changePct !== null && (
+        <span className={cn('rounded px-1.5 py-0.5 text-xs font-medium',
+          up ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700')}>
+          {up ? '↑' : '↓'}{Math.abs(move.changePct).toFixed(2)}%
+        </span>
+      )}
+    </span>
+  );
 }
 
 function unlockSentence(s: UnlockSummary): string {

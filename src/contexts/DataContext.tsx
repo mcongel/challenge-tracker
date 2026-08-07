@@ -98,6 +98,8 @@ interface DataContextValue extends DataState {
   updateSetting: (key: string, value: unknown) => Promise<void>;
   /** Delayed API quotes (override-free). Merged view: overrides win. */
   quotes: Record<string, number>;
+  /** The day's move per ticker, straight from the quote feed. */
+  dayChange: Record<string, { change: number | null; changePct: number | null }>;
   quotesAsOf: number | null;
   refreshQuotes: () => Promise<void>;
   /** Company names by ticker (best-effort; ETFs may be absent). */
@@ -185,6 +187,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [quotes, setQuotes] = useState<Record<string, number>>({});
+  const [dayChange, setDayChange] = useState<
+    Record<string, { change: number | null; changePct: number | null }>
+  >({});
   const [quotesAsOf, setQuotesAsOf] = useState<number | null>(null);
   const [tickerNames, setTickerNames] = useState<Record<string, string>>({});
 
@@ -258,7 +263,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const res = await fetch(`/api/quotes?tickers=${tickers.join(',')}`);
       if (!res.ok) return; // quotes are best-effort; overrides and cost fallbacks cover us
       const body = (await res.json()) as {
-        quotes?: Record<string, { price: number }>;
+        quotes?: Record<string, { price: number; change?: number | null; changePct?: number | null }>;
         asOf?: number;
       };
       const fresh = body.quotes;
@@ -268,6 +273,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         setQuotes((prev) => ({
           ...prev,
           ...Object.fromEntries(Object.entries(fresh).map(([t, q]) => [t, q.price])),
+        }));
+        setDayChange((prev) => ({
+          ...prev,
+          ...Object.fromEntries(
+            Object.entries(fresh).map(([t, q]) => [
+              t,
+              { change: q.change ?? null, changePct: q.changePct ?? null },
+            ]),
+          ),
         }));
         setQuotesAsOf(body.asOf ?? Date.now());
         lastQuoteFetchAt.current = Date.now();
@@ -1039,6 +1053,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       ...state,
       parked: mergedParked,
       quotes,
+      dayChange,
       quotesAsOf,
       refreshQuotes,
       tickerNames,
@@ -1077,7 +1092,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       clearOverride,
     }),
     [
-      state, mergedParked, quotes, quotesAsOf, refreshQuotes, tickerNames, contributionCap,
+      state, mergedParked, quotes, dayChange, quotesAsOf, refreshQuotes, tickerNames, contributionCap,
       concentrationCap, updateSetting, loading, error,
       refresh, addCashEvent, deleteCashEvent, addLot, closePosition, recordSplit,
       setTradeWashSale, deleteTrade, updateParked, recordMilestone, addAccount, addOutsideSale,

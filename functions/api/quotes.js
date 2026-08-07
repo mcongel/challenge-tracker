@@ -9,7 +9,7 @@
  * no quota, so steady-state requests stay fast.
  *
  * Env var: FINNHUB_API_KEY (Cloudflare Pages → Settings → Environment variables).
- * Response: { quotes: { TICKER: { price, at } }, missing: [TICKER], asOf }
+ * Response: { quotes: { TICKER: { price, change, changePct, at } }, missing, asOf }
  */
 const CACHE_TTL_SECONDS = 1800;
 const MAX_TICKERS = 40;
@@ -38,8 +38,14 @@ export async function onRequestGet(context) {
     try {
       const body = await response.json();
       // Finnhub returns c: 0 for unknown/unsupported symbols.
+      // d/dp are the day's change and percent change vs the previous close.
       if (body && typeof body.c === 'number' && body.c > 0) {
-        quotes[ticker] = { price: body.c, at: body.t ? body.t * 1000 : Date.now() };
+        quotes[ticker] = {
+          price: body.c,
+          change: typeof body.d === 'number' ? body.d : null,
+          changePct: typeof body.dp === 'number' ? body.dp : null,
+          at: body.t ? body.t * 1000 : Date.now(),
+        };
         return true;
       }
     } catch {
