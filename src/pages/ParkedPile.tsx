@@ -893,7 +893,7 @@ function DayChangeCell({
       {move.changePct !== null && (
         <span className={cn('rounded px-1.5 py-0.5 text-xs font-medium',
           up ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700')}>
-          {up ? '↑' : '↓'}{Math.abs(move.changePct).toFixed(2)}%
+          {move.changePct.toFixed(2)}%
         </span>
       )}
     </span>
