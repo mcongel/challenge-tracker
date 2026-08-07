@@ -1,5 +1,8 @@
-import { Fragment, useMemo, useState } from 'react';
-import { AlertTriangle, Archive, ArrowLeftRight, ChevronDown, ChevronRight, Pencil, Plus, Scissors, Settings2, Trash2 } from 'lucide-react';
+import { Fragment, useCallback, useMemo, useState } from 'react';
+import {
+  AlertTriangle, Archive, ArrowDown, ArrowLeftRight, ArrowUp, ArrowUpDown, ChevronDown,
+  ChevronRight, Pencil, Plus, Scissors, Settings2, Trash2,
+} from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
@@ -10,8 +13,9 @@ import type {
   Account, AccountKind, ParkedCashEvent, ParkedLot, ParkedPosition, ParkedSale, UnlockSummary,
 } from '../lib/engine';
 import {
-  concentration, contributionStatus, depositExceedsCap, dividendsCollected, estimatedPileTax,
-  netContributed, parkedCostBasis, parkedMarketValue, roundCents, trimPreview, unlockSummary,
+  concentration, contributionStatus, daysBetween, depositExceedsCap, dividendsCollected,
+  estimatedPileTax, netContributed, parkedCostBasis, parkedMarketValue, roundCents, trimPreview,
+  unlockSummary,
 } from '../lib/engine';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import {
@@ -26,6 +30,58 @@ const CATEGORY_STYLES: Record<ParkedPosition['category'], string> = {
 };
 
 const fmtSh = (n: number) => String(Number(n.toFixed(4)));
+
+type GroupBy = 'account' | 'ticker' | 'flat';
+type SortKey = 'default' | 'label' | 'shares' | 'avgCost' | 'price' | 'value' | 'unrealPct' | 'unlock';
+interface SortState {
+  key: SortKey;
+  dir: 'asc' | 'desc';
+}
+/** First click on a header sorts the way you'd want: money and size biggest
+ * first, names A–Z, unlocks soonest first. */
+const NATURAL_DIR: Record<SortKey, 'asc' | 'desc'> = {
+  default: 'desc',
+  label: 'asc',
+  shares: 'desc',
+  avgCost: 'desc',
+  price: 'desc',
+  value: 'desc',
+  unrealPct: 'desc',
+  unlock: 'asc',
+};
+
+function SortHeader({
+  label, sortKey, sort, onSort, align = 'left', title,
+}: {
+  label: string;
+  sortKey: SortKey;
+  sort: SortState;
+  onSort: (key: SortKey) => void;
+  align?: 'left' | 'right';
+  title?: string;
+}) {
+  const active = sort.key === sortKey;
+  return (
+    <th className={cn('px-4 py-3', align === 'right' && 'text-right')} title={title}>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={cn(
+          'inline-flex items-center gap-1 uppercase tracking-wider font-semibold hover:text-gray-700',
+          align === 'right' && 'flex-row-reverse',
+          active ? 'text-green-700' : 'text-gray-500',
+        )}
+      >
+        {label}
+        {active ? (
+          sort.dir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+        ) : (
+          <ArrowUpDown className="h-3 w-3 opacity-0 group-hover/head:opacity-100 text-gray-300" />
+        )}
+      </button>
+    </th>
+  );
+}
 
 export function ParkedPile() {
   const {
@@ -60,45 +116,126 @@ export function ParkedPile() {
   const today = todayISO();
   const c = concentration(parked, concentrationCap);
   const totalBasis = parked.reduce((s, p) => s + parkedCostBasis(p), 0);
-  const ordered = [...parked].sort((a, b) => {
-    if (a.trimRank != null && b.trimRank != null) return a.trimRank - b.trimRank;
-    if (a.trimRank != null) return -1;
-    if (b.trimRank != null) return 1;
-    return parkedMarketValue(b) - parkedMarketValue(a);
-  });
 
-  // Two lenses on the same pile: by account (where things live — the default,
-  // matching SpokenFor's grouped accounts) or by ticker (across accounts).
-  const [groupBy, setGroupByState] = useState<'account' | 'ticker'>(() =>
-    localStorage.getItem('pileGroupBy') === 'ticker' ? 'ticker' : 'account',
-  );
-  const setGroupBy = (m: 'account' | 'ticker') => {
+  // Three lenses: by account (where things live — the default, matching
+  // SpokenFor's grouped accounts), by ticker (across accounts), or flat so a
+  // column sort ranks the whole pile at once.
+  const [groupBy, setGroupByState] = useState<GroupBy>(() => {
+    const stored = localStorage.getItem('pileGroupBy');
+    return stored === 'ticker' || stored === 'flat' ? stored : 'account';
+  });
+  const setGroupBy = (m: GroupBy) => {
     setGroupByState(m);
     localStorage.setItem('pileGroupBy', m);
   };
 
+  const [sort, setSortState] = useState<SortState>(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('pileSort') ?? 'null');
+      if (stored?.key) return stored as SortState;
+    } catch {
+      /* fall through to default */
+    }
+    return { key: 'default', dir: 'desc' };
+  });
+  const setSort = (s: SortState) => {
+    setSortState(s);
+    localStorage.setItem('pileSort', JSON.stringify(s));
+  };
+  /** Click a header: first click sorts by its natural direction, then toggles. */
+  const toggleSort = (key: SortKey) =>
+    setSort(
+      sort.key === key
+        ? { key, dir: sort.dir === 'asc' ? 'desc' : 'asc' }
+        : { key, dir: NATURAL_DIR[key] },
+    );
+
+  const sortValue = useCallback(
+    (p: ParkedPosition, key: SortKey): number | string => {
+      switch (key) {
+        case 'label':
+          return groupBy === 'ticker' ? p.account : p.ticker;
+        case 'shares':
+          return p.shares;
+        case 'avgCost':
+          return p.avgCost;
+        case 'price':
+          return p.currentPrice;
+        case 'value':
+          return parkedMarketValue(p);
+        case 'unrealPct': {
+          const basis = parkedCostBasis(p);
+          return basis === 0 ? 0 : (parkedMarketValue(p) - basis) / basis;
+        }
+        case 'unlock': {
+          // Soonest actionable first: fully unlocked, then by days to unlock,
+          // undated last (the app can't prove a holding period).
+          const s = unlockSummary(lotsByPosition.get(p.id) ?? [], today);
+          if (s.totalShares > 0 && s.unlockedShares >= s.totalShares - 1e-9) return -1;
+          if (s.nextUnlock) return daysBetween(today, s.nextUnlock.date);
+          return Number.MAX_SAFE_INTEGER;
+        }
+        default:
+          return 0;
+      }
+    },
+    [groupBy, lotsByPosition, today],
+  );
+
+  const sortPositions = useCallback(
+    (positions: ParkedPosition[]) => {
+      if (sort.key === 'default') {
+        // Trim rank first (the plan), then biggest value.
+        return [...positions].sort((a, b) => {
+          if (a.trimRank != null && b.trimRank != null) return a.trimRank - b.trimRank;
+          if (a.trimRank != null) return -1;
+          if (b.trimRank != null) return 1;
+          return parkedMarketValue(b) - parkedMarketValue(a);
+        });
+      }
+      const flip = sort.dir === 'asc' ? 1 : -1;
+      return [...positions].sort((a, b) => {
+        const av = sortValue(a, sort.key);
+        const bv = sortValue(b, sort.key);
+        if (typeof av === 'string' || typeof bv === 'string') {
+          return String(av).localeCompare(String(bv)) * flip;
+        }
+        return (av - bv) * flip;
+      });
+    },
+    [sort, sortValue],
+  );
+
   const groups = useMemo(() => {
+    if (groupBy === 'flat') {
+      return [{ key: 'all', label: '', positions: sortPositions(parked) }].filter(
+        (g) => g.positions.length > 0,
+      );
+    }
     if (groupBy === 'account') {
       return [...accounts]
         .sort((a, b) => a.name.localeCompare(b.name))
-        .map((a) => ({ key: a.id, label: a.name, positions: ordered.filter((p) => p.accountId === a.id) }))
+        .map((a) => ({
+          key: a.id,
+          label: a.name,
+          positions: sortPositions(parked.filter((p) => p.accountId === a.id)),
+        }))
         .filter((g) => g.positions.length > 0);
     }
-    const tickers = [...new Set(ordered.map((p) => p.ticker))];
+    const tickers = [...new Set(parked.map((p) => p.ticker))];
     return tickers
       .map((t) => ({
         key: t,
         label: t,
-        positions: ordered
-          .filter((p) => p.ticker === t)
-          .sort((a, b) => a.account.localeCompare(b.account)),
+        positions: sortPositions(parked.filter((p) => p.ticker === t)),
       }))
       .sort(
         (a, b) =>
           b.positions.reduce((s, p) => s + parkedMarketValue(p), 0) -
           a.positions.reduce((s, p) => s + parkedMarketValue(p), 0),
       );
-  }, [groupBy, accounts, ordered]);
+  }, [groupBy, accounts, parked, sortPositions]);
+  const anyPositions = groups.some((g) => g.positions.length > 0);
 
   return (
     <div>
@@ -165,7 +302,7 @@ export function ParkedPile() {
 
       {loading ? (
         <SkeletonTable />
-      ) : ordered.length === 0 ? (
+      ) : !anyPositions ? (
         <EmptyState
           icon={Archive}
           title="Parked pile not seeded yet"
@@ -173,9 +310,9 @@ export function ParkedPile() {
         />
       ) : (
         <div className="bg-white rounded-lg shadow-lg overflow-x-auto">
-          <div className="flex items-center gap-1 px-4 pt-3">
+          <div className="flex flex-wrap items-center gap-1 px-4 pt-3">
             <span className="text-xs text-gray-400 mr-1">Group by</span>
-            {(['account', 'ticker'] as const).map((m) => (
+            {(['account', 'ticker', 'flat'] as const).map((m) => (
               <button
                 key={m}
                 onClick={() => setGroupBy(m)}
@@ -184,23 +321,32 @@ export function ParkedPile() {
                   groupBy === m ? 'bg-green-50 text-green-700' : 'text-gray-400 hover:bg-gray-100',
                 )}
               >
-                {m === 'account' ? 'Account' : 'Ticker'}
+                {m === 'account' ? 'Account' : m === 'ticker' ? 'Ticker' : 'Nothing (flat)'}
               </button>
             ))}
+            {sort.key !== 'default' && (
+              <button
+                onClick={() => setSort({ key: 'default', dir: 'desc' })}
+                className="ml-2 rounded-full px-2.5 py-0.5 text-xs font-medium text-gray-400 hover:bg-gray-100"
+                title="Back to trim rank, then largest value"
+              >
+                clear sort
+              </button>
+            )}
           </div>
           <table className="w-full text-sm compact-table">
-            <thead className="bg-gray-50 sticky top-0">
-              <tr className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+            <thead className="bg-gray-50 sticky top-0 group/head">
+              <tr className="text-left text-xs">
                 <th className="px-2 py-3 w-8" />
-                <th className="px-4 py-3">{groupBy === 'account' ? 'Ticker' : 'Account'}</th>
-                <th className="px-4 py-3 text-right">Shares</th>
-                <th className="px-4 py-3 text-right">Avg cost</th>
-                <th className="px-4 py-3 text-right">Price</th>
-                <th className="px-4 py-3 text-right">Value</th>
-                <th className="px-4 py-3 text-right">Unreal %</th>
-                <th className="px-4 py-3" title="Shares held >1 year sell at long-term rates — the only legitimate funding trims (Rule 5). Expand a row for the lot-by-lot schedule.">
-                  Funding unlock
-                </th>
+                <SortHeader label={groupBy === 'ticker' ? 'Account' : 'Ticker'} sortKey="label"
+                  sort={sort} onSort={toggleSort} />
+                <SortHeader label="Shares" sortKey="shares" sort={sort} onSort={toggleSort} align="right" />
+                <SortHeader label="Avg cost" sortKey="avgCost" sort={sort} onSort={toggleSort} align="right" />
+                <SortHeader label="Price" sortKey="price" sort={sort} onSort={toggleSort} align="right" />
+                <SortHeader label="Value" sortKey="value" sort={sort} onSort={toggleSort} align="right" />
+                <SortHeader label="Unreal %" sortKey="unrealPct" sort={sort} onSort={toggleSort} align="right" />
+                <SortHeader label="Funding unlock" sortKey="unlock" sort={sort} onSort={toggleSort}
+                  title="Shares held >1 year sell at long-term rates — the only legitimate funding trims (Rule 5). Sorts soonest-actionable first. Expand a row for the lot-by-lot schedule." />
                 <th className="px-2 py-3" />
               </tr>
             </thead>
@@ -212,6 +358,7 @@ export function ParkedPile() {
                 const first = group.positions[0];
                 return (
                   <Fragment key={group.key}>
+                    {groupBy !== 'flat' && (
                     <tr className="bg-gray-50">
                       <td colSpan={9} className="px-4 py-2">
                         {groupBy === 'account' ? (
@@ -247,6 +394,7 @@ export function ParkedPile() {
                         )}
                       </td>
                     </tr>
+                    )}
                     {group.positions.map((p) => {
                 const value = parkedMarketValue(p);
                 const basis = parkedCostBasis(p);
@@ -263,7 +411,7 @@ export function ParkedPile() {
                           <ChevronRight className="h-4 w-4 text-gray-300" />
                         )}
                       </td>
-                      {groupBy === 'account' ? (
+                      {groupBy !== 'ticker' ? (
                         <td className="px-4 py-3 font-medium">
                           <span className="flex items-center gap-1.5">
                             {p.ticker}
@@ -276,14 +424,20 @@ export function ParkedPile() {
                               </span>
                             )}
                           </span>
-                          {(tickerNames[p.ticker] || p.notes) && (
-                            <p
-                              className="text-xs font-normal text-gray-400 max-w-[14rem] truncate"
-                              title={[tickerNames[p.ticker], p.notes].filter(Boolean).join(' · ')}
-                            >
-                              {[tickerNames[p.ticker], p.notes].filter(Boolean).join(' · ')}
-                            </p>
-                          )}
+                          {(() => {
+                            // Flat view has no account header, so name it on the row.
+                            const parts = [
+                              groupBy === 'flat' ? p.account : null,
+                              tickerNames[p.ticker],
+                              p.notes,
+                            ].filter(Boolean);
+                            return parts.length > 0 ? (
+                              <p className="text-xs font-normal text-gray-400 max-w-[14rem] truncate"
+                                title={parts.join(' · ')}>
+                                {parts.join(' · ')}
+                              </p>
+                            ) : null;
+                          })()}
                         </td>
                       ) : (
                         <td className="px-4 py-3 pl-8 text-gray-600">
