@@ -1,19 +1,25 @@
 /**
  * GET /api/quotes?tickers=NBIS,MU,VOO
  *
- * Server-side proxy to Finnhub (free tier) so the API key never reaches the
- * browser. Per-ticker responses are cached ~30 minutes via the Cache API.
+ * Server-side quote proxy. Two sources, in order:
  *
- * Finnhub's free tier rate-limits bursts (60/min), so uncached tickers are
- * fetched SEQUENTIALLY, with one retry after a pause on 429. Cache hits cost
- * no quota, so steady-state requests stay fast.
+ *   1. Yahoo Finance chart endpoint (no key). Gives the LIVE price plus the
+ *      previous close, so today's change is computed from today's price.
+ *   2. Finnhub (FINNHUB_API_KEY) as fallback.
  *
- * Env var: FINNHUB_API_KEY (Cloudflare Pages → Settings → Environment variables).
- * Response: { quotes: { TICKER: { price, change, changePct, at } }, missing, asOf }
+ * Why Yahoo first: Finnhub's free tier serves the previous session's close —
+ * its `c` and `d` fields lag a full day, which made the day-change column show
+ * yesterday's move — and it has no data for ETFs (SOXX, VDE, VOO) or some
+ * newer listings. Finnhub stays as a safety net in case Yahoo blocks us.
+ *
+ * Response: { quotes: { TICKER: { price, change, changePct, at, src } },
+ *             missing: [TICKER], asOf }
  */
-const CACHE_TTL_SECONDS = 1800;
+const CACHE_TTL_SECONDS = 900; // 15 min — Yahoo costs no quota, so stay fresher
 const MAX_TICKERS = 40;
 const RETRY_DELAY_MS = 1300;
+const UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36';
 
 export async function onRequestGet(context) {
   const { request, env } = context;
@@ -26,79 +32,103 @@ export async function onRequestGet(context) {
   if (tickers.length === 0) {
     return json({ error: 'tickers query param required' }, 400);
   }
-  if (!env.FINNHUB_API_KEY) {
-    return json({ error: 'FINNHUB_API_KEY not configured' }, 503);
-  }
 
   const cache = caches.default;
   const quotes = {};
   const missing = [];
 
-  const readBody = async (response, ticker) => {
-    try {
-      const body = await response.json();
-      // Finnhub returns c: 0 for unknown/unsupported symbols.
-      // d/dp are the day's change and percent change vs the previous close.
-      if (body && typeof body.c === 'number' && body.c > 0) {
-        quotes[ticker] = {
-          price: body.c,
-          change: typeof body.d === 'number' ? body.d : null,
-          changePct: typeof body.dp === 'number' ? body.dp : null,
-          at: body.t ? body.t * 1000 : Date.now(),
-        };
-        return true;
-      }
-    } catch {
-      /* fall through to missing */
-    }
-    return false;
-  };
-
-  const fetchUpstream = (ticker) =>
-    fetch(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${env.FINNHUB_API_KEY}`);
-
-  // Cache pass first — free, and tells us how many live calls remain.
+  // Cache pass — free, and shows how many live calls remain.
   const uncached = [];
   for (const ticker of tickers) {
     const hit = await cache.match(cacheKey(ticker));
     if (hit) {
-      if (!(await readBody(hit, ticker))) missing.push(ticker);
-    } else {
-      uncached.push(ticker);
+      try {
+        quotes[ticker] = await hit.json();
+        continue;
+      } catch {
+        /* fall through to a live fetch */
+      }
     }
+    uncached.push(ticker);
   }
 
-  // Live pass: sequential, one retry on rate-limit.
   for (const ticker of uncached) {
-    let upstream = await fetchUpstream(ticker);
-    if (upstream.status === 429) {
-      await sleep(RETRY_DELAY_MS);
-      upstream = await fetchUpstream(ticker);
-    }
-    if (!upstream.ok) {
+    const quote = (await fromYahoo(ticker)) ?? (await fromFinnhub(ticker, env));
+    if (!quote) {
       missing.push(ticker);
       continue;
     }
-    const text = await upstream.text();
-    const cached = new Response(text, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Cache-Control': `s-maxage=${CACHE_TTL_SECONDS}`,
-      },
-    });
-    const ok = await readBody(new Response(text), ticker);
-    if (ok) {
-      // Only cache real quotes — a cached c:0 would pin "missing" for 30 min.
-      context.waitUntil(cache.put(cacheKey(ticker), cached));
-    } else {
-      missing.push(ticker);
-    }
+    quotes[ticker] = quote;
+    context.waitUntil(
+      cache.put(
+        cacheKey(ticker),
+        new Response(JSON.stringify(quote), {
+          headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': `s-maxage=${CACHE_TTL_SECONDS}`,
+          },
+        }),
+      ),
+    );
   }
 
   return json({ quotes, missing, asOf: Date.now() });
 }
 
-const cacheKey = (ticker) => new Request(`https://quotes-cache.internal/${ticker}`);
+async function fromYahoo(ticker) {
+  try {
+    const res = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`,
+      { headers: { 'User-Agent': UA, Accept: 'application/json' } },
+    );
+    if (!res.ok) return null;
+    const body = await res.json();
+    const meta = body?.chart?.result?.[0]?.meta;
+    const price = meta?.regularMarketPrice;
+    if (typeof price !== 'number' || price <= 0) return null;
+    const prev = typeof meta.chartPreviousClose === 'number' ? meta.chartPreviousClose : null;
+    const change = prev !== null ? price - prev : null;
+    return {
+      price,
+      change,
+      changePct: change !== null && prev ? (change / prev) * 100 : null,
+      at: meta.regularMarketTime ? meta.regularMarketTime * 1000 : Date.now(),
+      src: 'yahoo',
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function fromFinnhub(ticker, env) {
+  if (!env.FINNHUB_API_KEY) return null;
+  const call = () =>
+    fetch(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${env.FINNHUB_API_KEY}`);
+  try {
+    let res = await call();
+    if (res.status === 429) {
+      await sleep(RETRY_DELAY_MS);
+      res = await call();
+    }
+    if (!res.ok) return null;
+    const body = await res.json();
+    // Finnhub returns c: 0 for symbols it doesn't cover.
+    if (typeof body?.c !== 'number' || body.c <= 0) return null;
+    return {
+      price: body.c,
+      change: typeof body.d === 'number' ? body.d : null,
+      changePct: typeof body.dp === 'number' ? body.dp : null,
+      at: body.t ? body.t * 1000 : Date.now(),
+      src: 'finnhub',
+    };
+  } catch {
+    return null;
+  }
+}
+
+// v2: the shape changed (normalized quote objects, not raw upstream bodies),
+// and v1 entries hold Finnhub's stale previous-close data.
+const cacheKey = (ticker) => new Request(`https://quotes-cache.internal/v2/${ticker}`);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function json(body, status = 200) {

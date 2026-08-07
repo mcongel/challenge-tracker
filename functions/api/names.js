@@ -64,6 +64,10 @@ export async function onRequestGet(context) {
   }
 
   for (const ticker of uncached) {
+    if (!env.FINNHUB_API_KEY) {
+      missing.push(ticker);
+      continue;
+    }
     let upstream = await fetchUpstream(ticker);
     if (upstream.status === 429) {
       await sleep(RETRY_DELAY_MS);
