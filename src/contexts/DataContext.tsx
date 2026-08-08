@@ -253,6 +253,35 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     void refresh();
   }, [refresh]);
 
+  /**
+   * Write fresh quotes back onto parked_positions.current_price for every row
+   * of that ticker. The stored price is only ever a fallback (overrides and
+   * live quotes win), but it's what the app and the snapshot script use when
+   * the feed misses a ticker — so it must not rot into a months-old number.
+   * Price belongs to the ticker, so all of its rows get the same value.
+   */
+  const persistQuotedPrices = useCallback(
+    async (fresh: Record<string, { price: number }>) => {
+      const stale = state.parked.filter((p) => {
+        const quoted = fresh[p.ticker]?.price;
+        // 0.5c tolerance keeps us from writing on every rounding wobble.
+        return quoted !== undefined && Math.abs(quoted - p.currentPrice) > 0.005;
+      });
+      if (stale.length === 0) return;
+      const client = db();
+      for (const p of stale) {
+        const price = fresh[p.ticker].price;
+        const { error: err } = await client
+          .from('parked_positions')
+          .update({ current_price: Math.round(price * 10000) / 10000 })
+          .eq('id', p.id);
+        if (err) return; // best-effort; live quotes still drive the UI
+      }
+      await refresh();
+    },
+    [state.parked, refresh],
+  );
+
   const lastQuoteFetchAt = useRef(0);
   const refreshQuotes = useCallback(async () => {
     const tickers = [
@@ -285,11 +314,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         }));
         setQuotesAsOf(body.asOf ?? Date.now());
         lastQuoteFetchAt.current = Date.now();
+        void persistQuotedPrices(fresh);
       }
     } catch {
       // Local dev without the Pages Function, or the API is down — silently fine.
     }
-  }, [state.lots, state.parked]);
+  }, [state.lots, state.parked, persistQuotedPrices]);
 
   const refreshQuotesRef = useRef(refreshQuotes);
   useEffect(() => {
