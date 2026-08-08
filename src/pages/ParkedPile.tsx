@@ -33,7 +33,7 @@ const fmtSh = (n: number) => String(Number(n.toFixed(4)));
 
 type GroupBy = 'account' | 'ticker' | 'flat';
 type SortKey =
-  | 'default' | 'label' | 'shares' | 'avgCost' | 'price' | 'dayChange' | 'value' | 'unrealPct'
+  | 'default' | 'label' | 'shares' | 'avgCost' | 'price' | 'dayChange' | 'value' | 'unreal'
   | 'unlock';
 interface SortState {
   key: SortKey;
@@ -49,9 +49,10 @@ const NATURAL_DIR: Record<SortKey, 'asc' | 'desc'> = {
   price: 'desc',
   dayChange: 'desc',
   value: 'desc',
-  unrealPct: 'desc',
+  unreal: 'desc',
   unlock: 'asc',
 };
+const SORT_KEYS = Object.keys(NATURAL_DIR) as SortKey[];
 
 function SortHeader({
   label, sortKey, sort, onSort, align = 'left', title,
@@ -135,7 +136,8 @@ export function ParkedPile() {
   const [sort, setSortState] = useState<SortState>(() => {
     try {
       const stored = JSON.parse(localStorage.getItem('pileSort') ?? 'null');
-      if (stored?.key) return stored as SortState;
+      // Validate: a key retired by a later version must not survive here.
+      if (stored?.key && SORT_KEYS.includes(stored.key)) return stored as SortState;
     } catch {
       /* fall through to default */
     }
@@ -169,10 +171,9 @@ export function ParkedPile() {
           return dayChange[p.ticker]?.changePct ?? -Infinity;
         case 'value':
           return parkedMarketValue(p);
-        case 'unrealPct': {
-          const basis = parkedCostBasis(p);
-          return basis === 0 ? 0 : (parkedMarketValue(p) - basis) / basis;
-        }
+        case 'unreal':
+          // By dollars — it's the figure the cell leads with.
+          return parkedMarketValue(p) - parkedCostBasis(p);
         case 'unlock': {
           // Soonest actionable first: fully unlocked, then by days to unlock,
           // undated last (the app can't prove a holding period).
@@ -352,7 +353,8 @@ export function ParkedPile() {
                 <SortHeader label="Change" sortKey="dayChange" sort={sort} onSort={toggleSort} align="right"
                   title="Today's move from the quote feed (delayed)." />
                 <SortHeader label="Value" sortKey="value" sort={sort} onSort={toggleSort} align="right" />
-                <SortHeader label="Unreal %" sortKey="unrealPct" sort={sort} onSort={toggleSort} align="right" />
+                <SortHeader label="Unrealized" sortKey="unreal" sort={sort} onSort={toggleSort} align="right"
+                  title="Gain or loss against cost basis, in dollars and percent. Sorts by dollars." />
                 <SortHeader label="LT" sortKey="unlock" sort={sort} onSort={toggleSort}
                   title="Funding unlock: shares held >1 year sell at long-term rates — the only legitimate funding trims (Rule 5). Open lock = unlocked, amber = partly, closed = locked, warning = needs lot dates. Sorts soonest-actionable first; expand a row for the schedule." />
                 <th className="px-2 py-3" />
@@ -375,6 +377,13 @@ export function ParkedPile() {
                             <span className="ml-2 text-xs font-normal text-gray-400">
                               {group.positions.length} holding{group.positions.length > 1 ? 's' : ''} ·{' '}
                               <span className="tabular-nums">{formatCurrency(roundCents(groupValue))}</span>
+                              {groupBasis > 0 && (
+                                <span className={cn('tabular-nums',
+                                  groupValue - groupBasis >= 0 ? 'text-green-600' : 'text-red-600')}>
+                                  {' '}· {groupValue - groupBasis >= 0 ? '+' : '−'}
+                                  {formatCurrency(Math.abs(roundCents(groupValue - groupBasis)))}
+                                </span>
+                              )}
                               <span className="tabular-nums" title="Tracked strategy cash — auto-flows from sales, dividends, buys, and challenge funding, plus your manual entries. Reconcile in the Accounts modal.">
                                 {' '}· {formatCurrency(roundCents(accountCash(group.key).balance))} cash
                               </span>
@@ -394,7 +403,9 @@ export function ParkedPile() {
                               {formatCurrency(roundCents(groupValue))}
                               {groupBasis > 0 && (
                                 <span className={groupValue - groupBasis >= 0 ? ' text-green-600' : ' text-red-600'}>
-                                  {' '}· {formatPercent((groupValue - groupBasis) / groupBasis)}
+                                  {' '}· {groupValue - groupBasis >= 0 ? '+' : '−'}
+                                  {formatCurrency(Math.abs(roundCents(groupValue - groupBasis)))}
+                                  {' '}({formatPercent((groupValue - groupBasis) / groupBasis)})
                                 </span>
                               )}
                             </span>
@@ -464,9 +475,8 @@ export function ParkedPile() {
                         <DayChangeCell move={dayChange[p.ticker]} />
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums font-medium">{formatCurrency(roundCents(value))}</td>
-                      <td className={cn('px-4 py-3 text-right tabular-nums',
-                        value - basis >= 0 ? 'text-green-600' : 'text-red-600')}>
-                        {basis === 0 ? '—' : formatPercent((value - basis) / basis)}
+                      <td className="px-4 py-3 text-right">
+                        <UnrealCell gain={value - basis} basis={basis} />
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <UnlockCell summary={summ} />
@@ -875,6 +885,25 @@ function UnlockCell({ summary: s }: { summary: UnlockSummary }) {
     return flag(<Unlock className="h-4 w-4" />, 'text-amber-600');
   }
   return flag(<Lock className="h-4 w-4" />, 'text-gray-300');
+}
+
+/** Unrealized gain: the dollar figure leads, the percent rides in a tinted
+ * pill — same grammar as the day-change cell. */
+function UnrealCell({ gain, basis }: { gain: number; basis: number }) {
+  const up = gain >= 0;
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap tabular-nums">
+      <span className={cn('font-medium', up ? 'text-green-600' : 'text-red-600')}>
+        {up ? '+' : '−'}{formatCurrency(Math.abs(roundCents(gain)))}
+      </span>
+      {basis > 0 && (
+        <span className={cn('rounded px-1.5 py-0.5 text-xs font-medium',
+          up ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700')}>
+          {formatPercent(gain / basis)}
+        </span>
+      )}
+    </span>
+  );
 }
 
 /** The day's move, Google-Finance style: dollars then a tinted percent pill. */
