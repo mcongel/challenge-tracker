@@ -8,6 +8,10 @@
  * two cash events, one benchmark deposit) into empty tables, useful for
  * checking app numbers against the workbook before real data exists.
  *
+ * CAUTION: the ticker+account upsert will overwrite an ARCHIVED (zero-share)
+ * position's aggregates if the same ticker was later fully trimmed away —
+ * this is a bootstrap tool, don't re-run it against a live dataset.
+ *
  * After seeding it re-reads everything and diffs computed totals against the
  * workbook's numbers — "import worked" as a check, not a vibe.
  */

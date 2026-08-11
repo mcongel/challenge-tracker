@@ -109,9 +109,12 @@ export function SortHeader<K extends string = SortKey>({
 
 export function ParkedPile() {
   const {
-    parked, parkedLots, parkedSales, accounts, tickerNames, deleteParkedSale, concentrationCap,
-    updateSetting, accountCash, dayChange, ltTaxRate, stTaxRate, loading, error,
+    parked: allParked, parkedLots, parkedSales, accounts, tickerNames, deleteParkedSale,
+    concentrationCap, updateSetting, accountCash, dayChange, ltTaxRate, stTaxRate, loading, error,
   } = useData();
+  // Archived (zero-share) rows keep dividend history alive on the Income
+  // screen; this table shows live holdings only.
+  const parked = useMemo(() => allParked.filter((p) => p.shares > 1e-9), [allParked]);
   const [capOpen, setCapOpen] = useState(false);
   const [deletingSale, setDeletingSale] = useState<ParkedSale | null>(null);
   const [editingSale, setEditingSale] = useState<ParkedSale | null>(null);

@@ -290,6 +290,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const persistQuotedPrices = useCallback(
     async (fresh: Record<string, { price: number }>) => {
       const stale = state.parked.filter((p) => {
+        if (p.shares <= 1e-9) return false; // archived rows don't need fresh prices
         const quoted = fresh[p.ticker]?.price;
         // 0.5c tolerance keeps us from writing on every rounding wobble.
         return quoted !== undefined && Math.abs(quoted - p.currentPrice) > 0.005;
@@ -312,7 +313,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const lastQuoteFetchAt = useRef(0);
   const refreshQuotes = useCallback(async () => {
     const tickers = [
-      ...new Set([...state.lots.map((l) => l.ticker), ...state.parked.map((p) => p.ticker), 'VOO']),
+      ...new Set([
+        ...state.lots.map((l) => l.ticker),
+        ...state.parked.filter((p) => p.shares > 1e-9).map((p) => p.ticker),
+        'VOO',
+      ]),
     ];
     if (tickers.length === 0) return;
     try {
@@ -360,7 +365,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     void refreshQuotes();
     // Names once per session — they're cached a week server-side.
     const tickers = [
-      ...new Set([...state.lots.map((l) => l.ticker), ...state.parked.map((p) => p.ticker)]),
+      ...new Set([
+        ...state.lots.map((l) => l.ticker),
+        ...state.parked.filter((p) => p.shares > 1e-9).map((p) => p.ticker),
+      ]),
     ];
     if (tickers.length > 0) {
       void fetch(`/api/names?tickers=${tickers.join(',')}`)
@@ -646,21 +654,27 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [refresh],
   );
 
-  /** Recompute a position's shares/avg_cost from its lots; a position whose
-   * lots hold no shares is removed (cascade takes the lot history). */
+  /** Recompute a position's shares/avg_cost from its lots. A position whose
+   * lots hold no shares survives archived at zero (its dividend history stays
+   * on the Income screen); only a position with no lots at all is removed. */
   const recomputeParkedAggregate = useCallback(async (positionId: string) => {
     const client = db();
     const { data, error: readErr } = await client
       .from('parked_lots').select('*').eq('parked_position_id', positionId);
     if (readErr) throw readErr;
-    const agg = aggregateLots((data ?? []).map(mapParkedLot));
-    if (agg.shares <= 1e-9) {
+    const rows = (data ?? []).map(mapParkedLot);
+    const agg = aggregateLots(rows);
+    if (rows.length === 0) {
       const { error: err } = await client.from('parked_positions').delete().eq('id', positionId);
       if (err) throw err;
     } else {
       const { error: err } = await client
         .from('parked_positions')
-        .update({ shares: agg.shares, avg_cost: Math.round(agg.avgCost * 10000) / 10000 })
+        .update(
+          agg.shares <= 1e-9
+            ? { shares: 0, avg_cost: 0 }
+            : { shares: agg.shares, avg_cost: Math.round(agg.avgCost * 10000) / 10000 },
+        )
         .eq('id', positionId);
       if (err) throw err;
     }
@@ -803,23 +817,40 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       notes?: string | null;
     }) => {
       const client = db();
-      const { data, error: posErr } = await client
-        .from('parked_positions')
-        .insert({
-          ticker: ticker.toUpperCase(),
-          account_id: accountId,
-          category,
-          shares,
-          avg_cost: price,
-          current_price: price,
-          notes: notes ?? null,
-        })
-        .select('id')
-        .single();
-      if (posErr) throw posErr;
+      const upper = ticker.toUpperCase();
+      const existing = state.parked.find((x) => x.ticker === upper && x.accountId === accountId);
+      if (existing && existing.shares > 1e-9) {
+        throw new Error(`${upper} is already held in that account — add a lot from its row instead.`);
+      }
+      let positionId: string;
+      if (existing) {
+        // Revive the archived row — its dividend history picks right back up.
+        const { error: reviveErr } = await client
+          .from('parked_positions')
+          .update({ category, current_price: price, notes: notes ?? null })
+          .eq('id', existing.id);
+        if (reviveErr) throw reviveErr;
+        positionId = existing.id;
+      } else {
+        const { data, error: posErr } = await client
+          .from('parked_positions')
+          .insert({
+            ticker: upper,
+            account_id: accountId,
+            category,
+            shares,
+            avg_cost: price,
+            current_price: price,
+            notes: notes ?? null,
+          })
+          .select('id')
+          .single();
+        if (posErr) throw posErr;
+        positionId = data.id as string;
+      }
       const { error: lotErr } = await client.from('parked_lots').insert(
         parkedLotPayload({
-          parkedPositionId: data.id,
+          parkedPositionId: positionId,
           date,
           source: 'purchase',
           shares,
@@ -828,9 +859,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         }),
       );
       if (lotErr) throw lotErr;
+      if (existing) await recomputeParkedAggregate(positionId);
       await refresh();
     },
-    [refresh],
+    [refresh, state.parked, recomputeParkedAggregate],
   );
 
   const deleteParkedLot = useCallback(
@@ -892,7 +924,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             ticker: p.ticker,
             account_id: toAccountId,
             category: p.category,
-            shares: 0.00000001, // placeholder; recomputed from lots below
+            shares: 0, // recomputed from lots below
             avg_cost: p.avgCost,
             current_price: p.currentPrice,
             trim_rank: p.trimRank ?? null,

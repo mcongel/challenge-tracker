@@ -75,7 +75,12 @@ async function main(): Promise<void> {
   );
 
   const tickers = [
-    ...new Set([...lots.map((l) => l.ticker), ...parkedRows.map((r) => r.ticker), 'VOO']),
+    ...new Set([
+      ...lots.map((l) => l.ticker),
+      // Archived (zero-share) positions keep history, not quotes.
+      ...parkedRows.filter((r) => num(r.shares) > 1e-9).map((r) => r.ticker),
+      'VOO',
+    ]),
   ];
   let quotes: Record<string, number> = {};
   try {
