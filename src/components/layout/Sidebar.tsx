@@ -8,6 +8,7 @@ import {
   Landmark,
   Swords,
   Archive,
+  HandCoins,
   BookOpen,
   HelpCircle,
   X,
@@ -23,6 +24,7 @@ export const NAV_ITEMS = [
   { to: '/tax', label: 'Tax Reserve', icon: Landmark },
   { to: '/benchmark', label: 'Benchmark', icon: Swords },
   { to: '/parked', label: 'Parked Pile', icon: Archive },
+  { to: '/income', label: 'Income', icon: HandCoins },
   { to: '/rules', label: 'Rules', icon: BookOpen },
   { to: '/help', label: 'Help', icon: HelpCircle },
 ];

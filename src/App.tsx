@@ -11,6 +11,7 @@ import { Milestones } from './pages/Milestones';
 import { TaxReserve } from './pages/TaxReserve';
 import { Benchmark } from './pages/Benchmark';
 import { ParkedPile } from './pages/ParkedPile';
+import { Income } from './pages/Income';
 import { Rules } from './pages/Rules';
 import { Help } from './pages/Help';
 import { isSupabaseConfigured } from './lib/supabase';
@@ -47,6 +48,7 @@ function AppRoutes() {
         <Route path="/tax" element={<TaxReserve />} />
         <Route path="/benchmark" element={<Benchmark />} />
         <Route path="/parked" element={<ParkedPile />} />
+        <Route path="/income" element={<Income />} />
         <Route path="/rules" element={<Rules />} />
         <Route path="/help" element={<Help />} />
         <Route path="*" element={<Navigate to="/" replace />} />
