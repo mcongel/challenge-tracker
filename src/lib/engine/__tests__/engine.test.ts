@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CashEvent, ParkedPosition, PositionLot, Snapshot, Trade } from '../types';
 import type { DividendClassification, ParkedLot } from '../parkedLots';
+import type { ParkedLotAdjustment } from '../parkedRoc';
 import { roundCents } from '../money';
 import { applySplit, closeShares } from '../positions';
 import { milestoneLevels, milestoneTable, nextMilestone, skimDue } from '../milestones';
@@ -581,6 +582,141 @@ describe('parked income — trailing, projection, yield, dividend tax', () => {
     expect(estimatedPileTax(1000, 10, 10)).toBeCloseTo(210, 9);          // defaults: all-LT at 21%
     expect(estimatedPileTax(1000, 10, 10, 0.1, 0.5)).toBeCloseTo(100, 9); // settings-driven LT
     expect(estimatedPileTax(1000, 10, 0, 0.1, 0.5)).toBeCloseTo(500, 9);  // all-ST at the override
+  });
+});
+
+describe('parked ROC — allocation, adjusted basis, overflow', () => {
+  const buy = (id: string, date: string | null, shares: number, amount: number): ParkedLot => ({
+    id, parkedPositionId: 'p1', date, source: 'purchase', shares, price: null, amount,
+  });
+  const rocDiv = (id: string, date: string | null, amount: number, allocated = false): ParkedLot => ({
+    id, parkedPositionId: 'p1', date, source: 'dividend', shares: 0, price: null, amount,
+    classification: 'return_of_capital', rocAllocatedAt: allocated ? '2026-08-12T00:00:00Z' : null,
+  });
+  const adj = (
+    id: string, shareLotId: string, amount: number, dividendLotId: string | null = 'd1',
+  ): ParkedLotAdjustment => ({ id, shareLotId, dividendLotId, amount });
+
+  it('allocates per share across lots held at the event date; later lots excluded', async () => {
+    const { allocateRoc } = await import('../parkedRoc');
+    const lots = [
+      buy('a', '2025-01-01', 10, 1000),
+      buy('b', '2026-01-01', 30, 3000),
+      buy('c', '2026-07-01', 5, 500), // bought after the event — not entitled
+    ];
+    const r = allocateRoc(lots, [], { amount: 40, date: '2026-06-01' });
+    // 40 sh eligible → $1/share
+    expect(r.allocations).toEqual([
+      { shareLotId: 'a', amount: 10 },
+      { shareLotId: 'b', amount: 30 },
+    ]);
+    expect(r.overflow.total).toBe(0);
+  });
+
+  it('caps at remaining basis per lot; the excess is THAT lot\'s gain, never redistributed', async () => {
+    const { allocateRoc } = await import('../parkedRoc');
+    const lots = [
+      buy('a', '2024-01-01', 10, 6),    // nearly exhausted basis, LT at event
+      buy('b', '2026-05-01', 10, 1000), // deep basis, ST at event
+    ];
+    const r = allocateRoc(lots, [], { amount: 40, date: '2026-06-01' });
+    // $2/share: a gets 20 → 6 applied + 14 LT overflow; b gets exactly its 20.
+    expect(r.allocations).toEqual([
+      { shareLotId: 'a', amount: 6 },
+      { shareLotId: 'b', amount: 20 }, // b must NOT absorb a's overflow
+    ]);
+    expect(r.overflow).toEqual({ total: 14, ltAmount: 14, stAmount: 0, unknownAmount: 0 });
+  });
+
+  it('sequential events see basis already reduced by earlier rows', async () => {
+    const { allocateRoc } = await import('../parkedRoc');
+    const lots = [buy('a', '2025-01-01', 10, 10)];
+    const first = allocateRoc(lots, [], { amount: 6, date: '2026-01-01' });
+    expect(first.allocations).toEqual([{ shareLotId: 'a', amount: 6 }]);
+    const rows = first.allocations.map((x, i) => adj(`r${i}`, x.shareLotId, x.amount));
+    const second = allocateRoc(lots, rows, { amount: 6, date: '2026-06-01' });
+    expect(second.allocations).toEqual([{ shareLotId: 'a', amount: 4 }]); // only $4 basis left
+    expect(second.overflow.total).toBeCloseTo(2, 9);
+    expect(second.overflow.ltAmount).toBeCloseTo(2, 9);
+  });
+
+  it('undated lots overflow as unknown; zero eligible lots → whole event is unknown overflow', async () => {
+    const { allocateRoc } = await import('../parkedRoc');
+    const undated = allocateRoc([buy('a', null, 10, 1)], [], { amount: 5, date: '2026-06-01' });
+    expect(undated.allocations).toEqual([{ shareLotId: 'a', amount: 1 }]);
+    expect(undated.overflow.unknownAmount).toBeCloseTo(4, 9);
+    const none = allocateRoc([buy('a', '2026-07-01', 10, 100)], [], { amount: 5, date: '2026-06-01' });
+    expect(none.allocations).toEqual([]);
+    expect(none.overflow).toEqual({ total: 5, ltAmount: 0, stAmount: 0, unknownAmount: 5 });
+  });
+
+  it('excludeLotId keeps a DRIP ROC lot from absorbing its own distribution', async () => {
+    const { allocateRoc } = await import('../parkedRoc');
+    const drip: ParkedLot = {
+      id: 'drip', parkedPositionId: 'p1', date: '2026-06-01', source: 'dividend',
+      shares: 2, price: 5, amount: 10, classification: 'return_of_capital',
+    };
+    const lots = [buy('a', '2025-01-01', 8, 800), drip];
+    const r = allocateRoc(lots, [], { amount: 10, date: '2026-06-01', excludeLotId: 'drip' });
+    expect(r.allocations).toEqual([{ shareLotId: 'a', amount: 10 }]); // all to a, none to itself
+  });
+
+  it('reversal is exact: dropping an event\'s rows restores adjusted basis', async () => {
+    const { adjustedLotAmount, aggregateLotsAdjusted } = await import('../parkedRoc');
+    const a = buy('a', '2025-01-01', 10, 1000);
+    const rows = [adj('r1', 'a', 3.5), adj('r2', 'a', 1.25, 'd2')];
+    expect(adjustedLotAmount(a, rows)).toBeCloseTo(995.25, 9);
+    const afterReversal = rows.filter((x) => x.dividendLotId !== 'd1'); // d1 reclassified away
+    expect(adjustedLotAmount(a, afterReversal)).toBeCloseTo(998.75, 9);
+    const agg = aggregateLotsAdjusted([a], rows);
+    expect(agg.costBasis).toBe(1000);            // original untouched
+    expect(agg.adjustedCostBasis).toBeCloseTo(995.25, 9);
+    expect(agg.avgCost).toBe(100);               // avgCost stays original
+  });
+
+  it('overflowForDividend derives from rows; basisExhaustedLotIds flags empty lots', async () => {
+    const { overflowForDividend, basisExhaustedLotIds } = await import('../parkedRoc');
+    const d = rocDiv('d1', '2026-06-01', 10, true);
+    expect(overflowForDividend(d, [adj('r1', 'a', 7)])).toBeCloseTo(3, 9);
+    expect(overflowForDividend(d, [adj('r1', 'a', 10)])).toBe(0);
+    const lots = [buy('a', '2025-01-01', 10, 5), buy('b', '2025-01-01', 10, 500)];
+    expect(basisExhaustedLotIds(lots, [adj('r1', 'a', 5)])).toEqual(['a']);
+  });
+
+  it('dividendTaxYTD: allocated ROC taxed only on overflow, unallocated flagged at zero tax', async () => {
+    const { dividendTaxYTD } = await import('../parkedIncome');
+    const RATES = { qualified: 0.15, ordinary: 0.24, capitalGainDist: 0.21 };
+    const lots = [
+      rocDiv('d1', '2026-04-01', 10, true),  // allocated: 7 absorbed, 3 overflow
+      rocDiv('d2', '2026-05-01', 8, true),   // allocated: fully absorbed
+      rocDiv('d3', '2026-06-01', 5, false),  // never allocated — backfill pending
+    ];
+    const rows = [adj('r1', 'a', 7, 'd1'), adj('r2', 'a', 8, 'd2')];
+    const r = dividendTaxYTD(lots, '2026-08-12', RATES, rows);
+    expect(r.rocOverflowAmount).toBeCloseTo(3, 9);
+    expect(r.rocUnallocatedAmount).toBe(5);
+    expect(r.totalTax).toBeCloseTo(3 * 0.21, 9); // only the overflow is taxed
+    expect(r.byClassification.return_of_capital?.amount).toBe(23);
+  });
+
+  it('archived position: history intact, projection and summary basis honest, no income projected', async () => {
+    const { positionIncomeSummary, projectPositionIncome } = await import('../parkedIncome');
+    const RATES = { qualified: 0.15, ordinary: 0.24, capitalGainDist: 0.21 };
+    const archived = {
+      id: 'p1', ticker: 'GONE', accountId: 'a1', account: 'Acct', category: 'Other' as const,
+      shares: 0, avgCost: 0, currentPrice: 100,
+    };
+    const lots = [
+      { ...rocDiv('d1', '2026-05-01', 20, true) },
+      { id: 'cash1', parkedPositionId: 'p1', date: '2026-06-01', source: 'dividend' as const,
+        shares: 0, price: null, amount: 30, classification: 'qualified' as const },
+    ];
+    // Fresh payment history exists, but the shares are gone — never project.
+    expect(projectPositionIncome({ position: archived, lots, today: '2026-08-12', rates: RATES })).toBeNull();
+    const s = positionIncomeSummary(archived, lots, '2026-08-12', RATES);
+    expect(s.trailing12m).toBeCloseTo(50, 9); // history survives
+    expect(s.projection).toBeNull();
+    expect(s.rocCumulative).toBe(20);
   });
 });
 
