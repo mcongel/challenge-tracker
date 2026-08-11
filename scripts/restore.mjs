@@ -57,6 +57,19 @@ const TABLES = [
     lt_shares: s.ltShares ?? null, funded_challenge: s.fundedChallenge,
     consumed: s.consumed ?? null, created_at: s.createdAt ?? undefined, notes: s.notes ?? null,
   })), 'id'],
+  ['income_scenarios', get('income_scenarios').map((s) => ({
+    id: s.id, name: s.name, description: s.description ?? null,
+    target_annual_income: s.targetAnnualIncome ?? null, target_year: s.targetYear ?? null,
+    is_active: s.isActive, qualified_rate: s.qualifiedRate ?? null,
+    ordinary_rate: s.ordinaryRate ?? null, capital_gain_rate: s.capitalGainRate ?? null,
+  })), 'id'],
+  ['scenario_rotations', get('scenario_rotations').map((r) => ({
+    id: r.id, scenario_id: r.scenarioId, sell_holding_id: r.sellHoldingId ?? null,
+    sell_shares: r.sellShares ?? null, sell_pct: r.sellPct ?? null,
+    cash_amount: r.cashAmount ?? null, rotation_date: r.rotationDate, buy_symbol: r.buySymbol,
+    buy_yield_pct: r.buyYieldPct, buy_dividend_growth_pct: r.buyDividendGrowthPct,
+    buy_classification_mix: r.buyClassificationMix, notes: r.notes ?? null,
+  })), 'id'],
   ['outside_sales', get('outside_sales').map((s) => ({
     id: s.id, account_id: s.accountId, ticker: s.ticker, sale_date: s.saleDate,
     loss: s.loss, notes: s.notes ?? null,
@@ -99,6 +112,7 @@ const TABLES = [
 if (wipe) {
   // Children before parents; accounts last.
   const order = [
+    'scenario_rotations', 'income_scenarios',
     'parked_lot_adjustments', 'parked_lots', 'parked_sales', 'parked_cash_events',
     'outside_sales', 'cash_events', 'position_lots', 'trades',
     'milestones', 'benchmark_deposits', 'snapshots', 'loss_carryforwards', 'price_overrides',

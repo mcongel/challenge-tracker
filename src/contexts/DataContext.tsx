@@ -21,8 +21,8 @@ import {
   totalScore, trimPreview,
 } from '../lib/engine';
 import type {
-  AccountCashBreakdown, DividendClassification, DividendTaxRates, ParkedCashEvent, ParkedLot,
-  ParkedLotAdjustment, ParkedSale, ParkedSaleSnapshot,
+  AccountCashBreakdown, DividendClassification, DividendTaxRates, IncomeScenario, ParkedCashEvent,
+  ParkedLot, ParkedLotAdjustment, ParkedSale, ParkedSaleSnapshot, ScenarioRotation,
 } from '../lib/engine';
 import { priceMapFor } from '../lib/alerts';
 import { todayISO } from '../lib/utils';
@@ -38,6 +38,10 @@ import {
   parkedCashEventPayload,
   mapParkedLotAdjustment,
   parkedLotAdjustmentPayload,
+  mapIncomeScenario,
+  incomeScenarioPayload,
+  mapScenarioRotation,
+  scenarioRotationPayload,
   mapAccount,
   mapBenchmarkDeposit,
   mapCarryforward,
@@ -77,6 +81,9 @@ interface DataState {
   parkedCashEvents: ParkedCashEvent[];
   /** ROC basis reductions per share lot — original lot amounts stay intact. */
   parkedLotAdjustments: ParkedLotAdjustment[];
+  /** Transition modeler what-ifs — pure pile context, never score math. */
+  incomeScenarios: IncomeScenario[];
+  scenarioRotations: ScenarioRotation[];
 }
 
 const EMPTY: DataState = {
@@ -96,6 +103,8 @@ const EMPTY: DataState = {
   parkedSales: [],
   parkedCashEvents: [],
   parkedLotAdjustments: [],
+  incomeScenarios: [],
+  scenarioRotations: [],
 };
 
 interface DataContextValue extends DataState {
@@ -220,6 +229,14 @@ interface DataContextValue extends DataState {
   clearExampleData: () => Promise<void>;
   setOverride: (ticker: string, price: number) => Promise<void>;
   clearOverride: (ticker: string) => Promise<void>;
+  /** Transition modeler — pure pile context, never score math. */
+  addScenario: (s: Omit<IncomeScenario, 'id' | 'createdAt'>) => Promise<void>;
+  updateScenario: (id: string, patch: Partial<Omit<IncomeScenario, 'id' | 'createdAt'>>) => Promise<void>;
+  deleteScenario: (id: string) => Promise<void>;
+  duplicateScenario: (id: string) => Promise<void>;
+  addRotation: (r: Omit<ScenarioRotation, 'id'>) => Promise<void>;
+  updateRotation: (id: string, r: Omit<ScenarioRotation, 'id'>) => Promise<void>;
+  deleteRotation: (id: string) => Promise<void>;
 }
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -242,6 +259,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const [
         cash, lots, trades, milestones, bench, parked, snaps, carry, overrides, settings,
         accounts, outsideSales, parkedLots, parkedSales, parkedCashEvents, parkedLotAdjustments,
+        incomeScenarios, scenarioRotations,
       ] = await Promise.all([
         client.from('cash_events').select('*').order('date').order('created_at'),
         client.from('position_lots').select('*').order('buy_date'),
@@ -259,12 +277,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         client.from('parked_sales').select('*').order('date'),
         client.from('parked_cash_events').select('*').order('date'),
         client.from('parked_lot_adjustments').select('*'),
+        client.from('income_scenarios').select('*').order('created_at'),
+        client.from('scenario_rotations').select('*').order('rotation_date'),
       ]);
       const firstError =
         cash.error ?? lots.error ?? trades.error ?? milestones.error ?? bench.error ??
         parked.error ?? snaps.error ?? carry.error ?? overrides.error ?? settings.error ??
         accounts.error ?? outsideSales.error ?? parkedLots.error ?? parkedSales.error ??
-        parkedCashEvents.error ?? parkedLotAdjustments.error;
+        parkedCashEvents.error ?? parkedLotAdjustments.error ?? incomeScenarios.error ??
+        scenarioRotations.error;
       if (firstError) throw firstError;
       setState({
         cashEvents: (cash.data ?? []).map(mapCashEvent),
@@ -285,6 +306,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         parkedSales: (parkedSales.data ?? []).map(mapParkedSale),
         parkedCashEvents: (parkedCashEvents.data ?? []).map(mapParkedCashEvent),
         parkedLotAdjustments: (parkedLotAdjustments.data ?? []).map(mapParkedLotAdjustment),
+        incomeScenarios: (incomeScenarios.data ?? []).map(mapIncomeScenario),
+        scenarioRotations: (scenarioRotations.data ?? []).map(mapScenarioRotation),
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -1677,6 +1700,93 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [refresh],
   );
 
+  const addScenario = useCallback(
+    async (s: Omit<IncomeScenario, 'id' | 'createdAt'>) => {
+      const { error: err } = await db().from('income_scenarios').insert(incomeScenarioPayload(s));
+      if (err) throw err;
+      await refresh();
+    },
+    [refresh],
+  );
+
+  const updateScenario = useCallback(
+    async (id: string, patch: Partial<Omit<IncomeScenario, 'id' | 'createdAt'>>) => {
+      const payload: Record<string, unknown> = {};
+      if (patch.name !== undefined) payload.name = patch.name;
+      if (patch.description !== undefined) payload.description = patch.description;
+      if (patch.targetAnnualIncome !== undefined) payload.target_annual_income = patch.targetAnnualIncome;
+      if (patch.targetYear !== undefined) payload.target_year = patch.targetYear;
+      if (patch.isActive !== undefined) payload.is_active = patch.isActive;
+      if (patch.qualifiedRate !== undefined) payload.qualified_rate = patch.qualifiedRate;
+      if (patch.ordinaryRate !== undefined) payload.ordinary_rate = patch.ordinaryRate;
+      if (patch.capitalGainRate !== undefined) payload.capital_gain_rate = patch.capitalGainRate;
+      const { error: err } = await db().from('income_scenarios').update(payload).eq('id', id);
+      if (err) throw err;
+      await refresh();
+    },
+    [refresh],
+  );
+
+  const deleteScenario = useCallback(
+    async (id: string) => {
+      const { error: err } = await db().from('income_scenarios').delete().eq('id', id);
+      if (err) throw err; // rotations cascade
+      await refresh();
+    },
+    [refresh],
+  );
+
+  const duplicateScenario = useCallback(
+    async (id: string) => {
+      const client = db();
+      const src = state.incomeScenarios.find((s) => s.id === id);
+      if (!src) throw new Error('Scenario not found');
+      const { data, error: err } = await client
+        .from('income_scenarios')
+        .insert(incomeScenarioPayload({ ...src, name: `${src.name} (copy)`, isActive: false }))
+        .select('id')
+        .single();
+      if (err) throw err;
+      const rotations = state.scenarioRotations.filter((r) => r.scenarioId === id);
+      if (rotations.length > 0) {
+        const { error: rotErr } = await client.from('scenario_rotations').insert(
+          rotations.map((r) => scenarioRotationPayload({ ...r, scenarioId: data.id as string })),
+        );
+        if (rotErr) throw rotErr;
+      }
+      await refresh();
+    },
+    [refresh, state.incomeScenarios, state.scenarioRotations],
+  );
+
+  const addRotation = useCallback(
+    async (r: Omit<ScenarioRotation, 'id'>) => {
+      const { error: err } = await db().from('scenario_rotations').insert(scenarioRotationPayload(r));
+      if (err) throw err;
+      await refresh();
+    },
+    [refresh],
+  );
+
+  const updateRotation = useCallback(
+    async (id: string, r: Omit<ScenarioRotation, 'id'>) => {
+      const { error: err } = await db()
+        .from('scenario_rotations').update(scenarioRotationPayload(r)).eq('id', id);
+      if (err) throw err;
+      await refresh();
+    },
+    [refresh],
+  );
+
+  const deleteRotation = useCallback(
+    async (id: string) => {
+      const { error: err } = await db().from('scenario_rotations').delete().eq('id', id);
+      if (err) throw err;
+      await refresh();
+    },
+    [refresh],
+  );
+
   const setOverride = useCallback(
     async (ticker: string, price: number) => {
       const { error: err } = await db()
@@ -1770,6 +1880,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       clearExampleData,
       setOverride,
       clearOverride,
+      addScenario,
+      updateScenario,
+      deleteScenario,
+      duplicateScenario,
+      addRotation,
+      updateRotation,
+      deleteRotation,
     }),
     [
       state, mergedParked, quotes, dayChange, quotesAsOf, refreshQuotes, tickerNames, contributionCap,
@@ -1782,7 +1899,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       deleteParkedSale, updateParkedSale, undoParkedSale, editParkedSaleAmounts, transferParked,
       accountCash, addParkedCashEvent,
       deleteParkedCashEvent, reconcileAccountCash, exampleData, clearExampleData,
-      setOverride, clearOverride,
+      setOverride, clearOverride, addScenario, updateScenario, deleteScenario, duplicateScenario,
+      addRotation, updateRotation, deleteRotation,
     ],
   );
 

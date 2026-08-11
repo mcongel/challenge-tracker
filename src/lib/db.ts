@@ -5,6 +5,7 @@ import type {
   Account,
   BenchmarkDeposit,
   CashEvent,
+  IncomeScenario,
   LossCarryforward,
   MilestoneRecord,
   OutsideSale,
@@ -14,6 +15,7 @@ import type {
   ParkedPosition,
   ParkedSale,
   PositionLot,
+  ScenarioRotation,
   Snapshot,
   Trade,
 } from './engine';
@@ -245,6 +247,59 @@ export const parkedSalePayload = (s: Omit<ParkedSale, 'id' | 'createdAt'>) => ({
   funded_challenge: s.fundedChallenge,
   consumed: s.consumed ?? null,
   notes: s.notes ?? null,
+});
+
+export const mapIncomeScenario = (r: any): IncomeScenario => ({
+  id: r.id,
+  name: r.name,
+  description: r.description,
+  targetAnnualIncome: r.target_annual_income == null ? null : Number(r.target_annual_income),
+  targetYear: r.target_year == null ? null : Number(r.target_year),
+  isActive: r.is_active,
+  qualifiedRate: r.qualified_rate == null ? null : Number(r.qualified_rate),
+  ordinaryRate: r.ordinary_rate == null ? null : Number(r.ordinary_rate),
+  capitalGainRate: r.capital_gain_rate == null ? null : Number(r.capital_gain_rate),
+  createdAt: r.created_at,
+});
+
+export const incomeScenarioPayload = (s: Omit<IncomeScenario, 'id' | 'createdAt'>) => ({
+  name: s.name,
+  description: s.description ?? null,
+  target_annual_income: s.targetAnnualIncome ?? null,
+  target_year: s.targetYear ?? null,
+  is_active: s.isActive,
+  qualified_rate: s.qualifiedRate ?? null,
+  ordinary_rate: s.ordinaryRate ?? null,
+  capital_gain_rate: s.capitalGainRate ?? null,
+});
+
+export const mapScenarioRotation = (r: any): ScenarioRotation => ({
+  id: r.id,
+  scenarioId: r.scenario_id,
+  sellHoldingId: r.sell_holding_id,
+  sellShares: r.sell_shares == null ? null : Number(r.sell_shares),
+  sellPct: r.sell_pct == null ? null : Number(r.sell_pct),
+  cashAmount: r.cash_amount == null ? null : Number(r.cash_amount),
+  rotationDate: r.rotation_date,
+  buySymbol: r.buy_symbol,
+  buyYieldPct: Number(r.buy_yield_pct),
+  buyDividendGrowthPct: Number(r.buy_dividend_growth_pct),
+  buyClassificationMix: r.buy_classification_mix ?? {},
+  notes: r.notes,
+});
+
+export const scenarioRotationPayload = (r: Omit<ScenarioRotation, 'id'>) => ({
+  scenario_id: r.scenarioId,
+  sell_holding_id: r.sellHoldingId ?? null,
+  sell_shares: r.sellShares ?? null,
+  sell_pct: r.sellPct ?? null,
+  cash_amount: r.cashAmount ?? null,
+  rotation_date: r.rotationDate,
+  buy_symbol: r.buySymbol,
+  buy_yield_pct: r.buyYieldPct,
+  buy_dividend_growth_pct: r.buyDividendGrowthPct,
+  buy_classification_mix: r.buyClassificationMix,
+  notes: r.notes ?? null,
 });
 
 export const mapParkedCashEvent = (r: any): ParkedCashEvent => ({
