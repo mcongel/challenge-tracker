@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Area, AreaChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer,
@@ -13,7 +12,8 @@ import {
 import { ErrorCard } from './CashLedger';
 import { ContributionCapBadge } from '../components/ui/ContributionCapBadge';
 import { GettingStarted } from '../components/GettingStarted';
-import { cn, formatCurrency, formatCurrencyWhole, todayISO } from '../lib/utils';
+import { cn, compactUsd, formatCurrency, formatCurrencyWhole, todayISO } from '../lib/utils';
+import { useIsDark } from '../lib/useIsDark';
 
 /** Chart palette — validated (dataviz six checks) for both surfaces.
  * You = brand green (green-600 both modes); Shadow VOO = indigo 600/500.
@@ -23,21 +23,6 @@ const SERIES = {
   shadow: { light: '#4f46e5', dark: '#6366f1' },
   floor: { light: '#16a34a', dark: '#22c55e' },
 };
-
-function useIsDark(): boolean {
-  const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
-  useEffect(() => {
-    const obs = new MutationObserver(() =>
-      setDark(document.documentElement.classList.contains('dark')),
-    );
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-    return () => obs.disconnect();
-  }, []);
-  return dark;
-}
-
-const compactUsd = (v: number) =>
-  v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M` : v >= 1_000 ? `$${Math.round(v / 1_000)}k` : `$${Math.round(v)}`;
 
 const ALERT_STYLES: Record<string, string> = {
   MILESTONE: 'bg-emerald-50 text-emerald-800 border-emerald-200',

@@ -24,6 +24,10 @@ export function formatPercent(fraction: number, digits = 1): string {
   return `${(fraction * 100).toFixed(digits)}%`;
 }
 
+/** Chart-axis money: $1.2M / $45k / $980. */
+export const compactUsd = (v: number) =>
+  v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M` : v >= 1_000 ? `$${Math.round(v / 1_000)}k` : `$${Math.round(v)}`;
+
 export function cn(...classes: (string | false | null | undefined)[]): string {
   return classes.filter(Boolean).join(' ');
 }

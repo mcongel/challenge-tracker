@@ -53,8 +53,10 @@ type GroupBy = 'account' | 'ticker' | 'flat';
 type SortKey =
   | 'default' | 'label' | 'shares' | 'avgCost' | 'price' | 'dayChange' | 'value' | 'unreal'
   | 'unlock';
-interface SortState {
-  key: SortKey;
+/** Reused by other sortable tables (Income) — the thead needs `group/head`
+ * for the idle-arrow hover reveal. */
+export interface SortState<K extends string = SortKey> {
+  key: K;
   dir: 'asc' | 'desc';
 }
 /** First click on a header sorts the way you'd want: money and size biggest
@@ -72,13 +74,13 @@ const NATURAL_DIR: Record<SortKey, 'asc' | 'desc'> = {
 };
 const SORT_KEYS = Object.keys(NATURAL_DIR) as SortKey[];
 
-function SortHeader({
+export function SortHeader<K extends string = SortKey>({
   label, sortKey, sort, onSort, align = 'left', title,
 }: {
   label: string;
-  sortKey: SortKey;
-  sort: SortState;
-  onSort: (key: SortKey) => void;
+  sortKey: K;
+  sort: SortState<K>;
+  onSort: (key: K) => void;
   align?: 'left' | 'right';
   title?: string;
 }) {
