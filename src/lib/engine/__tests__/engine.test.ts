@@ -762,6 +762,162 @@ describe('parked ROC — allocation, adjusted basis, overflow', () => {
   });
 });
 
+describe('parked sale restore — snapshot, converging undo plan', () => {
+  const pos = (over: Partial<ParkedPosition> = {}): ParkedPosition => ({
+    id: 'p1', ticker: 'X', accountId: 'a1', account: 'Acct', category: 'Other',
+    shares: 15, avgCost: 100, currentPrice: 100, ...over,
+  });
+  const buy = (id: string, date: string | null, shares: number, amount: number): ParkedLot => ({
+    id, parkedPositionId: 'p1', date, source: 'purchase', shares, price: null, amount,
+  });
+  const drip = (id: string, date: string, shares: number, amount: number): ParkedLot => ({
+    id, parkedPositionId: 'p1', date, source: 'dividend', shares, price: 10, amount,
+    classification: 'return_of_capital', rocAllocatedAt: '2026-08-01T00:00:00Z', rocOverflow: 0,
+  });
+  const rocCash = (id: string, date: string, amount: number, stamp: string | null): ParkedLot => ({
+    id, parkedPositionId: 'p1', date, source: 'dividend', shares: 0, price: null, amount,
+    classification: 'return_of_capital', rocAllocatedAt: stamp, rocOverflow: 0,
+  });
+  const adj = (id: string, shareLotId: string, amount: number, dividendLotId: string | null = 'divX'):
+    ParkedLotAdjustment => ({ id, shareLotId, dividendLotId, amount });
+  const sale = (over: Partial<import('../types').ParkedSale> = {}): import('../types').ParkedSale => ({
+    id: 's1', ticker: 'X', accountId: 'a1', date: '2026-08-13', shares: 12, pricePerShare: 150,
+    proceeds: 1800, fundedChallenge: false, createdAt: '2026-08-13T00:00:00Z', ...over,
+  });
+
+  it('buildSaleSnapshot: shrunk vs deleted modes with delta math matching FIFO proration', async () => {
+    const { consumeLotsFifo } = await import('../parkedLots');
+    const { buildSaleSnapshot } = await import('../parkedSaleRestore');
+    const lots = [buy('B', '2025-01-01', 5, 500), buy('A', '2025-06-01', 10, 1000)];
+    const rows = [adj('ra', 'A', 100), adj('rb', 'B', 50)];
+    const consumption = consumeLotsFifo(lots, 12, rows); // B full, A 7-of-10
+    const snap = buildSaleSnapshot(pos(), lots, rows, consumption, []);
+    const b = snap.slices.find((s) => s.lotId === 'B')!;
+    expect(b.mode).toBe('deleted');
+    expect(b).toMatchObject({ preShares: 5, preAmount: 500, sharesDelta: 5, amountDelta: 500 });
+    expect(b.adjustments[0]).toMatchObject({ id: 'rb', preAmount: 50, amountDelta: 50, deleted: true });
+    const a = snap.slices.find((s) => s.lotId === 'A')!;
+    expect(a.mode).toBe('shrunk');
+    expect(a).toMatchObject({ preShares: 10, preAmount: 1000, sharesDelta: 7, amountDelta: 700 });
+    expect(a.adjustments[0].amountDelta).toBeCloseTo(70, 6); // 100 − round6(100 × 0.3)
+  });
+
+  it('buildSaleSnapshot: zeroed DRIP slices carry zero deltas — amount and rows were untouched', async () => {
+    const { consumeLotsFifo } = await import('../parkedLots');
+    const { buildSaleSnapshot } = await import('../parkedSaleRestore');
+    const lots = [buy('A', '2025-01-01', 10, 1000), drip('D', '2026-01-01', 2, 20)];
+    const rows = [adj('rd', 'D', 5)];
+    const consumption = consumeLotsFifo(lots, 12, rows); // both fully consumed
+    const snap = buildSaleSnapshot(pos(), lots, rows, consumption, ['D']); // recordTrim zero-shares D
+    const d = snap.slices.find((s) => s.lotId === 'D')!;
+    expect(d.mode).toBe('zeroed');
+    expect(d.amountDelta).toBe(0);
+    expect(d.sharesDelta).toBe(2);
+    expect(d.adjustments[0].amountDelta).toBe(0);
+  });
+
+  it('planSaleRestore: clean undo restores absolutes, recreates deleted lots with original ids', async () => {
+    const { planSaleRestore } = await import('../parkedSaleRestore');
+    const { consumeLotsFifo } = await import('../parkedLots');
+    const { buildSaleSnapshot } = await import('../parkedSaleRestore');
+    const preLots = [buy('B', '2025-01-01', 5, 500), buy('A', '2025-06-01', 10, 1000)];
+    const rows = [adj('ra', 'A', 100), adj('rb', 'B', 50)];
+    const snap = buildSaleSnapshot(pos(), preLots, rows, consumeLotsFifo(preLots, 12, rows), []);
+    const divX = rocCash('divX', '2026-05-01', 150, null); // stamp matches entries (null lookup → null)
+    const plan = planSaleRestore(sale(), snap, {
+      position: pos({ shares: 3 }),
+      lots: [buy('A', '2025-06-01', 3, 300)],          // post-sale state: B gone, A shrunk
+      adjustments: [adj('ra', 'A', 30)],               // ra scaled, rb cascaded
+      dividendLots: [divX],
+    });
+    expect(plan.recreatePosition).toBeNull();
+    expect(plan.lotUpserts).toHaveLength(1);
+    expect(plan.lotUpserts[0]).toMatchObject({ id: 'B', shares: 5, amount: 500 });
+    expect(plan.lotSets).toEqual([{ id: 'A', shares: 10, amount: 1000 }]);
+    expect(plan.adjustmentUpserts).toEqual([{ id: 'rb', shareLotId: 'B', dividendLotId: 'divX', amount: 50 }]);
+    expect(plan.adjustmentSets).toEqual([{ id: 'ra', amount: 100 }]);
+    expect(plan.reallocate).toEqual([]);
+  });
+
+  it('planSaleRestore: idempotent — planning against restored state is an empty plan', async () => {
+    const { planSaleRestore, buildSaleSnapshot } = await import('../parkedSaleRestore');
+    const { consumeLotsFifo } = await import('../parkedLots');
+    const preLots = [buy('B', '2025-01-01', 5, 500), buy('A', '2025-06-01', 10, 1000)];
+    const rows = [adj('ra', 'A', 100), adj('rb', 'B', 50)];
+    const snap = buildSaleSnapshot(pos(), preLots, rows, consumeLotsFifo(preLots, 12, rows), []);
+    const plan = planSaleRestore(sale(), snap, {
+      position: pos(),
+      lots: preLots,           // fully restored already (retry after crash before sale delete)
+      adjustments: rows,
+      dividendLots: [rocCash('divX', '2026-05-01', 150, null)],
+    });
+    expect(plan.lotUpserts).toEqual([]);
+    expect(plan.lotSets).toEqual([]);
+    expect(plan.adjustmentUpserts).toEqual([]);
+    expect(plan.adjustmentSets).toEqual([]);
+  });
+
+  it('planSaleRestore: interference after the sale falls back to delta restore', async () => {
+    const { planSaleRestore, buildSaleSnapshot } = await import('../parkedSaleRestore');
+    const { consumeLotsFifo } = await import('../parkedLots');
+    const preLots = [buy('A', '2025-06-01', 10, 1000)];
+    const snap = buildSaleSnapshot(pos(), preLots, [], consumeLotsFifo(preLots, 7, []), []);
+    const plan = planSaleRestore(sale({ shares: 7 }), snap, {
+      position: pos({ shares: 2 }),
+      lots: [buy('A', '2025-06-01', 2, 200)], // a later transfer took 1 more share
+      adjustments: [],
+      dividendLots: [],
+    });
+    // Neither pre (10) nor pre−delta (3): add the sale's slice back → 2+7.
+    expect(plan.lotSets).toEqual([{ id: 'A', shares: 9, amount: 900 }]);
+  });
+
+  it('planSaleRestore: event gates — removed events skip, re-allocated events re-run', async () => {
+    const { planSaleRestore, buildSaleSnapshot } = await import('../parkedSaleRestore');
+    const { consumeLotsFifo } = await import('../parkedLots');
+    const preLots = [buy('A', '2025-06-01', 10, 1000)];
+    const rows = [adj('ra1', 'A', 40, 'divGone'), adj('ra2', 'A', 60, 'divMoved')];
+    const snap = buildSaleSnapshot(
+      pos(), preLots, rows, consumeLotsFifo(preLots, 10, rows), [],
+      (id) => (id === 'divMoved' ? '2026-06-01T00:00:00Z' : null),
+    );
+    const plan = planSaleRestore(sale({ shares: 10 }), snap, {
+      position: pos({ shares: 0 }),
+      lots: [],
+      adjustments: [],
+      // divGone was deleted; divMoved was re-allocated (different stamp).
+      dividendLots: [rocCash('divMoved', '2026-06-01', 60, '2026-08-14T00:00:00Z')],
+    });
+    expect(plan.skipped).toEqual([
+      { dividendLotId: 'divGone', reason: 'event-removed' },
+      { dividendLotId: 'divMoved', reason: 'event-reallocated' },
+    ]);
+    expect(plan.adjustmentUpserts).toEqual([]); // neither row comes back directly
+    expect(plan.reallocate.map((r) => r.id)).toEqual(['divMoved']);
+  });
+
+  it('planSaleRestore: position recreation, archived revival, and post-sale events re-run', async () => {
+    const { planSaleRestore, buildSaleSnapshot } = await import('../parkedSaleRestore');
+    const { consumeLotsFifo } = await import('../parkedLots');
+    const preLots = [buy('A', '2025-06-01', 10, 1000)];
+    const snap = buildSaleSnapshot(pos(), preLots, [], consumeLotsFifo(preLots, 10, []), []);
+    // Position deleted entirely by the full trim:
+    const gone = planSaleRestore(sale({ shares: 10 }), snap, {
+      position: null, lots: [], adjustments: [], dividendLots: [],
+    });
+    expect(gone.recreatePosition).toEqual({ id: 'p1', ticker: 'X', accountId: 'a1' });
+    // Archived position + an ROC event allocated after the sale:
+    const archived = planSaleRestore(sale({ shares: 10 }), snap, {
+      position: pos({ shares: 0 }),
+      lots: [],
+      adjustments: [],
+      dividendLots: [rocCash('divLate', '2026-08-14', 30, '2026-08-14T09:00:00Z')],
+    });
+    expect(archived.revivePrice).toBe(100);
+    expect(archived.reallocate.map((r) => r.id)).toEqual(['divLate']);
+  });
+});
+
 describe('the wall — parked dividends cannot reach the score', () => {
   it('totalScore has no parameter through which parked data can enter', async () => {
     const { totalScore } = await import('../score');
