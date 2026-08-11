@@ -10,7 +10,8 @@ import { AccountSelect } from '../components/ui/AccountSelect';
 import { ErrorCard, SkeletonTable } from './CashLedger';
 import { useData } from '../contexts/DataContext';
 import type {
-  Account, AccountKind, ParkedCashEvent, ParkedLot, ParkedPosition, ParkedSale, UnlockSummary,
+  Account, AccountKind, DividendClassification, ParkedCashEvent, ParkedLot, ParkedPosition,
+  ParkedSale, UnlockSummary,
 } from '../lib/engine';
 import {
   concentration, contributionStatus, daysBetween, depositExceedsCap, dividendsCollected,
@@ -21,6 +22,23 @@ import { ConfirmModal } from '../components/ui/ConfirmModal';
 import {
   cn, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls, secondaryBtnCls, todayISO,
 } from '../lib/utils';
+
+/** Short pill labels for dividend tax character; unclassified reads as a
+ * warning (amber) until the owner confirms what the broker actually paid. */
+export const CLASSIFICATION_LABELS: Record<DividendClassification, string> = {
+  qualified: 'qualified',
+  ordinary: 'ordinary',
+  return_of_capital: 'ROC',
+  capital_gain_dist: 'cap gain dist',
+  unclassified: 'unclassified',
+};
+
+export const classificationPillCls = (c: DividendClassification) =>
+  c === 'unclassified'
+    ? 'bg-amber-50 text-amber-800'
+    : c === 'return_of_capital'
+      ? 'bg-sky-50 text-sky-700'
+      : 'bg-gray-100 text-gray-600';
 
 const CATEGORY_STYLES: Record<ParkedPosition['category'], string> = {
   'Semi/AI': 'bg-indigo-50 text-indigo-700',
@@ -952,6 +970,8 @@ function LotPanel({ position: p, summary }: { position: ParkedPosition; summary:
   const [price, setPrice] = useState('');
   const [amount, setAmount] = useState('');
   const [reinvested, setReinvested] = useState(true);
+  const [classification, setClassification] = useState<DividendClassification>('unclassified');
+  const [exDate, setExDate] = useState('');
   // Dividends accept either entry: dollars (amount) or shares — whichever was
   // typed last drives, the other computes from the reinvest price.
   const [divDriver, setDivDriver] = useState<'amount' | 'shares'>('amount');
@@ -984,6 +1004,8 @@ function LotPanel({ position: p, summary }: { position: ParkedPosition; summary:
     setShares('');
     setAmount('');
     setPrice(m === 'dividend' && effectivePrice ? String(effectivePrice) : '');
+    setClassification('unclassified');
+    setExDate('');
     setFormError(null);
   };
 
@@ -1017,6 +1039,8 @@ function LotPanel({ position: p, summary }: { position: ParkedPosition; summary:
           shares: sh,
           price: reinvested ? pr : null,
           amount: roundCents(amt),
+          classification,
+          exDate: exDate || null,
           notes: reinvested ? 'reinvested' : 'cash',
         });
       }
@@ -1048,6 +1072,12 @@ function LotPanel({ position: p, summary }: { position: ParkedPosition; summary:
                       l.source === 'purchase' ? 'bg-indigo-50 text-indigo-700' : 'bg-sky-50 text-sky-700')}>
                       {l.source === 'dividend' ? (l.shares > 0 ? 'dividend · DRIP' : 'dividend · cash') : 'purchase'}
                     </span>
+                    {l.source === 'dividend' && (
+                      <span className={cn('ml-1 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium',
+                        classificationPillCls(l.classification ?? 'unclassified'))}>
+                        {CLASSIFICATION_LABELS[l.classification ?? 'unclassified']}
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-gray-600">
                     {l.shares > 0 ? `${fmtSh(l.shares)} sh` : '—'}
@@ -1127,12 +1157,32 @@ function LotPanel({ position: p, summary }: { position: ParkedPosition; summary:
               </>
             )}
             {mode === 'dividend' && (
-              <label className="flex items-center gap-2 text-sm text-gray-700">
-                <input type="checkbox" checked={reinvested} onChange={(e) => setReinvested(e.target.checked)}
-                  className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-600" />
-                Reinvested (DRIP) — enter dollars or shares, the other computes. The shares get
-                their own 366-day clock.
-              </label>
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelCls}>Classification</label>
+                    <select value={classification} className={inputCls}
+                      onChange={(e) => setClassification(e.target.value as DividendClassification)}>
+                      <option value="unclassified">Unclassified (confirm later)</option>
+                      <option value="qualified">Qualified</option>
+                      <option value="ordinary">Ordinary (non-qualified)</option>
+                      <option value="return_of_capital">Return of capital</option>
+                      <option value="capital_gain_dist">Capital gain distribution</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelCls}>Ex-date (optional)</label>
+                    <input type="date" value={exDate} onChange={(e) => setExDate(e.target.value)}
+                      className={inputCls} />
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <input type="checkbox" checked={reinvested} onChange={(e) => setReinvested(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-600" />
+                  Reinvested (DRIP) — enter dollars or shares, the other computes. The shares get
+                  their own 366-day clock.
+                </label>
+              </>
             )}
             {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
             <div className="flex justify-end gap-2">
