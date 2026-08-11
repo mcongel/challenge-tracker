@@ -9,6 +9,7 @@ import {
   Swords,
   Archive,
   HandCoins,
+  Sunrise,
   BookOpen,
   HelpCircle,
   X,
@@ -25,6 +26,7 @@ export const NAV_ITEMS = [
   { to: '/benchmark', label: 'Benchmark', icon: Swords },
   { to: '/parked', label: 'Parked Pile', icon: Archive },
   { to: '/income', label: 'Income', icon: HandCoins },
+  { to: '/transition', label: 'Transition', icon: Sunrise },
   { to: '/rules', label: 'Rules', icon: BookOpen },
   { to: '/help', label: 'Help', icon: HelpCircle },
 ];

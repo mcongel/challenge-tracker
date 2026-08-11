@@ -226,6 +226,31 @@ export function Help() {
       </Card>
 
       <Card>
+        <Eyebrow>The retirement modeler</Eyebrow>
+        <h2 className="text-lg font-bold text-gray-900 mb-2">
+          <Screen to="/transition">Transition</Screen> — rotate growth into income, on paper
+        </h2>
+        <ul className="list-disc pl-5 space-y-2 text-sm text-gray-600 leading-relaxed">
+          <li>
+            Scenarios are pure what-ifs: which holdings rotate into income assets, when, at what
+            assumed yields — projected against your <em>after-tax</em> target income. Nothing in a
+            scenario touches real holdings, the score, or the ledger.
+          </li>
+          <li>
+            Each scenario can carry its own tax rates (retired brackets differ from working ones);
+            blank rates fall back to the Tax Reserve settings. Sale haircuts use the holding's real
+            ROC-adjusted basis, and rotations dated before shares unlock get a short-term flag —
+            warned, never blocked.
+          </li>
+          <li>
+            On any trade form, enter <strong className="text-gray-900">total dollars</strong> and
+            the per-share price derives — no more penny drift against broker notionals on
+            fractional shares.
+          </li>
+        </ul>
+      </Card>
+
+      <Card>
         <Eyebrow>The honest test</Eyebrow>
         <h2 className="text-lg font-bold text-gray-900 mb-2">
           <Screen to="/benchmark">Benchmark</Screen> — you vs shadow VOO

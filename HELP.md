@@ -62,6 +62,13 @@ The floor rises permanently, the staircase chart gets a step, and the banner is 
 - **Accounts** button: manage where money lives, and each account's *tracked cash*. Trims, buys, dividends, and challenge funding flow in automatically; you enter only external deposits, interest, and fees. **Reconcile monthly**: click the cash figure, type the brokerage's actual balance, and an adjustment keeps the number true (first reconcile = your opening balance).
 - ACATS transfer landed? Edit the position and change its account.
 
+## The retirement modeler — Transition
+
+- **Scenarios** are pure what-ifs: which holdings rotate into income assets, when, at what assumed yields — projected against your after-tax target income. Nothing in a scenario touches real holdings, the score, or the ledger.
+- Each scenario can carry its **own tax rates** (retired brackets differ from working ones); blank rates fall back to the Tax Reserve settings.
+- Rotation sale proceeds are haircut using the holding's REAL ROC-adjusted basis, and a rotation dated before shares unlock gets a **short-term flag** — warned, never blocked.
+- Enter total dollars on any trade form (**notional mode**): type the broker's filled total and the per-share price derives — no more penny drift on fractional shares.
+
 ## The honest test — Benchmark
 
 Every deposit bought shadow VOO the same day. The Benchmark screen shows the race: your Total Score vs what the same money in VOO would be worth now, and after a year of snapshots, the **rolling 12-month verdict**. Beating VOO after tax is what proves the edge — and it's the only thing that raises the contribution cap (Rules 10 and 12). Two honesty notes printed on the screen: the shadow ignores VOO dividends (flatters you) and taxes (also flatters you). The real hurdle is higher than the lead suggests.
