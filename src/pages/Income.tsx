@@ -595,7 +595,9 @@ function RateModal({ position: p, onClose }: { position: ParkedPosition; onClose
       await updateParked(p.id, {
         dividendRate: r,
         dividendFrequency: r == null ? null : frequency,
-        dividendGrowthPct: g,
+        // Clearing the rate retires its projection companions too — a stale
+        // growth assumption must not keep compounding actual-history income.
+        dividendGrowthPct: r == null ? null : g,
       });
       onClose();
     } catch (err) {

@@ -15,6 +15,7 @@
  * - Portfolio values are price-static (todays' prices throughout).
  */
 
+import { longTermDate, taxYearOf } from './dates';
 import { isArchivedPosition, parkedMarketValue } from './parked';
 import { consumeLotsFifo, estimatedPileTax, trimPreview } from './parkedLots';
 import type { ParkedLot } from './parkedLots';
@@ -131,7 +132,6 @@ export interface ScenarioProjection {
   holdingLabels: Record<string, string>;
 }
 
-const yearOf = (iso: string) => Number(iso.slice(0, 4));
 const monthOf = (iso: string) => Number(iso.slice(5, 7));
 
 export function projectScenario(args: {
@@ -145,7 +145,7 @@ export function projectScenario(args: {
 }): ScenarioProjection {
   const { scenario, positions, lots, adjustments, today, settings } = args;
   const rates = resolveScenarioRates(scenario, settings);
-  const Y0 = yearOf(today);
+  const Y0 = taxYearOf(today);
   const endYear = Math.max((scenario.targetYear ?? Y0) + 5, Y0 + 10);
 
   const live = positions.filter((p) => !isArchivedPosition(p));
@@ -186,15 +186,22 @@ export function projectScenario(args: {
   const sorted = [...args.rotations].sort((a, b) =>
     a.rotationDate.localeCompare(b.rotationDate),
   );
-  const simLots = new Map<string, ParkedLot[]>();
-  const simAdjs = new Map<string, ParkedLotAdjustment[]>();
-  const simRemaining = new Map<string, number>(); // for no-lots legacy positions
+  const simLots = new Map<string, Map<string, ParkedLot>>();
+  const simAdjs = new Map<string, Map<string, ParkedLotAdjustment>>();
+  /** Remaining sellable shares, decremented by EVERY sale — a holding whose
+   * lots ran out must clamp to zero, never refill from its original count. */
+  const simRemaining = new Map<string, number>();
+  const hadLots = new Map<string, boolean>();
   const ensureSim = (pid: string) => {
     if (!simLots.has(pid)) {
       const copies = (lotsByPosition.get(pid) ?? []).map((l) => ({ ...l }));
-      simLots.set(pid, copies);
-      simAdjs.set(pid, adjustmentsForLots(copies, adjustments).map((a) => ({ ...a })));
+      simLots.set(pid, new Map(copies.map((l) => [l.id, l])));
+      simAdjs.set(
+        pid,
+        new Map(adjustmentsForLots(copies, adjustments).map((a) => [a.id, { ...a }])),
+      );
       simRemaining.set(pid, posById.get(pid)?.shares ?? 0);
+      hadLots.set(pid, copies.some((l) => l.shares > 0));
     }
   };
 
@@ -209,9 +216,20 @@ export function projectScenario(args: {
   const sellEffects: SellEffect[] = [];
   const buyEffects: BuyEffect[] = [];
 
+  const zeroPreview = (
+    r: ScenarioRotation,
+    warnings: RotationWarning[],
+    extra: RotationWarning,
+    sellShares: number | null,
+  ): RotationPreview => ({
+    rotationId: r.id, buySymbol: r.buySymbol.toUpperCase(), sellShares,
+    grossProceeds: 0, gain: 0, capitalGainsTax: 0, netProceeds: 0,
+    stShares: 0, unknownShares: 0, warnings: [...warnings, extra],
+  });
+
   for (const r of sorted) {
     const warnings: RotationWarning[] = [];
-    const rYear = yearOf(r.rotationDate);
+    const rYear = taxYearOf(r.rotationDate);
     const rMonth = monthOf(r.rotationDate);
     const effAbs = rYear * 12 + rMonth + 1; // first live absolute month (1-based)
     const monthsAfter = 12 - rMonth;
@@ -230,30 +248,27 @@ export function projectScenario(args: {
     } else {
       const p = posById.get(r.sellHoldingId);
       if (!p) {
-        rotationPreviews.push({
-          rotationId: r.id, buySymbol: r.buySymbol.toUpperCase(), sellShares: null,
-          grossProceeds: 0, gain: 0, capitalGainsTax: 0, netProceeds: 0,
-          stShares: 0, unknownShares: 0, warnings: [...warnings, 'holding_missing'],
-        });
+        rotationPreviews.push(zeroPreview(r, warnings, 'holding_missing', null));
         continue;
       }
       ensureSim(p.id);
       const requested = r.sellShares ?? (r.sellPct ?? 0) * p.shares;
-      const shareLots = simLots.get(p.id)!.filter((l) => l.shares > 0);
-      const available = shareLots.length > 0
-        ? shareLots.reduce((s, l) => s + l.shares, 0)
-        : simRemaining.get(p.id)!;
+      const lotMap = simLots.get(p.id)!;
+      const shareLots = [...lotMap.values()].filter((l) => l.shares > 0);
+      // simRemaining is the single clamp source — the no-lots fallback only
+      // applies to positions that never had lots (legacy), otherwise a fully
+      // consumed holding would refill to its original count.
+      const available = Math.min(
+        simRemaining.get(p.id)!,
+        hadLots.get(p.id) ? shareLots.reduce((s, l) => s + l.shares, 0) : Infinity,
+      );
       let shares = requested;
       if (shares > available + 1e-9) {
         shares = available;
         warnings.push('oversell_clamped');
       }
       if (shares <= 1e-9) {
-        rotationPreviews.push({
-          rotationId: r.id, buySymbol: r.buySymbol.toUpperCase(), sellShares: 0,
-          grossProceeds: 0, gain: 0, capitalGainsTax: 0, netProceeds: 0,
-          stShares: 0, unknownShares: 0, warnings: [...warnings, 'oversell_clamped'],
-        });
+        rotationPreviews.push(zeroPreview(r, warnings, 'oversell_clamped', 0));
         continue;
       }
 
@@ -263,8 +278,8 @@ export function projectScenario(args: {
       let stShares = 0;
       let unknownShares = 0;
       if (shareLots.length > 0) {
-        const adjs = simAdjs.get(p.id)!;
-        const tp = trimPreview(simLots.get(p.id)!, shares, p.currentPrice, r.rotationDate, adjs);
+        const adjList = [...simAdjs.get(p.id)!.values()];
+        const tp = trimPreview(shareLots, shares, p.currentPrice, r.rotationDate, adjList);
         gross = tp.proceeds;
         gain = tp.gain;
         stShares = tp.stShares;
@@ -273,28 +288,33 @@ export function projectScenario(args: {
         // scenario's capital-gain rate, ST slice at settings st.
         tax = estimatedPileTax(gain, shares, tp.ltShares + tp.unknownShares, rates.capGainLt, rates.capGainSt);
         // Advance the simulation so the next rotation sees reduced basis.
-        const consumption = consumeLotsFifo(simLots.get(p.id)!, shares, adjs);
-        const lotArr = simLots.get(p.id)!;
+        const consumption = consumeLotsFifo(shareLots, shares, adjList);
         for (const u of consumption.updates) {
-          const lot = lotArr.find((l) => l.id === u.id);
+          const lot = lotMap.get(u.id);
           if (lot) { lot.shares = u.shares; lot.amount = u.amount; }
         }
-        const dead = new Set(consumption.deletes);
-        simLots.set(p.id, lotArr.filter((l) => !dead.has(l.id)));
-        const adjArr = simAdjs.get(p.id)!;
+        const adjMap = simAdjs.get(p.id)!;
         for (const au of consumption.adjustmentUpdates) {
-          const a = adjArr.find((x) => x.id === au.id);
+          const a = adjMap.get(au.id);
           if (a) a.amount = au.amount;
         }
-        simAdjs.set(p.id, adjArr.filter((a) => !dead.has(a.shareLotId)));
+        for (const deadId of consumption.deletes) {
+          lotMap.delete(deadId);
+          for (const a of adjMap.values()) {
+            if (a.shareLotId === deadId) adjMap.delete(a.id);
+          }
+        }
       } else {
-        // Legacy: shares but no lot history — basis from avgCost, assume LT.
+        // Legacy: shares but no lot history — basis from avgCost; the
+        // position-level buyDate can still prove a short-term sale.
         warnings.push('no_lots');
         gross = shares * p.currentPrice;
         gain = gross - shares * p.avgCost;
-        tax = estimatedPileTax(gain, shares, shares, rates.capGainLt, rates.capGainSt);
-        simRemaining.set(p.id, available - shares);
+        const shortTerm = p.buyDate != null && longTermDate(p.buyDate) > r.rotationDate;
+        if (shortTerm) stShares = shares;
+        tax = estimatedPileTax(gain, shares, shortTerm ? 0 : shares, rates.capGainLt, rates.capGainSt);
       }
+      simRemaining.set(p.id, simRemaining.get(p.id)! - shares);
       if (stShares > 1e-9) warnings.push('short_term');
       netProceeds = gross - tax;
       preview = {
@@ -342,13 +362,25 @@ export function projectScenario(args: {
     if (arr) arr.push(e);
     else soldByPosition.set(e.positionId, [e]);
   }
-  const retained = (pid: string, year: number, mo: number): number => {
+  /** Retained fraction at the END of `year`. */
+  const retainedEnd = (pid: string, year: number): number => {
     let sold = 0;
     for (const e of soldByPosition.get(pid) ?? []) {
-      if (year * 12 + mo >= e.effAbs) sold += e.soldFrac;
+      if (year * 12 + 12 >= e.effAbs) sold += e.soldFrac;
     }
     return Math.max(0, 1 - sold);
   };
+  /** Mean retained fraction over `year`'s 12 months, closed-form: each sale
+   * effect overlaps clamp(year·12 + 12 − effAbs + 1, 0, 12) months. */
+  const yearWeight = (pid: string, year: number): number => {
+    let soldMonths = 0;
+    for (const e of soldByPosition.get(pid) ?? []) {
+      const overlap = Math.min(12, Math.max(0, year * 12 + 12 - e.effAbs + 1));
+      soldMonths += e.soldFrac * overlap;
+    }
+    return Math.max(0, 1 - soldMonths / 12);
+  };
+  const valueById = new Map(live.map((p) => [p.id, parkedMarketValue(p)]));
 
   const years: ScenarioYearRow[] = [];
   let targetReachedYear: number | null = null;
@@ -360,13 +392,10 @@ export function projectScenario(args: {
     let value = 0;
 
     for (const p of live) {
-      const w =
-        Array.from({ length: 12 }, (_, i) => retained(p.id, year, i + 1))
-          .reduce((s, x) => s + x, 0) / 12;
-      value += parkedMarketValue(p) * retained(p.id, year, 12);
+      value += valueById.get(p.id)! * retainedEnd(p.id, year);
       const b = baseline.get(p.id);
       if (!b || b.gross <= 0) continue;
-      const g = b.gross * Math.pow(1 + b.growth, year - Y0) * w;
+      const g = b.gross * Math.pow(1 + b.growth, year - Y0) * yearWeight(p.id, year);
       if (g <= 0) continue;
       byHoldingGross[`pos:${p.id}`] = g;
       byHoldingAfterTax[`pos:${p.id}`] = g * b.atf;
@@ -376,8 +405,10 @@ export function projectScenario(args: {
 
     for (const b of buyEffects) {
       let g = 0;
+      // Rotation year pays the prorated STARTING yield; the first full year
+      // pays the full starting yield; growth compounds only after that.
       if (year === b.rotYear) g = b.base * (b.monthsAfter / 12);
-      else if (year > b.rotYear) g = b.base * Math.pow(1 + b.growth, year - b.rotYear);
+      else if (year > b.rotYear) g = b.base * Math.pow(1 + b.growth, year - b.rotYear - 1);
       if (b.effAbs <= year * 12 + 12) value += b.netProceeds;
       if (g <= 0) continue;
       const key = `buy:${b.symbol}`;

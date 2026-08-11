@@ -15,6 +15,7 @@ import {
   cn, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls, secondaryBtnCls, todayISO,
 } from '../lib/utils';
 import { useNotional } from '../lib/useNotional';
+import { TotalField } from '../components/ui/TotalField';
 
 export function Positions() {
   const data = useData();
@@ -263,12 +264,7 @@ function AddPositionModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
             <input type="number" step="any" min="0" required value={avgCost}
               onChange={(e) => setPrice(e.target.value)} className={inputCls} />
           </div>
-          <div>
-            <label className={labelCls}>Total cost ($)</label>
-            <input type="number" step="any" min="0" value={total}
-              onChange={(e) => setTotal(e.target.value)} className={inputCls}
-              title="Enter the broker's filled notional and the per-share price derives — no rounding drift." />
-          </div>
+          <TotalField value={total} onChange={setTotal} label="Total cost ($)" />
         </div>
         <div>
           <label className={labelCls}>Exit target ($) — required</label>
@@ -392,12 +388,7 @@ function ClosePositionModal({ ticker, onClose }: { ticker: string; onClose: () =
             <input type="number" step="any" min="0.00000001" required value={price}
               onChange={(e) => setPrice(e.target.value)} className={inputCls} />
           </div>
-          <div>
-            <label className={labelCls}>Total proceeds ($)</label>
-            <input type="number" step="any" min="0" value={total}
-              onChange={(e) => setTotal(e.target.value)} className={inputCls}
-              title="Enter the broker's filled notional (net of fees) and the price derives — no rounding drift." />
-          </div>
+          <TotalField value={total} onChange={setTotal} label="Total proceeds ($)" />
         </div>
 
         {!customize ? (

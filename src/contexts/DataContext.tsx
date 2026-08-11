@@ -1700,13 +1700,31 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [refresh],
   );
 
+  /** Scenario tables are pure what-ifs with zero cross-effects on the rest
+   * of the app — their mutations refetch only these two tables instead of
+   * the full refresh. */
+  const refreshScenarios = useCallback(async () => {
+    const client = db();
+    const [scen, rots] = await Promise.all([
+      client.from('income_scenarios').select('*').order('created_at'),
+      client.from('scenario_rotations').select('*').order('rotation_date'),
+    ]);
+    if (scen.error) throw scen.error;
+    if (rots.error) throw rots.error;
+    setState((prev) => ({
+      ...prev,
+      incomeScenarios: (scen.data ?? []).map(mapIncomeScenario),
+      scenarioRotations: (rots.data ?? []).map(mapScenarioRotation),
+    }));
+  }, []);
+
   const addScenario = useCallback(
     async (s: Omit<IncomeScenario, 'id' | 'createdAt'>) => {
       const { error: err } = await db().from('income_scenarios').insert(incomeScenarioPayload(s));
       if (err) throw err;
-      await refresh();
+      await refreshScenarios();
     },
-    [refresh],
+    [refreshScenarios],
   );
 
   const updateScenario = useCallback(
@@ -1722,18 +1740,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (patch.capitalGainRate !== undefined) payload.capital_gain_rate = patch.capitalGainRate;
       const { error: err } = await db().from('income_scenarios').update(payload).eq('id', id);
       if (err) throw err;
-      await refresh();
+      await refreshScenarios();
     },
-    [refresh],
+    [refreshScenarios],
   );
 
   const deleteScenario = useCallback(
     async (id: string) => {
       const { error: err } = await db().from('income_scenarios').delete().eq('id', id);
       if (err) throw err; // rotations cascade
-      await refresh();
+      await refreshScenarios();
     },
-    [refresh],
+    [refreshScenarios],
   );
 
   const duplicateScenario = useCallback(
@@ -1754,18 +1772,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         );
         if (rotErr) throw rotErr;
       }
-      await refresh();
+      await refreshScenarios();
     },
-    [refresh, state.incomeScenarios, state.scenarioRotations],
+    [refreshScenarios, state.incomeScenarios, state.scenarioRotations],
   );
 
   const addRotation = useCallback(
     async (r: Omit<ScenarioRotation, 'id'>) => {
       const { error: err } = await db().from('scenario_rotations').insert(scenarioRotationPayload(r));
       if (err) throw err;
-      await refresh();
+      await refreshScenarios();
     },
-    [refresh],
+    [refreshScenarios],
   );
 
   const updateRotation = useCallback(
@@ -1773,18 +1791,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const { error: err } = await db()
         .from('scenario_rotations').update(scenarioRotationPayload(r)).eq('id', id);
       if (err) throw err;
-      await refresh();
+      await refreshScenarios();
     },
-    [refresh],
+    [refreshScenarios],
   );
 
   const deleteRotation = useCallback(
     async (id: string) => {
       const { error: err } = await db().from('scenario_rotations').delete().eq('id', id);
       if (err) throw err;
-      await refresh();
+      await refreshScenarios();
     },
-    [refresh],
+    [refreshScenarios],
   );
 
   const setOverride = useCallback(

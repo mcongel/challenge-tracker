@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Copy, Pencil, Plus, Sunrise, Trash2 } from 'lucide-react';
 import {
   Bar, CartesianGrid, ComposedChart, Legend, Line, LineChart, ReferenceLine,
@@ -13,10 +13,10 @@ import { useData } from '../contexts/DataContext';
 import type { IncomeScenario, ScenarioProjection, ScenarioRotation } from '../lib/engine';
 import { isArchivedPosition, projectScenario, roundCents } from '../lib/engine';
 import {
-  cn, compactUsd, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls,
-  secondaryBtnCls, todayISO,
+  cn, compactUsd, errorMessage, formatCurrency, formatPercent, inputCls, inputToPct, labelCls,
+  pctToInput, primaryBtnCls, secondaryBtnCls, todayISO,
 } from '../lib/utils';
-import { useIsDark } from '../lib/useIsDark';
+import { useChartColors } from '../lib/useIsDark';
 
 /** House palette only: existing holdings in green tints, rotation buys in
  * indigo tints — the established actual/projected semantic, no new hues. */
@@ -68,26 +68,27 @@ export function Transition() {
     null;
   const comparator = incomeScenarios.find((s) => s.id === compareId && s.id !== selected?.id) ?? null;
 
-  const project = (scenario: IncomeScenario): ScenarioProjection =>
-    projectScenario({
-      scenario,
-      rotations: scenarioRotations.filter((r) => r.scenarioId === scenario.id),
-      positions: parked,
-      lots: parkedLots,
-      adjustments: parkedLotAdjustments,
-      today,
-      settings,
-    });
-  const projection = useMemo(
-    () => (selected ? project(selected) : null),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selected, scenarioRotations, parked, parkedLots, parkedLotAdjustments, today, settings],
+  const project = useCallback(
+    (scenario: IncomeScenario): ScenarioProjection =>
+      projectScenario({
+        scenario,
+        rotations: scenarioRotations.filter((r) => r.scenarioId === scenario.id),
+        positions: parked,
+        lots: parkedLots,
+        adjustments: parkedLotAdjustments,
+        today,
+        settings,
+      }),
+    [scenarioRotations, parked, parkedLots, parkedLotAdjustments, today, settings],
   );
-  const compareProjection = useMemo(
-    () => (comparator ? project(comparator) : null),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [comparator, scenarioRotations, parked, parkedLots, parkedLotAdjustments, today, settings],
+  // All scenarios project in one pass — the list's "Reached" column answers
+  // the whole point of having several scenarios without clicking each one.
+  const projectionsById = useMemo(
+    () => new Map(incomeScenarios.map((s) => [s.id, project(s)])),
+    [incomeScenarios, project],
   );
+  const projection = selected ? projectionsById.get(selected.id) ?? null : null;
+  const compareProjection = comparator ? projectionsById.get(comparator.id) ?? null : null;
 
   const [scenarioModal, setScenarioModal] = useState<'new' | IncomeScenario | null>(null);
   const [rotationModal, setRotationModal] = useState<'new' | ScenarioRotation | null>(null);
@@ -95,10 +96,14 @@ export function Transition() {
   const [deletingRotation, setDeletingRotation] = useState<ScenarioRotation | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
 
-  const selectedRotations = selected
-    ? scenarioRotations.filter((r) => r.scenarioId === selected.id)
-    : [];
-  const previewById = new Map(projection?.rotationPreviews.map((p) => [p.rotationId, p]) ?? []);
+  const selectedRotations = useMemo(
+    () => (selected ? scenarioRotations.filter((r) => r.scenarioId === selected.id) : []),
+    [selected, scenarioRotations],
+  );
+  const previewById = useMemo(
+    () => new Map(projection?.rotationPreviews.map((p) => [p.rotationId, p]) ?? []),
+    [projection],
+  );
 
   return (
     <div>
@@ -145,7 +150,7 @@ export function Transition() {
               <tbody className="divide-y divide-gray-100">
                 {incomeScenarios.map((s) => {
                   const isSelected = s.id === selected?.id;
-                  const reached = isSelected ? projection?.targetReachedYear : null;
+                  const reached = projectionsById.get(s.id)?.targetReachedYear ?? null;
                   return (
                     <tr key={s.id}
                       onClick={() => setSelectedId(s.id)}
@@ -159,7 +164,7 @@ export function Transition() {
                         {s.targetYear != null && <span className="text-xs text-gray-400"> by {s.targetYear}</span>}
                       </td>
                       <td className="px-4 py-2">
-                        {isSelected && s.targetAnnualIncome != null ? (
+                        {s.targetAnnualIncome != null ? (
                           reached != null ? (
                             <span className="inline-block rounded-full bg-green-50 text-green-700 px-2 py-0.5 text-xs font-medium">
                               {reached} after-tax
@@ -175,14 +180,14 @@ export function Transition() {
                       </td>
                       <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
                         <input type="checkbox" checked={s.isActive}
-                          onChange={(e) => updateScenario(s.id, { isActive: e.target.checked }).catch((err) => setRowError(String(err)))}
+                          onChange={(e) => updateScenario(s.id, { isActive: e.target.checked }).catch((err) => setRowError(errorMessage(err)))}
                           className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-600" />
                       </td>
                       <td className="px-2 py-2 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <button onClick={() => setScenarioModal(s)} className="p-1 rounded hover:bg-gray-100" aria-label="Edit scenario">
                           <Pencil className="h-4 w-4 text-gray-300 hover:text-gray-600" />
                         </button>
-                        <button onClick={() => duplicateScenario(s.id).catch((err) => setRowError(String(err)))}
+                        <button onClick={() => duplicateScenario(s.id).catch((err) => setRowError(errorMessage(err)))}
                           className="p-1 rounded hover:bg-gray-100" aria-label="Duplicate scenario">
                           <Copy className="h-4 w-4 text-gray-300 hover:text-gray-600" />
                         </button>
@@ -276,14 +281,16 @@ export function Transition() {
                   <tbody className="divide-y divide-gray-100">
                     {selectedRotations.map((r) => {
                       const pv = previewById.get(r.id);
-                      const seller = parked.find((p) => p.id === r.sellHoldingId);
+                      const sellerLabel = r.sellHoldingId
+                        ? projection.holdingLabels[`pos:${r.sellHoldingId}`] ?? '?'
+                        : null;
                       return (
                         <tr key={r.id} className="hover:bg-gray-50">
                           <td className="px-4 py-2 tabular-nums text-gray-500">{r.rotationDate}</td>
                           <td className="px-4 py-2">
                             {r.sellHoldingId ? (
                               <span className="font-medium text-gray-900">
-                                {seller?.ticker ?? '?'}
+                                {sellerLabel}
                                 <span className="ml-1 text-xs text-gray-400">
                                   {r.sellShares != null ? `${r.sellShares} sh` : formatPercent(r.sellPct ?? 0, 0)}
                                 </span>
@@ -342,7 +349,6 @@ export function Transition() {
       {scenarioModal && (
         <ScenarioFormModal
           scenario={scenarioModal === 'new' ? null : scenarioModal}
-          settings={settings}
           onSave={async (values) => {
             if (scenarioModal === 'new') await addScenario({ ...values, isActive: incomeScenarios.length === 0 });
             else await updateScenario(scenarioModal.id, values);
@@ -378,9 +384,7 @@ export function Transition() {
 }
 
 function ProjectionChart({ projection, target }: { projection: ScenarioProjection; target: number | null }) {
-  const isDark = useIsDark();
-  const gridColor = isDark ? '#334155' : '#e5e7eb';
-  const axisColor = isDark ? '#94a3b8' : '#6b7280';
+  const { gridColor, axisColor } = useChartColors();
 
   const { data, posKeys, buyKeys } = useMemo(() => {
     const totals = new Map<string, number>();
@@ -452,9 +456,7 @@ function CompareChart({
   b: { name: string; projection: ScenarioProjection };
   target: number | null;
 }) {
-  const isDark = useIsDark();
-  const gridColor = isDark ? '#334155' : '#e5e7eb';
-  const axisColor = isDark ? '#94a3b8' : '#6b7280';
+  const { isDark, gridColor, axisColor } = useChartColors();
   const data = useMemo(() => {
     const years = new Map<number, { year: string; a?: number; b?: number }>();
     for (const y of a.projection.years) years.set(y.year, { year: String(y.year), a: y.afterTaxIncome });
@@ -489,32 +491,32 @@ function CompareChart({
 }
 
 function ScenarioFormModal({
-  scenario, settings, onSave, onClose,
+  scenario, onSave, onClose,
 }: {
   scenario: IncomeScenario | null;
-  settings: { dividend: { qualified: number; ordinary: number }; lt: number };
   onSave: (values: Omit<IncomeScenario, 'id' | 'createdAt' | 'isActive'> & { isActive?: boolean }) => Promise<void>;
   onClose: () => void;
 }) {
+  const { dividendTaxRates, ltTaxRate } = useData();
+  const settings = { dividend: dividendTaxRates, lt: ltTaxRate };
   const [name, setName] = useState(scenario?.name ?? '');
   const [description, setDescription] = useState(scenario?.description ?? '');
   const [target, setTarget] = useState(scenario?.targetAnnualIncome != null ? String(scenario.targetAnnualIncome) : '');
   const [targetYear, setTargetYear] = useState(scenario?.targetYear != null ? String(scenario.targetYear) : '');
-  const pctStr = (v: number | null | undefined) =>
-    v != null ? String(Math.round(v * 10000) / 100) : '';
-  const [qualified, setQualified] = useState(pctStr(scenario?.qualifiedRate));
-  const [ordinary, setOrdinary] = useState(pctStr(scenario?.ordinaryRate));
-  const [capGain, setCapGain] = useState(pctStr(scenario?.capitalGainRate));
+  const [qualified, setQualified] = useState(pctToInput(scenario?.qualifiedRate));
+  const [ordinary, setOrdinary] = useState(pctToInput(scenario?.ordinaryRate));
+  const [capGain, setCapGain] = useState(pctToInput(scenario?.capitalGainRate));
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  const parseRate = (s: string): number | null => (s === '' ? null : Number(s) / 100);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
     if (!name.trim()) return setFormError('Name the scenario.');
-    const rates = [parseRate(qualified), parseRate(ordinary), parseRate(capGain)];
+    if (target !== '' && !(Number(target) > 0)) {
+      return setFormError('Target income must be above zero — leave it blank for no target.');
+    }
+    const rates = [inputToPct(qualified), inputToPct(ordinary), inputToPct(capGain)];
     if (rates.some((r) => r != null && (Number.isNaN(r) || r < 0 || r >= 1))) {
       return setFormError('Rates are percentages between 0 and 99.');
     }
@@ -604,33 +606,44 @@ function RotationFormModal({
 }) {
   const { parked, addRotation, updateRotation } = useData();
   const live = parked.filter((p) => !isArchivedPosition(p));
+  // An existing rotation may reference a holding that has since been archived
+  // — keep it selectable (labeled) so editing doesn't silently blank the source.
+  const sourceOptions = useMemo(() => {
+    const opts = [...live];
+    if (rotation?.sellHoldingId && !live.some((p) => p.id === rotation.sellHoldingId)) {
+      const archived = parked.find((p) => p.id === rotation.sellHoldingId);
+      if (archived) opts.push(archived);
+    }
+    return opts;
+  }, [live, parked, rotation]);
   const [source, setSource] = useState(rotation?.sellHoldingId ?? 'cash');
   const [sellMode, setSellMode] = useState<'pct' | 'shares'>(rotation?.sellShares != null ? 'shares' : 'pct');
-  const [sellPct, setSellPct] = useState(
-    rotation?.sellPct != null ? String(Math.round(rotation.sellPct * 10000) / 100) : '',
-  );
+  const [sellPct, setSellPct] = useState(pctToInput(rotation?.sellPct));
   const [sellShares, setSellShares] = useState(rotation?.sellShares != null ? String(rotation.sellShares) : '');
   const [cashAmount, setCashAmount] = useState(rotation?.cashAmount != null ? String(rotation.cashAmount) : '');
   const [date, setDate] = useState(rotation?.rotationDate ?? todayISO());
   const [symbol, setSymbol] = useState(rotation?.buySymbol ?? '');
-  const [yieldPct, setYieldPct] = useState(
-    rotation ? String(Math.round(rotation.buyYieldPct * 10000) / 100) : '',
+  const [yieldPct, setYieldPct] = useState(rotation ? pctToInput(rotation.buyYieldPct) : '');
+  const [growth, setGrowth] = useState(rotation ? pctToInput(rotation.buyDividendGrowthPct) : '0');
+  const MIX_FIELDS = [
+    ['qualified', 'Qualified'],
+    ['ordinary', 'Ordinary'],
+    ['return_of_capital', 'ROC'],
+    ['capital_gain_dist', 'Cap gain'],
+  ] as const;
+  const [mix, setMix] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      MIX_FIELDS.map(([k]) => [
+        k,
+        String(rotation?.buyClassificationMix?.[k] ?? (k === 'qualified' && !rotation ? 100 : 0)),
+      ]),
+    ),
   );
-  const [growth, setGrowth] = useState(
-    rotation ? String(Math.round(rotation.buyDividendGrowthPct * 10000) / 100) : '0',
-  );
-  const mixOf = (k: string) => String(rotation?.buyClassificationMix?.[k as 'qualified'] ?? (k === 'qualified' && !rotation ? 100 : 0));
-  const [mixQualified, setMixQualified] = useState(mixOf('qualified'));
-  const [mixOrdinary, setMixOrdinary] = useState(mixOf('ordinary'));
-  const [mixRoc, setMixRoc] = useState(mixOf('return_of_capital'));
-  const [mixCgd, setMixCgd] = useState(mixOf('capital_gain_dist'));
   const [notes, setNotes] = useState(rotation?.notes ?? '');
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const mixSum = [mixQualified, mixOrdinary, mixRoc, mixCgd]
-    .map((x) => Number(x) || 0)
-    .reduce((a, b) => a + b, 0);
+  const mixSum = Object.values(mix).map((x) => Number(x) || 0).reduce((a, b) => a + b, 0);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -659,12 +672,11 @@ function RotationFormModal({
       buySymbol: symbol.trim().toUpperCase(),
       buyYieldPct: y / 100,
       buyDividendGrowthPct: (Number(growth) || 0) / 100,
-      buyClassificationMix: {
-        ...(Number(mixQualified) > 0 && { qualified: Number(mixQualified) }),
-        ...(Number(mixOrdinary) > 0 && { ordinary: Number(mixOrdinary) }),
-        ...(Number(mixRoc) > 0 && { return_of_capital: Number(mixRoc) }),
-        ...(Number(mixCgd) > 0 && { capital_gain_dist: Number(mixCgd) }),
-      },
+      buyClassificationMix: Object.fromEntries(
+        Object.entries(mix)
+          .map(([k, v]) => [k, Number(v) || 0] as const)
+          .filter(([, v]) => v > 0),
+      ),
       notes: notes || null,
     };
     setBusy(true);
@@ -687,8 +699,10 @@ function RotationFormModal({
             <label className={labelCls}>Source</label>
             <select value={source} onChange={(e) => setSource(e.target.value)} className={inputCls}>
               <option value="cash">New cash</option>
-              {live.map((p) => (
-                <option key={p.id} value={p.id}>{p.ticker} ({p.account}, {p.shares} sh)</option>
+              {sourceOptions.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.ticker} ({p.account}, {p.shares} sh{isArchivedPosition(p) ? ' — closed' : ''})
+                </option>
               ))}
             </select>
           </div>
@@ -760,16 +774,12 @@ function RotationFormModal({
             </span>
           </p>
           <div className="grid grid-cols-4 gap-2">
-            {([
-              ['Qualified', mixQualified, setMixQualified],
-              ['Ordinary', mixOrdinary, setMixOrdinary],
-              ['ROC', mixRoc, setMixRoc],
-              ['Cap gain', mixCgd, setMixCgd],
-            ] as const).map(([label, value, set]) => (
-              <div key={label}>
+            {MIX_FIELDS.map(([key, label]) => (
+              <div key={key}>
                 <label className="block text-[10px] text-gray-400 mb-0.5">{label}</label>
-                <input type="number" step="any" min="0" max="100" value={value}
-                  onChange={(e) => set(e.target.value)} className={inputCls} />
+                <input type="number" step="any" min="0" max="100" value={mix[key]}
+                  onChange={(e) => setMix((prev) => ({ ...prev, [key]: e.target.value }))}
+                  className={inputCls} />
               </div>
             ))}
           </div>

@@ -1044,6 +1044,53 @@ describe('transition — scenario projection', () => {
     expect(second.gain).toBeCloseTo(4000 - 2000, 9); // remaining basis, not fresh
   });
 
+  it('a fully consumed holding clamps to zero — never refills from its original count', async () => {
+    const { projectScenario } = await import('../transition');
+    const r = projectScenario({
+      scenario: scen(),
+      rotations: [
+        rot({ id: 'r1', sellPct: 1, rotationDate: '2028-01-10' }),
+        rot({ id: 'r2', sellPct: 0.5, rotationDate: '2029-01-10' }),
+      ],
+      positions: [pos()], lots: [lot('l1', 'A', '2025-01-01', 100, 5000)],
+      adjustments: [], today: TODAY, settings: SETTINGS,
+    });
+    const second = r.rotationPreviews[1];
+    expect(second.sellShares).toBe(0); // no phantom shares
+    expect(second.netProceeds).toBe(0);
+    expect(second.warnings).toContain('oversell_clamped');
+  });
+
+  it('buy growth starts AFTER the first full year — the entered yield is the starting yield', async () => {
+    const { projectScenario } = await import('../transition');
+    const r = projectScenario({
+      scenario: scen(),
+      rotations: [rot({
+        sellHoldingId: null, sellPct: null, cashAmount: 100000,
+        buyYieldPct: 0.07, buyDividendGrowthPct: 0.1, rotationDate: '2029-01-15',
+      })],
+      positions: [], lots: [], adjustments: [], today: TODAY, settings: SETTINGS,
+    });
+    const inc = (y: number) => r.years.find((x) => x.year === y)!.byHoldingGross['buy:SCHD'];
+    expect(inc(2029)).toBeCloseTo(7000 * (11 / 12), 6); // prorated starting yield
+    expect(inc(2030)).toBeCloseTo(7000, 6);             // first FULL year = starting yield
+    expect(inc(2031)).toBeCloseTo(7700, 6);             // growth begins after it
+  });
+
+  it('no-lots position with a buyDate inside the window still flags short-term', async () => {
+    const { projectScenario } = await import('../transition');
+    const r = projectScenario({
+      scenario: scen(),
+      rotations: [rot({ sellShares: 10, sellPct: null, rotationDate: '2026-09-01' })],
+      positions: [pos({ shares: 10, buyDate: '2026-06-01' })],
+      lots: [], adjustments: [], today: TODAY, settings: SETTINGS,
+    });
+    const p = r.rotationPreviews[0];
+    expect(p.warnings).toContain('no_lots');
+    expect(p.warnings).toContain('short_term');
+    expect(p.capitalGainsTax).toBeCloseTo(500 * 0.29, 9); // ST at settings st
+  });
+
   it('cash rotation: no tax, prorated first year', async () => {
     const { projectScenario } = await import('../transition');
     const r = projectScenario({

@@ -62,6 +62,7 @@ const TABLES = [
     target_annual_income: s.targetAnnualIncome ?? null, target_year: s.targetYear ?? null,
     is_active: s.isActive, qualified_rate: s.qualifiedRate ?? null,
     ordinary_rate: s.ordinaryRate ?? null, capital_gain_rate: s.capitalGainRate ?? null,
+    created_at: s.createdAt ?? undefined, // list order and default selection depend on it
   })), 'id'],
   ['scenario_rotations', get('scenario_rotations').map((r) => ({
     id: r.id, scenario_id: r.scenarioId, sell_holding_id: r.sellHoldingId ?? null,

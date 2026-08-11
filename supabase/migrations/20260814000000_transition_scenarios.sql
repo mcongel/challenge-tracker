@@ -8,9 +8,13 @@
 alter table challenge.parked_positions add column dividend_growth_pct numeric(8,6);
 
 -- Notional entry mode stores a derived per-share price; 4dp truncation would
--- stop shares × avg_cost reproducing the entered total on fractional shares
--- (position_lots has no amount column, unlike parked_lots).
-alter table challenge.position_lots alter column avg_cost type numeric(14,6);
+-- stop shares × price reproducing the entered total on fractional shares.
+-- 8dp keeps the round-trip exact for any realistic share count. position_lots
+-- has no amount column so avg_cost IS the basis; the parked price columns are
+-- re-read by sale edits (undo + re-apply recomputes proceeds from them).
+alter table challenge.position_lots alter column avg_cost type numeric(18,8);
+alter table challenge.parked_lots alter column price type numeric(18,8);
+alter table challenge.parked_sales alter column price_per_share type numeric(18,8);
 
 create table challenge.income_scenarios (
   id uuid primary key default gen_random_uuid(),

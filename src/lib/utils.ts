@@ -28,6 +28,17 @@ export function formatPercent(fraction: number, digits = 1): string {
 export const compactUsd = (v: number) =>
   v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M` : v >= 1_000 ? `$${Math.round(v / 1_000)}k` : `$${Math.round(v)}`;
 
+/** Stored fraction → percent input string (0.238 → "23.8"); null/undefined → "". */
+export const pctToInput = (v: number | null | undefined): string =>
+  v == null ? '' : String(Math.round(v * 10000) / 100);
+
+/** Percent input string → stored fraction; blank → null. */
+export const inputToPct = (s: string): number | null => (s === '' ? null : Number(s) / 100);
+
+/** The house error-to-message idiom, in one place. */
+export const errorMessage = (err: unknown): string =>
+  err instanceof Error ? err.message : String(err);
+
 export function cn(...classes: (string | false | null | undefined)[]): string {
   return classes.filter(Boolean).join(' ');
 }

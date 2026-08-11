@@ -24,6 +24,7 @@ import {
   cn, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls, secondaryBtnCls, todayISO,
 } from '../lib/utils';
 import { useNotional } from '../lib/useNotional';
+import { TotalField } from '../components/ui/TotalField';
 
 /** Short pill labels for dividend tax character; unclassified reads as a
  * warning (amber) until the owner confirms what the broker actually paid. */
@@ -752,6 +753,7 @@ function EditSaleModal({ sale: s, onClose }: { sale: ParkedSale; onClose: () => 
     shares: String(s.shares),
     price: String(s.pricePerShare),
     total: String(s.proceeds), // the stored dollars, not the rounded product
+    driver: 'total', // share edits re-derive price from the EXACT proceeds
   });
   const [basis, setBasis] = useState(s.costBasis != null ? String(s.costBasis) : '');
   const [ltShares, setLtShares] = useState(s.ltShares != null ? String(s.ltShares) : '');
@@ -840,12 +842,7 @@ function EditSaleModal({ sale: s, onClose }: { sale: ParkedSale; onClose: () => 
                 <input type="number" step="any" min="0" required value={price}
                   onChange={(e) => setPrice(e.target.value)} className={inputCls} />
               </div>
-              <div>
-                <label className={labelCls}>Total proceeds ($)</label>
-                <input type="number" step="any" min="0" value={total}
-                  onChange={(e) => setTotal(e.target.value)} className={inputCls}
-                  title="Enter the broker's filled notional and the price derives — no rounding drift." />
-              </div>
+              <TotalField value={total} onChange={setTotal} label="Total proceeds ($)" />
             </div>
             <p className="text-xs text-gray-400">
               Saving undoes this sale and re-applies it with the corrected numbers — lots, basis,
@@ -1010,12 +1007,7 @@ function AddHoldingModal({ onClose }: { onClose: () => void }) {
             <input type="number" step="any" min="0" required value={price}
               onChange={(e) => setPrice(e.target.value)} className={inputCls} />
           </div>
-          <div>
-            <label className={labelCls}>Total cost ($)</label>
-            <input type="number" step="any" min="0" value={total}
-              onChange={(e) => setTotal(e.target.value)} className={inputCls}
-              title="Enter the broker's filled notional and the per-share price derives — no rounding drift." />
-          </div>
+          <TotalField value={total} onChange={setTotal} label="Total cost ($)" />
         </div>
         <div>
           <label className={labelCls}>Notes</label>
@@ -1135,33 +1127,9 @@ function LotPanel({ position: p, summary }: { position: ParkedPosition; summary:
   // Dividends accept either entry: dollars (amount) or shares — whichever was
   // typed last drives, the other computes from the reinvest price.
   const [divDriver, setDivDriver] = useState<'amount' | 'shares'>('amount');
-  // Purchases accept price or total — enter the broker's notional and the
-  // per-share price derives at full precision (no rounding drift).
-  const [purTotal, setPurTotal] = useState('');
-  const [purDriver, setPurDriver] = useState<'price' | 'total'>('price');
-  const purSyncPrice = (pr: string) => {
-    setPrice(pr);
-    setPurDriver('price');
-    const p = Number(pr); const s = Number(shares);
-    if (p > 0 && s > 0) setPurTotal(String(roundCents(s * p)));
-  };
-  const purSyncTotal = (t: string) => {
-    setPurTotal(t);
-    setPurDriver('total');
-    const tot = Number(t); const s = Number(shares);
-    if (tot > 0 && s > 0) setPrice(String(tot / s));
-  };
-  const purSyncShares = (sh: string) => {
-    setShares(sh);
-    const s = Number(sh);
-    if (purDriver === 'price') {
-      const p = Number(price);
-      if (p > 0 && s > 0) setPurTotal(String(roundCents(s * p)));
-    } else {
-      const t = Number(purTotal);
-      if (t > 0 && s > 0) setPrice(String(t / s));
-    }
-  };
+  // Purchases get their own notional binding (shares × price ↔ total); the
+  // dividend fields keep their separate amount↔shares sync below.
+  const pur = useNotional();
 
   const syncFromAmount = (amt: string, pr: string) => {
     setAmount(amt);
@@ -1191,8 +1159,7 @@ function LotPanel({ position: p, summary }: { position: ParkedPosition; summary:
     setShares('');
     setAmount('');
     setPrice(m === 'dividend' && effectivePrice ? String(effectivePrice) : '');
-    setPurTotal('');
-    setPurDriver('price');
+    pur.reset();
     setClassification('unclassified');
     setExDate('');
     setFormError(null);
@@ -1204,8 +1171,8 @@ function LotPanel({ position: p, summary }: { position: ParkedPosition; summary:
     setBusy(true);
     try {
       if (mode === 'purchase') {
-        const sh = Number(shares);
-        const pr = Number(price);
+        const sh = Number(pur.shares);
+        const pr = Number(pur.price);
         if (!sh || sh <= 0 || !pr || pr <= 0) throw new Error('Enter shares and price.');
         await addParkedLot({
           parkedPositionId: p.id,
@@ -1320,20 +1287,15 @@ function LotPanel({ position: p, summary }: { position: ParkedPosition; summary:
                 </div>
                 <div>
                   <label className={labelCls}>Shares</label>
-                  <input type="number" step="any" min="0.00000001" required value={shares}
-                    onChange={(e) => purSyncShares(e.target.value)} className={inputCls} />
+                  <input type="number" step="any" min="0.00000001" required value={pur.shares}
+                    onChange={(e) => pur.setShares(e.target.value)} className={inputCls} />
                 </div>
                 <div>
                   <label className={labelCls}>Price ($)</label>
-                  <input type="number" step="any" min="0" required value={price}
-                    onChange={(e) => purSyncPrice(e.target.value)} className={inputCls} />
+                  <input type="number" step="any" min="0" required value={pur.price}
+                    onChange={(e) => pur.setPrice(e.target.value)} className={inputCls} />
                 </div>
-                <div>
-                  <label className={labelCls}>Total ($)</label>
-                  <input type="number" step="any" min="0" value={purTotal}
-                    onChange={(e) => purSyncTotal(e.target.value)} className={inputCls}
-                    title="Enter the broker's total and the price derives — no rounding drift." />
-                </div>
+                <TotalField value={pur.total} onChange={pur.setTotal} />
               </div>
             ) : (
               <>
@@ -1597,12 +1559,7 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
             <label className={labelCls}>Date</label>
             <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
           </div>
-          <div>
-            <label className={labelCls}>Total proceeds ($)</label>
-            <input type="number" step="any" min="0" value={total}
-              onChange={(e) => setTotal(e.target.value)} className={inputCls}
-              title="Enter the broker's filled notional (net of fees) and the price derives — no rounding drift." />
-          </div>
+          <TotalField value={total} onChange={setTotal} label="Total proceeds ($)" />
         </div>
 
         <label className="flex items-center gap-2 text-sm text-gray-700">
