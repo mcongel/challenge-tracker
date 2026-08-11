@@ -16,7 +16,7 @@ import type {
 import {
   accountTotal, adjustmentsForLots, aggregateLots, allocateRoc, buildSaleSnapshot, closeShares,
   computeAccountCash, concentration, consumeLotsFifo, cumulativeFloor, isArchivedPosition,
-  LT_TAX_RATE, netContributed, ORDINARY_DIVIDEND_TAX_RATE, pileTotal,
+  LT_TAX_RATE, netContributed, ORDINARY_DIVIDEND_TAX_RATE, pileTotal, planSaleRestore,
   QUALIFIED_DIVIDEND_TAX_RATE, reservedTotal, round6, roundCents, shadowValue, ST_TAX_RATE,
   totalScore, trimPreview,
 } from '../lib/engine';
@@ -199,6 +199,14 @@ interface DataContextValue extends DataState {
   updateParkedSale: (
     id: string,
     patch: Partial<Pick<ParkedSale, 'date' | 'costBasis' | 'ltShares' | 'fundedChallenge' | 'notes'>>,
+  ) => Promise<void>;
+  /** Exact undo of a snapshot-bearing sale: lots, basis, and ROC come back.
+   * Never touches the challenge ledger. */
+  undoParkedSale: (saleId: string) => Promise<void>;
+  /** Edit a sale's numbers: undo + re-apply against fresh data. */
+  editParkedSaleAmounts: (
+    saleId: string,
+    next: { shares: number; pricePerShare: number; date: string },
   ) => Promise<void>;
   /** Rows seeded from the workbook, identified by EXAMPLE in their notes. */
   exampleData: { cashEvents: CashEvent[]; lots: PositionLot[]; trades: Trade[]; total: number };
@@ -1264,6 +1272,223 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [refresh, state.parked, state.parkedLots, state.parkedLotAdjustments, trimCore],
   );
 
+  /** Undo a snapshot-bearing sale: fresh-read everything, build the
+   * converging restore plan, apply it, delete the sale row LAST so a failed
+   * attempt is simply retried. Never touches the challenge ledger (a funded
+   * sale's Deposit + shadow twin stay — the UI warns). No refresh — callers. */
+  const undoCore = useCallback(
+    async (saleId: string) => {
+      const client = db();
+      const { data: saleRow, error: saleErr } = await client
+        .from('parked_sales').select('*').eq('id', saleId).single();
+      if (saleErr) throw saleErr;
+      const sale = mapParkedSale(saleRow);
+      const snapshot = sale.consumed;
+      if (!snapshot) throw new Error('This sale predates undo support — edit its numbers instead.');
+
+      // Fresh reads: the position, its lots, snapshot-referenced lots (which
+      // may live on other positions after transfers), and both adjustment
+      // views (by lot and by snapshot row id).
+      const { data: posRow, error: posErr } = await client
+        .from('parked_positions')
+        .select('*, account:accounts(name)')
+        .eq('id', snapshot.positionId)
+        .maybeSingle();
+      if (posErr) throw posErr;
+      const position = posRow ? mapParked(posRow) : null;
+
+      const refIds = [
+        ...new Set([
+          ...snapshot.slices.map((s) => s.lotId),
+          ...snapshot.slices.flatMap((s) =>
+            s.adjustments.map((a) => a.dividendLotId).filter((x): x is string => Boolean(x)),
+          ),
+        ]),
+      ];
+      const [byPos, byIds] = await Promise.all([
+        client.from('parked_lots').select('*').eq('parked_position_id', snapshot.positionId),
+        client.from('parked_lots').select('*').in('id', refIds),
+      ]);
+      if (byPos.error) throw byPos.error;
+      if (byIds.error) throw byIds.error;
+      const lotMap = new Map(
+        [...(byPos.data ?? []), ...(byIds.data ?? [])].map((r) => {
+          const l = mapParkedLot(r);
+          return [l.id, l] as const;
+        }),
+      );
+      const lots = [...lotMap.values()];
+      const adjRowIds = snapshot.slices.flatMap((s) => s.adjustments.map((a) => a.id));
+      const lotIds = lots.map((l) => l.id);
+      const [adjByLot, adjByIds] = await Promise.all([
+        lotIds.length > 0
+          ? client.from('parked_lot_adjustments').select('*').in('share_lot_id', lotIds)
+          : Promise.resolve({ data: [], error: null }),
+        adjRowIds.length > 0
+          ? client.from('parked_lot_adjustments').select('*').in('id', adjRowIds)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+      if (adjByLot.error) throw adjByLot.error;
+      if (adjByIds.error) throw adjByIds.error;
+      const adjMap = new Map(
+        [...(adjByLot.data ?? []), ...(adjByIds.data ?? [])].map((r) => {
+          const a = mapParkedLotAdjustment(r);
+          return [a.id, a] as const;
+        }),
+      );
+
+      const plan = planSaleRestore(sale, snapshot, {
+        position,
+        lots,
+        adjustments: [...adjMap.values()],
+        dividendLots: lots.filter((l) => l.source === 'dividend'),
+      });
+
+      if (plan.recreatePosition) {
+        const { error: err } = await client.from('parked_positions').upsert({
+          id: plan.recreatePosition.id,
+          ticker: plan.recreatePosition.ticker,
+          account_id: plan.recreatePosition.accountId,
+          category: snapshot.position.category,
+          shares: 0, // recomputed from restored lots below
+          avg_cost: snapshot.position.avgCost,
+          current_price: snapshot.position.currentPrice,
+          trim_rank: snapshot.position.trimRank,
+          dividend_rate: snapshot.position.dividendRate,
+          dividend_frequency: snapshot.position.dividendFrequency,
+          notes: snapshot.position.notes,
+        });
+        if (err) throw err;
+      }
+      if (plan.revivePrice !== null) {
+        const { error: err } = await client
+          .from('parked_positions')
+          .update({ current_price: plan.revivePrice })
+          .eq('id', snapshot.positionId);
+        if (err) throw err;
+      }
+      if (plan.lotUpserts.length > 0) {
+        const { error: err } = await client.from('parked_lots').upsert(
+          plan.lotUpserts.map((u) => ({
+            id: u.id,
+            parked_position_id: u.parkedPositionId,
+            date: u.date,
+            source: u.source,
+            shares: u.shares,
+            price: u.price,
+            amount: u.amount,
+            classification: u.classification,
+            ex_date: u.exDate,
+            reclassified_at: u.reclassifiedAt,
+            roc_allocated_at: u.rocAllocatedAt,
+            roc_overflow: u.rocOverflow,
+            notes: u.notes,
+          })),
+          { onConflict: 'id', ignoreDuplicates: true },
+        );
+        if (err) throw err;
+      }
+      for (const s of plan.lotSets) {
+        const { error: err } = await client
+          .from('parked_lots').update({ shares: s.shares, amount: s.amount }).eq('id', s.id);
+        if (err) throw err;
+      }
+      if (plan.adjustmentUpserts.length > 0) {
+        const { error: err } = await client.from('parked_lot_adjustments').upsert(
+          plan.adjustmentUpserts.map((u) => ({
+            id: u.id,
+            share_lot_id: u.shareLotId,
+            dividend_lot_id: u.dividendLotId,
+            amount: u.amount,
+          })),
+          { onConflict: 'id', ignoreDuplicates: true },
+        );
+        if (err) throw err;
+      }
+      for (const s of plan.adjustmentSets) {
+        const { error: err } = await client
+          .from('parked_lot_adjustments').update({ amount: s.amount }).eq('id', s.id);
+        if (err) throw err;
+      }
+      for (const r of plan.reallocate) {
+        await insertRocAllocations(r); // idempotent; re-spreads over restored basis
+      }
+      await recomputeParkedAggregate(snapshot.positionId);
+      const { error: delErr } = await client.from('parked_sales').delete().eq('id', saleId);
+      if (delErr) throw delErr;
+    },
+    [recomputeParkedAggregate, insertRocAllocations],
+  );
+
+  const undoParkedSale = useCallback(
+    async (saleId: string) => {
+      try {
+        await undoCore(saleId);
+      } finally {
+        await refresh();
+      }
+    },
+    [refresh, undoCore],
+  );
+
+  /** Edit a sale's numbers = undo it exactly, then re-run the sale core with
+   * the corrected values against FRESH data. Carries the funded flag and
+   * notes; never writes ledger rows (a funded sale's Deposit is the owner's
+   * to reconcile if proceeds changed). */
+  const editParkedSaleAmounts = useCallback(
+    async (
+      saleId: string,
+      next: { shares: number; pricePerShare: number; date: string },
+    ) => {
+      const client = db();
+      if (next.shares <= 0) throw new Error('Shares must be positive');
+      if (next.pricePerShare <= 0) throw new Error('Price must be positive');
+      const { data: saleRow, error: saleErr } = await client
+        .from('parked_sales').select('*').eq('id', saleId).single();
+      if (saleErr) throw saleErr;
+      const old = mapParkedSale(saleRow);
+      if (!old.consumed) throw new Error('This sale predates undo support — edit its numbers instead.');
+      try {
+        await undoCore(saleId);
+        const { data: posRow, error: posErr } = await client
+          .from('parked_positions')
+          .select('*, account:accounts(name)')
+          .eq('id', old.consumed.positionId)
+          .single();
+        if (posErr) throw posErr;
+        const position = mapParked(posRow);
+        if (next.shares > position.shares + 1e-9) {
+          throw new Error(`Only ${position.shares} shares parked; cannot sell ${next.shares}`);
+        }
+        const { data: lotRows, error: lotsErr } = await client
+          .from('parked_lots').select('*').eq('parked_position_id', position.id);
+        if (lotsErr) throw lotsErr;
+        const lots = (lotRows ?? []).map(mapParkedLot);
+        let adjustments: ParkedLotAdjustment[] = [];
+        if (lots.length > 0) {
+          const { data: adjRows, error: adjErr } = await client
+            .from('parked_lot_adjustments').select('*').in('share_lot_id', lots.map((l) => l.id));
+          if (adjErr) throw adjErr;
+          adjustments = (adjRows ?? []).map(mapParkedLotAdjustment);
+        }
+        await trimCore({
+          position,
+          lots,
+          adjustments,
+          allLots: lots,
+          shares: next.shares,
+          pricePerShare: next.pricePerShare,
+          date: next.date,
+          fundedChallenge: old.fundedChallenge,
+          notes: old.notes ?? null,
+        });
+      } finally {
+        await refresh();
+      }
+    },
+    [refresh, undoCore, trimCore],
+  );
+
   const exampleData = useMemo(() => {
     const isEx = (notes?: string | null) => Boolean(notes && notes.toUpperCase().includes('EXAMPLE'));
     const cashEvents = state.cashEvents.filter((e) => isEx(e.notes));
@@ -1466,6 +1691,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       addParkedPosition,
       deleteParkedSale,
       updateParkedSale,
+      undoParkedSale,
+      editParkedSaleAmounts,
       transferParked,
       accountCash,
       addParkedCashEvent,
@@ -1484,7 +1711,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setTradeWashSale, deleteTrade, updateParked, recordMilestone, addAccount, addOutsideSale,
       deleteOutsideSale, recordTrim, addParkedLot, deleteParkedLot, reclassifyDividend,
       allocateRocDividends, addParkedPosition,
-      deleteParkedSale, updateParkedSale, transferParked, accountCash, addParkedCashEvent,
+      deleteParkedSale, updateParkedSale, undoParkedSale, editParkedSaleAmounts, transferParked,
+      accountCash, addParkedCashEvent,
       deleteParkedCashEvent, reconcileAccountCash, exampleData, clearExampleData,
       setOverride, clearOverride,
     ],
