@@ -21,7 +21,7 @@ import {
 } from '../lib/engine';
 import type {
   AccountCashBreakdown, DividendClassification, DividendTaxRates, ParkedCashEvent, ParkedLot,
-  ParkedSale,
+  ParkedLotAdjustment, ParkedSale,
 } from '../lib/engine';
 import { priceMapFor } from '../lib/alerts';
 import { todayISO } from '../lib/utils';
@@ -35,6 +35,7 @@ import {
   parkedSalePayload,
   mapParkedCashEvent,
   parkedCashEventPayload,
+  mapParkedLotAdjustment,
   mapAccount,
   mapBenchmarkDeposit,
   mapCarryforward,
@@ -72,6 +73,8 @@ interface DataState {
   parkedSales: ParkedSale[];
   /** Manual cash movements in non-challenge accounts. */
   parkedCashEvents: ParkedCashEvent[];
+  /** ROC basis reductions per share lot — original lot amounts stay intact. */
+  parkedLotAdjustments: ParkedLotAdjustment[];
 }
 
 const EMPTY: DataState = {
@@ -90,6 +93,7 @@ const EMPTY: DataState = {
   parkedLots: [],
   parkedSales: [],
   parkedCashEvents: [],
+  parkedLotAdjustments: [],
 };
 
 interface DataContextValue extends DataState {
@@ -216,7 +220,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const client = db();
       const [
         cash, lots, trades, milestones, bench, parked, snaps, carry, overrides, settings,
-        accounts, outsideSales, parkedLots, parkedSales, parkedCashEvents,
+        accounts, outsideSales, parkedLots, parkedSales, parkedCashEvents, parkedLotAdjustments,
       ] = await Promise.all([
         client.from('cash_events').select('*').order('date').order('created_at'),
         client.from('position_lots').select('*').order('buy_date'),
@@ -233,12 +237,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         client.from('parked_lots').select('*').order('date', { nullsFirst: true }),
         client.from('parked_sales').select('*').order('date'),
         client.from('parked_cash_events').select('*').order('date'),
+        client.from('parked_lot_adjustments').select('*'),
       ]);
       const firstError =
         cash.error ?? lots.error ?? trades.error ?? milestones.error ?? bench.error ??
         parked.error ?? snaps.error ?? carry.error ?? overrides.error ?? settings.error ??
         accounts.error ?? outsideSales.error ?? parkedLots.error ?? parkedSales.error ??
-        parkedCashEvents.error;
+        parkedCashEvents.error ?? parkedLotAdjustments.error;
       if (firstError) throw firstError;
       setState({
         cashEvents: (cash.data ?? []).map(mapCashEvent),
@@ -258,6 +263,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         parkedLots: (parkedLots.data ?? []).map(mapParkedLot),
         parkedSales: (parkedSales.data ?? []).map(mapParkedSale),
         parkedCashEvents: (parkedCashEvents.data ?? []).map(mapParkedCashEvent),
+        parkedLotAdjustments: (parkedLotAdjustments.data ?? []).map(mapParkedLotAdjustment),
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

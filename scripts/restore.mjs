@@ -40,7 +40,16 @@ const TABLES = [
     id: l.id, parked_position_id: l.parkedPositionId, date: l.date ?? null, source: l.source,
     shares: l.shares, price: l.price ?? null, amount: l.amount,
     classification: l.classification ?? null, ex_date: l.exDate ?? null,
-    reclassified_at: l.reclassifiedAt ?? null, notes: l.notes ?? null,
+    reclassified_at: l.reclassifiedAt ?? null, roc_allocated_at: l.rocAllocatedAt ?? null,
+    notes: l.notes ?? null,
+  })), 'id'],
+  ['parked_lot_adjustments', get('parked_lot_adjustments').map((a) => ({
+    id: a.id, share_lot_id: a.shareLotId, dividend_lot_id: a.dividendLotId ?? null,
+    amount: a.amount,
+  })), 'id'],
+  ['parked_cash_events', get('parked_cash_events').map((e) => ({
+    id: e.id, account_id: e.accountId, date: e.date, type: e.type, amount: e.amount,
+    notes: e.notes ?? null,
   })), 'id'],
   ['parked_sales', get('parked_sales').map((s) => ({
     id: s.id, ticker: s.ticker, account_id: s.accountId, date: s.date, shares: s.shares,
@@ -89,7 +98,8 @@ const TABLES = [
 if (wipe) {
   // Children before parents; accounts last.
   const order = [
-    'parked_lots', 'parked_sales', 'outside_sales', 'cash_events', 'position_lots', 'trades',
+    'parked_lot_adjustments', 'parked_lots', 'parked_sales', 'parked_cash_events',
+    'outside_sales', 'cash_events', 'position_lots', 'trades',
     'milestones', 'benchmark_deposits', 'snapshots', 'loss_carryforwards', 'price_overrides',
     'parked_positions', 'app_settings', 'accounts',
   ];

@@ -10,6 +10,7 @@ import type {
   OutsideSale,
   ParkedCashEvent,
   ParkedLot,
+  ParkedLotAdjustment,
   ParkedPosition,
   ParkedSale,
   PositionLot,
@@ -180,6 +181,7 @@ export const mapParkedLot = (r: any): ParkedLot => ({
   classification: r.classification,
   exDate: r.ex_date,
   reclassifiedAt: r.reclassified_at,
+  rocAllocatedAt: r.roc_allocated_at,
   notes: r.notes,
 });
 
@@ -193,7 +195,22 @@ export const parkedLotPayload = (l: Omit<ParkedLot, 'id'>) => ({
   classification: l.classification ?? null,
   ex_date: l.exDate ?? null,
   reclassified_at: l.reclassifiedAt ?? null,
+  roc_allocated_at: l.rocAllocatedAt ?? null,
   notes: l.notes ?? null,
+});
+
+export const mapParkedLotAdjustment = (r: any): ParkedLotAdjustment => ({
+  id: r.id,
+  shareLotId: r.share_lot_id,
+  dividendLotId: r.dividend_lot_id,
+  amount: Number(r.amount),
+  createdAt: r.created_at,
+});
+
+export const parkedLotAdjustmentPayload = (a: Omit<ParkedLotAdjustment, 'id' | 'createdAt'>) => ({
+  share_lot_id: a.shareLotId,
+  dividend_lot_id: a.dividendLotId ?? null,
+  amount: a.amount,
 });
 
 export const mapParkedSale = (r: any): ParkedSale => ({

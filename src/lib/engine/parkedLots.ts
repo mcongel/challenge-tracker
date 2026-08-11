@@ -28,6 +28,9 @@ export interface ParkedLot {
   exDate?: string | null;
   /** Set when a broker 1099 reclassified this dividend after entry. */
   reclassifiedAt?: string | null;
+  /** ROC dividends only: set when basis allocation ran (null = not yet
+   * allocated; set with zero adjustment rows = basis was already exhausted). */
+  rocAllocatedAt?: string | null;
   notes?: string | null;
 }
 
