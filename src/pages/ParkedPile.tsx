@@ -1277,7 +1277,9 @@ function TransferModal({ position: p, onClose }: { position: ParkedPosition; onC
 const NEVER_TRIM = new Set(['NVDA', 'TSLA', 'MSTR']);
 
 function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose: () => void }) {
-  const { recordTrim, cashEvents, contributionCap, parkedLots, ltTaxRate, stTaxRate } = useData();
+  const {
+    recordTrim, cashEvents, contributionCap, parkedLots, parkedLotAdjustments, ltTaxRate, stTaxRate,
+  } = useData();
   const [shares, setShares] = useState('');
   const [price, setPrice] = useState(p.currentPrice ? String(p.currentPrice) : '');
   const [date, setDate] = useState(todayISO());
@@ -1298,7 +1300,11 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
   let preview: ReturnType<typeof trimPreview> | null = null;
   if (numShares > 0 && numShares <= p.shares + 1e-9 && numPrice > 0 && positionLots.length > 0) {
     try {
-      preview = trimPreview(positionLots, numShares, numPrice, date);
+      const lotIds = new Set(positionLots.map((l) => l.id));
+      preview = trimPreview(
+        positionLots, numShares, numPrice, date,
+        parkedLotAdjustments.filter((a) => lotIds.has(a.shareLotId)),
+      );
     } catch {
       preview = null;
     }
@@ -1408,7 +1414,11 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
                   <span className={cn('font-medium tabular-nums', preview.gain >= 0 ? 'text-green-600' : 'text-red-600')}>
                     {formatCurrency(roundCents(preview.gain))}
                   </span>
-                  <span className="text-gray-400"> (basis {formatCurrency(roundCents(preview.costBasis))})</span>
+                  <span className="text-gray-400">
+                    {preview.adjustedCostBasis < preview.costBasis - 0.005
+                      ? ` (adjusted basis ${formatCurrency(roundCents(preview.adjustedCostBasis))} — ROC-reduced from ${formatCurrency(roundCents(preview.costBasis))})`
+                      : ` (basis ${formatCurrency(roundCents(preview.costBasis))})`}
+                  </span>
                 </>
               )}
               {fullTrim && <span className="ml-2 text-gray-500">· sells the whole position (row removed)</span>}

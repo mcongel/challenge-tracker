@@ -36,6 +36,7 @@ import {
   mapParkedCashEvent,
   parkedCashEventPayload,
   mapParkedLotAdjustment,
+  parkedLotAdjustmentPayload,
   mapAccount,
   mapBenchmarkDeposit,
   mapCarryforward,
@@ -774,9 +775,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
       const positionLots = state.parkedLots.filter((l) => l.parkedPositionId === parkedId);
       if (positionLots.length === 0) throw new Error('No lots to transfer — add lots first.');
+      const lotIds = new Set(positionLots.map((l) => l.id));
+      const positionAdjustments = state.parkedLotAdjustments.filter((a) => lotIds.has(a.shareLotId));
 
       const fromName = p.account;
-      const { updates, deletes, consumed } = consumeLotsFifo(positionLots, shares);
+      const { updates, deletes, adjustmentUpdates, consumed } = consumeLotsFifo(
+        positionLots, shares, positionAdjustments,
+      );
 
       // Destination position: merge into an existing one or create it.
       let destId = state.parked.find(
@@ -804,31 +809,56 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Recreate the slices at the destination with dates/basis/source intact.
-      // Dividend tax character (classification/ex-date/reclassified) must
-      // survive the move too — consumed slices don't carry it, the source lot does.
+      // Dividend tax character (classification/ex-date/reclassified/ROC stamp)
+      // must survive the move — consumed slices don't carry it, the source lot
+      // does. Per-slice inserts (transfers are rare) so each new lot's id is
+      // known: a slice whose basis was ROC-reduced gets a carried adjustment
+      // row, keeping adjusted basis honest at the destination.
       const lotById = new Map(positionLots.map((l) => [l.id, l]));
-      const { error: lotErr } = await client.from('parked_lots').insert(
-        consumed.map((c) =>
-          parkedLotPayload({
-            parkedPositionId: destId as string,
-            date: c.date,
-            source: c.source,
-            shares: c.shares,
-            price: c.shares > 0 ? Math.round((c.amount / c.shares) * 10000) / 10000 : null,
-            amount: c.amount,
-            classification: lotById.get(c.id)?.classification ?? null,
-            exDate: lotById.get(c.id)?.exDate ?? null,
-            reclassifiedAt: lotById.get(c.id)?.reclassifiedAt ?? null,
-            notes: `ACATS from ${fromName} ${date}`,
-          }),
-        ),
-      );
-      if (lotErr) throw lotErr;
+      for (const c of consumed) {
+        const src = lotById.get(c.id);
+        const { data: newLot, error: lotErr } = await client
+          .from('parked_lots')
+          .insert(
+            parkedLotPayload({
+              parkedPositionId: destId as string,
+              date: c.date,
+              source: c.source,
+              shares: c.shares,
+              price: c.shares > 0 ? Math.round((c.amount / c.shares) * 10000) / 10000 : null,
+              amount: c.amount,
+              classification: src?.classification ?? null,
+              exDate: src?.exDate ?? null,
+              reclassifiedAt: src?.reclassifiedAt ?? null,
+              rocAllocatedAt: src?.rocAllocatedAt ?? null,
+              notes: `ACATS from ${fromName} ${date}`,
+            }),
+          )
+          .select('id')
+          .single();
+        if (lotErr) throw lotErr;
+        const carried = Math.round((c.amount - c.adjustedAmount) * 1e6) / 1e6;
+        if (carried > 0) {
+          const { error: adjErr } = await client.from('parked_lot_adjustments').insert(
+            parkedLotAdjustmentPayload({
+              shareLotId: newLot.id as string,
+              dividendLotId: null,
+              amount: carried,
+            }),
+          );
+          if (adjErr) throw adjErr;
+        }
+      }
 
-      // Then shrink the source.
+      // Then shrink the source (lots and their surviving adjustment rows).
       for (const u of updates) {
         const { error: err } = await client
           .from('parked_lots').update({ shares: u.shares, amount: u.amount }).eq('id', u.id);
+        if (err) throw err;
+      }
+      for (const a of adjustmentUpdates) {
+        const { error: err } = await client
+          .from('parked_lot_adjustments').update({ amount: a.amount }).eq('id', a.id);
         if (err) throw err;
       }
       if (deletes.length > 0) {
@@ -839,7 +869,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       await recomputeParkedAggregate(parkedId);
       await refresh();
     },
-    [refresh, state.parked, state.parkedLots, recomputeParkedAggregate],
+    [refresh, state.parked, state.parkedLots, state.parkedLotAdjustments, recomputeParkedAggregate],
   );
 
   const accountCash = useCallback(
@@ -931,16 +961,28 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       // Consume lots oldest-first so remaining basis and unlock clocks stay
       // honest — and so the sale record carries the real basis and LT split.
       const positionLots = state.parkedLots.filter((l) => l.parkedPositionId === parkedId);
+      const lotIds = new Set(positionLots.map((l) => l.id));
+      const positionAdjustments = state.parkedLotAdjustments.filter((a) => lotIds.has(a.shareLotId));
       let costBasis: number | null = null;
       let ltShares: number | null = null;
       if (positionLots.length > 0) {
-        const preview = trimPreview(positionLots, shares, pricePerShare, date);
-        costBasis = roundCents(preview.costBasis);
-        ltShares = preview.ltShares;
-        const { updates, deletes } = consumeLotsFifo(positionLots, shares);
+        const preview = trimPreview(positionLots, shares, pricePerShare, date, positionAdjustments);
+        // ROC-adjusted basis — what the sale is actually taxed against.
+        costBasis = roundCents(preview.adjustedCostBasis);
+        // Undated shares count as LT, matching estimatedPileTax's documented
+        // assumption (and the TrimModal estimate).
+        ltShares = preview.ltShares + preview.unknownShares;
+        const { updates, deletes, adjustmentUpdates } = consumeLotsFifo(
+          positionLots, shares, positionAdjustments,
+        );
         for (const u of updates) {
           const { error: err } = await client
             .from('parked_lots').update({ shares: u.shares, amount: u.amount }).eq('id', u.id);
+          if (err) throw err;
+        }
+        for (const a of adjustmentUpdates) {
+          const { error: err } = await client
+            .from('parked_lot_adjustments').update({ amount: a.amount }).eq('id', a.id);
           if (err) throw err;
         }
         if (deletes.length > 0) {
@@ -995,7 +1037,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
       await refresh();
     },
-    [refresh, state.parked, state.parkedLots, recomputeParkedAggregate],
+    [refresh, state.parked, state.parkedLots, state.parkedLotAdjustments, recomputeParkedAggregate],
   );
 
   const exampleData = useMemo(() => {
