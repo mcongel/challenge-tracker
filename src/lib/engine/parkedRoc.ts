@@ -5,7 +5,7 @@
  * never score math. */
 
 import { longTermDate } from './dates';
-import { sum } from './money';
+import { round6, sum } from './money';
 import type { ParkedLot } from './parkedLots';
 
 export interface ParkedLotAdjustment {
@@ -17,10 +17,6 @@ export interface ParkedLotAdjustment {
   amount: number;
   createdAt?: string | null;
 }
-
-/** 6dp: allocations across many lots go sub-cent; rounding to cents per row
- * would drift the reconstructed basis. */
-const round6 = (n: number) => Math.round((n + Number.EPSILON) * 1e6) / 1e6;
 
 /** Original amount minus this lot's accumulated reductions, floored at 0
  * (guards rounding drift — basis never goes negative). */

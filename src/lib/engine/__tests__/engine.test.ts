@@ -280,9 +280,10 @@ describe('parked lots — per-lot unlocks, aggregates, FIFO', () => {
     expect(r.deletes).toEqual(['old']);          // null date consumed first
     expect(r.updates).toEqual([{ id: 'mid', shares: 2, amount: 250 }]);
     expect(r.consumed).toEqual([
-      { id: 'old', date: null, source: 'purchase', shares: 4, amount: 400 },
-      { id: 'mid', date: '2025-06-01', source: 'purchase', shares: 2, amount: 250 },
+      { id: 'old', date: null, source: 'purchase', shares: 4, amount: 400, adjustedAmount: 400 },
+      { id: 'mid', date: '2025-06-01', source: 'purchase', shares: 2, amount: 250, adjustedAmount: 250 },
     ]);
+    expect(r.adjustmentUpdates).toEqual([]); // no ROC rows → nothing to scale
     expect(() => consumeLotsFifo(lots, 11)).toThrow();
   });
 
@@ -697,6 +698,36 @@ describe('parked ROC — allocation, adjusted basis, overflow', () => {
     expect(r.rocUnallocatedAmount).toBe(5);
     expect(r.totalTax).toBeCloseTo(3 * 0.21, 9); // only the overflow is taxed
     expect(r.byClassification.return_of_capital?.amount).toBe(23);
+  });
+
+  it('consumeLotsFifo prorates adjustments on partial consume; full consume relies on cascade', async () => {
+    const { consumeLotsFifo } = await import('../parkedLots');
+    const lots = [
+      buy('a', '2025-01-01', 4, 400),  // fully consumed — its rows die with it
+      buy('b', '2025-06-01', 10, 1000), // half consumed — rows must halve
+    ];
+    const rows = [adj('ra', 'a', 40), adj('rb1', 'b', 60), adj('rb2', 'b', 40, 'd2')];
+    const r = consumeLotsFifo(lots, 9, rows);
+    expect(r.deletes).toEqual(['a']);
+    expect(r.consumed[0].adjustedAmount).toBeCloseTo(360, 9); // 400 − 40
+    // b: 5 of 10 shares consumed → half the basis and half of each row.
+    expect(r.updates).toEqual([{ id: 'b', shares: 5, amount: 500 }]);
+    expect(r.adjustmentUpdates).toEqual([
+      { id: 'rb1', amount: 30 },
+      { id: 'rb2', amount: 20 },
+    ]);
+    expect(r.consumed[1].adjustedAmount).toBeCloseTo(500 - 50, 9); // consumed half minus half the rows
+  });
+
+  it('trimPreview: gain from adjusted basis, original basis still reported', async () => {
+    const { trimPreview } = await import('../parkedLots');
+    const lots = [buy('a', '2025-01-01', 10, 1000)];
+    const rows = [adj('r1', 'a', 100)]; // $100 of ROC already returned
+    const p = trimPreview(lots, 10, 150, '2026-08-12', rows);
+    expect(p.costBasis).toBe(1000);
+    expect(p.adjustedCostBasis).toBeCloseTo(900, 9);
+    expect(p.gain).toBeCloseTo(1500 - 900, 9); // ROC-reduced basis → bigger gain
+    expect(p.ltShares).toBe(10);
   });
 
   it('archived position: history intact, projection and summary basis honest, no income projected', async () => {

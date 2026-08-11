@@ -1,5 +1,6 @@
 import { longTermDate } from './dates';
-import { sum } from './money';
+import { round6, sum } from './money';
+import type { ParkedLotAdjustment } from './parkedRoc';
 
 /** Tax character of a dividend. Brokers reclassify after the 1099, so lots
  * start 'unclassified' until confirmed. */
@@ -84,6 +85,10 @@ export function dividendsCollected(lots: ParkedLot[]): number {
 export interface LotConsumption {
   updates: { id: string; shares: number; amount: number }[];
   deletes: string[];
+  /** Scale surviving ROC-adjustment rows on partially consumed lots (amount ×
+   * remaining fraction). Fully consumed lots need nothing — the FK cascade
+   * removes their rows with the lot. */
+  adjustmentUpdates: { id: string; amount: number }[];
   /** What was taken, lot by lot — carries basis, dates, and origin (so a
    * transfer can recreate DRIP slivers as DRIP slivers). */
   consumed: {
@@ -92,12 +97,20 @@ export interface LotConsumption {
     source: 'purchase' | 'dividend';
     shares: number;
     amount: number;
+    /** amount minus the consumed slice of this lot's ROC adjustments —
+     * the basis a sale is actually taxed against. */
+    adjustedAmount: number;
   }[];
 }
 
 /** Consume shares oldest-first (unknown dates count as oldest — they're the
- * original purchases). A partially consumed lot keeps proportional basis. */
-export function consumeLotsFifo(lots: ParkedLot[], sharesToSell: number): LotConsumption {
+ * original purchases). A partially consumed lot keeps proportional basis,
+ * and its ROC adjustments shrink by the same share fraction. */
+export function consumeLotsFifo(
+  lots: ParkedLot[],
+  sharesToSell: number,
+  adjustments: ParkedLotAdjustment[] = [],
+): LotConsumption {
   const ordered = [...lots]
     .filter((l) => l.shares > 0)
     .sort((a, b) => {
@@ -112,22 +125,32 @@ export function consumeLotsFifo(lots: ParkedLot[], sharesToSell: number): LotCon
   }
   const updates: LotConsumption['updates'] = [];
   const deletes: string[] = [];
+  const adjustmentUpdates: LotConsumption['adjustmentUpdates'] = [];
   const consumed: LotConsumption['consumed'] = [];
   let remaining = sharesToSell;
   for (const lot of ordered) {
     if (remaining <= 1e-9) break;
+    const lotAdjs = adjustments.filter((a) => a.shareLotId === lot.id);
+    const lotAdjTotal = sum(lotAdjs.map((a) => a.amount));
     const take = Math.min(lot.shares, remaining);
     remaining -= take;
     const left = lot.shares - take;
     if (left > 1e-9) {
-      const keptAmount = Math.round(lot.amount * (left / lot.shares) * 100) / 100;
+      const keptFraction = left / lot.shares;
+      const keptAmount = Math.round(lot.amount * keptFraction * 100) / 100;
+      const consumedAmount = Math.round((lot.amount - keptAmount) * 100) / 100;
+      const consumedAdj = lotAdjTotal * (take / lot.shares);
       updates.push({ id: lot.id, shares: left, amount: keptAmount });
+      for (const a of lotAdjs) {
+        adjustmentUpdates.push({ id: a.id, amount: round6(a.amount * keptFraction) });
+      }
       consumed.push({
         id: lot.id,
         date: lot.date,
         source: lot.source,
         shares: take,
-        amount: Math.round((lot.amount - keptAmount) * 100) / 100,
+        amount: consumedAmount,
+        adjustedAmount: Math.max(0, round6(consumedAmount - consumedAdj)),
       });
     } else {
       deletes.push(lot.id);
@@ -137,10 +160,11 @@ export function consumeLotsFifo(lots: ParkedLot[], sharesToSell: number): LotCon
         source: lot.source,
         shares: lot.shares,
         amount: lot.amount,
+        adjustedAmount: Math.max(0, round6(lot.amount - lotAdjTotal)),
       });
     }
   }
-  return { updates, deletes, consumed };
+  return { updates, deletes, adjustmentUpdates, consumed };
 }
 
 /** Spec's rough combined rates: ~21% long-term, ~28–30% short-term. Defaults
@@ -167,7 +191,11 @@ export function estimatedPileTax(
 
 export interface TrimPreview {
   proceeds: number;
+  /** Original basis of the consumed slices (yield-on-cost, display). */
   costBasis: number;
+  /** ROC-adjusted basis of the consumed slices — the tax truth. */
+  adjustedCostBasis: number;
+  /** proceeds − adjustedCostBasis: what a sale actually realizes for tax. */
   gain: number;
   /** Shares long-term at the sale date (legit Rule 5 fuel). */
   ltShares: number;
@@ -181,9 +209,11 @@ export function trimPreview(
   sharesToSell: number,
   pricePerShare: number,
   saleDate: string,
+  adjustments: ParkedLotAdjustment[] = [],
 ): TrimPreview {
-  const { consumed } = consumeLotsFifo(lots, sharesToSell);
+  const { consumed } = consumeLotsFifo(lots, sharesToSell, adjustments);
   const costBasis = sum(consumed.map((c) => c.amount));
+  const adjustedCostBasis = sum(consumed.map((c) => c.adjustedAmount));
   const proceeds = sharesToSell * pricePerShare;
   let ltShares = 0;
   let stShares = 0;
@@ -193,5 +223,13 @@ export function trimPreview(
     else if (longTermDate(c.date) <= saleDate) ltShares += c.shares;
     else stShares += c.shares;
   }
-  return { proceeds, costBasis, gain: proceeds - costBasis, ltShares, stShares, unknownShares };
+  return {
+    proceeds,
+    costBasis,
+    adjustedCostBasis,
+    gain: proceeds - adjustedCostBasis,
+    ltShares,
+    stShares,
+    unknownShares,
+  };
 }
