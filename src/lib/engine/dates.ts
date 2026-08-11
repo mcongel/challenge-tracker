@@ -20,6 +20,16 @@ export function addDays(iso: string, days: number): string {
   return toISO(new Date(toUTC(iso).getTime() + days * MS_PER_DAY));
 }
 
+/** Calendar-month add with end-of-month clamping (Jan 31 + 1mo → Feb 28/29). */
+export function addMonths(iso: string, months: number): string {
+  const d = toUTC(iso);
+  const targetMonth = d.getUTCMonth() + months;
+  const year = d.getUTCFullYear() + Math.floor(targetMonth / 12);
+  const month = ((targetMonth % 12) + 12) % 12;
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  return toISO(new Date(Date.UTC(year, month, Math.min(d.getUTCDate(), lastDay))));
+}
+
 /** Long-term threshold: holding > 365 days, so LT begins on buyDate + 366. */
 export function longTermDate(buyDate: string): string {
   return addDays(buyDate, 366);

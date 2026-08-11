@@ -1,7 +1,8 @@
 /** Edge cases the workbook doesn't exercise: partial closes, double milestone
  * crossings, carryforwards, wash-sale windows, splits, quarter boundaries. */
 import { describe, expect, it } from 'vitest';
-import type { CashEvent, PositionLot, Snapshot, Trade } from '../types';
+import type { CashEvent, ParkedPosition, PositionLot, Snapshot, Trade } from '../types';
+import type { DividendClassification, ParkedLot } from '../parkedLots';
 import { roundCents } from '../money';
 import { applySplit, closeShares } from '../positions';
 import { milestoneLevels, milestoneTable, nextMilestone, skimDue } from '../milestones';
@@ -352,5 +353,192 @@ describe('benchmark — rolling 12-month verdict', () => {
     const snaps = [snap('2025-08-01', 100, 90), snap('2026-08-04', 250, 200)];
     // Lead went from +10 to +50.
     expect(rollingLeadDelta(snaps, '2026-08-04')).toBe(40);
+  });
+});
+
+describe('dates — addMonths', () => {
+  it('clamps end-of-month, honors leap years, crosses years both ways', async () => {
+    const { addMonths } = await import('../dates');
+    expect(addMonths('2026-01-31', 1)).toBe('2026-02-28');
+    expect(addMonths('2024-01-31', 1)).toBe('2024-02-29'); // leap February keeps the 29th
+    expect(addMonths('2026-03-31', 1)).toBe('2026-04-30');
+    expect(addMonths('2026-11-15', 3)).toBe('2027-02-15'); // forward across the year end
+    expect(addMonths('2026-03-31', -1)).toBe('2026-02-28'); // negative months clamp too
+    expect(addMonths('2026-01-15', -2)).toBe('2025-11-15'); // backward across the year end
+  });
+});
+
+describe('parked income — trailing, projection, yield, dividend tax', () => {
+  const TODAY = '2026-08-10';
+  const RATES = { qualified: 0.15, ordinary: 0.24, capitalGainDist: 0.21 };
+  const div = (
+    id: string,
+    date: string | null,
+    amount: number,
+    classification: DividendClassification = 'qualified',
+    shares = 0,
+  ): ParkedLot => ({
+    id, parkedPositionId: 'p1', date, source: 'dividend', shares, price: null, amount, classification,
+  });
+  const buy = (id: string, date: string | null, shares: number, amount: number): ParkedLot => ({
+    id, parkedPositionId: 'p1', date, source: 'purchase', shares, price: null, amount,
+  });
+  const pos = (over: Partial<ParkedPosition> = {}): ParkedPosition => ({
+    id: 'p1', ticker: 'DIV', accountId: 'a1', account: 'Acct', category: 'Other',
+    shares: 10, avgCost: 100, currentPrice: 100, ...over,
+  });
+
+  it('trailingIncomeByMonth: dense zero-filled buckets; undated, stale, and future lots excluded', async () => {
+    const { trailingIncomeByMonth } = await import('../parkedIncome');
+    const lots = [
+      div('a', '2026-06-10', 100),
+      div('b', '2026-06-20', 50),        // second payment, same month
+      div('c', '2025-08-01', 40),        // 13 months back — outside the window
+      div('d', '2026-08-15', 30),        // dated after today — not yet income
+      div('e', null, 999),               // undated — cannot be placed in a window
+      buy('f', '2026-01-01', 10, 1000),  // purchases never count
+    ];
+    const points = trailingIncomeByMonth(lots, TODAY);
+    expect(points).toHaveLength(12);
+    expect(points[0].month).toBe('2025-09');
+    expect(points[11].month).toBe('2026-08');
+    expect(points.find((p) => p.month === '2026-06')?.amount).toBe(150);
+    expect(points.reduce((t, p) => t + p.amount, 0)).toBe(150);
+  });
+
+  it('quarterly payer with 4 actuals: cadence, mean amount, schedule anchored to last pay date', async () => {
+    const { projectPositionIncome } = await import('../parkedIncome');
+    const lots = [
+      div('q1', '2025-09-10', 100), div('q2', '2025-12-10', 100),
+      div('q3', '2026-03-10', 100), div('q4', '2026-06-10', 100),
+    ];
+    const proj = projectPositionIncome({ position: pos(), lots, today: TODAY, rates: RATES });
+    expect(proj?.source).toBe('actual');
+    expect(proj?.monthly).toHaveLength(12);
+    expect(proj?.monthly[0].month).toBe('2026-09');
+    expect(proj?.nextPayment).toEqual({ date: '2026-09-10', amount: 100 });
+    expect(proj?.annualGross).toBeCloseTo(400, 9); // 4 payments in the next 12 months
+    expect(proj?.annualAfterTax).toBeCloseTo(340, 9); // all qualified → ×0.85
+  });
+
+  it('monthly payer: 12 projected payments from the recent monthly mean', async () => {
+    const { projectPositionIncome } = await import('../parkedIncome');
+    const lots = Array.from({ length: 12 }, (_, i) =>
+      div(`m${i}`, `${['2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08'][i]}-05`, 10));
+    const proj = projectPositionIncome({ position: pos(), lots, today: TODAY, rates: RATES });
+    expect(proj?.source).toBe('actual');
+    expect(proj?.nextPayment).toEqual({ date: '2026-09-05', amount: 10 });
+    expect(proj?.annualGross).toBeCloseTo(120, 9);
+  });
+
+  it('DRIP growing the position mid-year: projection reflects the larger recent payments', async () => {
+    const { projectPositionIncome } = await import('../parkedIncome');
+    const lots = [
+      div('q1', '2025-09-10', 50), div('q2', '2025-12-10', 50),
+      // Payments jumped after reinvested shares compounded the payout.
+      div('q3', '2026-03-10', 80, 'qualified', 0.5), div('q4', '2026-06-10', 80, 'qualified', 0.6),
+    ];
+    const proj = projectPositionIncome({ position: pos(), lots, today: TODAY, rates: RATES });
+    expect(proj?.nextPayment?.amount).toBeCloseTo(65, 9); // mean of the trailing year, not the stale 50
+    expect(proj?.annualGross).toBeCloseTo(260, 9);
+  });
+
+  it('manual-rate-only holding: rate × shares at frequency, first payment one interval out', async () => {
+    const { projectPositionIncome } = await import('../parkedIncome');
+    const position = pos({ dividendRate: 4, dividendFrequency: 'quarterly' }); // $4/sh/yr × 10 sh
+    const proj = projectPositionIncome({ position, lots: [], today: TODAY, rates: RATES });
+    expect(proj?.source).toBe('manual');
+    expect(proj?.nextPayment).toEqual({ date: '2026-11-10', amount: 10 });
+    expect(proj?.annualGross).toBeCloseTo(40, 9);
+    expect(proj?.annualAfterTax).toBeCloseTo(34, 9); // no history → unclassified → qualified rate
+  });
+
+  it('single actual is not a cadence; falls back to manual, else excluded entirely', async () => {
+    const { projectPositionIncome } = await import('../parkedIncome');
+    const oneActual = [div('x', '2026-05-01', 75)];
+    const withRate = projectPositionIncome({
+      position: pos({ dividendRate: 2, dividendFrequency: 'annual' }), lots: oneActual, today: TODAY, rates: RATES,
+    });
+    expect(withRate?.source).toBe('manual');
+    const bare = projectPositionIncome({ position: pos(), lots: oneActual, today: TODAY, rates: RATES });
+    expect(bare).toBeNull(); // no cadence, no rate → excluded from projections
+  });
+
+  it('mixed-classification payment: one payment for cadence, tax blended by dollar mix', async () => {
+    const { projectPositionIncome } = await import('../parkedIncome');
+    const lots = [
+      div('a', '2025-12-10', 100),
+      // One broker payment split across two classifications = two lots, same date.
+      div('b1', '2026-03-10', 60), div('b2', '2026-03-10', 40, 'ordinary'),
+    ];
+    const proj = projectPositionIncome({ position: pos(), lots, today: TODAY, rates: RATES });
+    expect(proj?.source).toBe('actual'); // 2 payments, not 3 — same-date lots group
+    expect(proj?.nextPayment?.amount).toBeCloseTo(100, 9);
+    expect(proj?.annualGross).toBeCloseTo(400, 9);
+    // Mix: 160 qualified (15%) + 40 ordinary (24%) → blended tax 16.8% of dollars.
+    expect(proj?.annualAfterTax).toBeCloseTo(400 * (1 - 33.6 / 200), 9);
+  });
+
+  it('positionIncomeSummary: yield on cost from original basis, ROC and unclassified surfaced', async () => {
+    const { positionIncomeSummary } = await import('../parkedIncome');
+    const lots = [
+      buy('base', '2025-01-01', 10, 1000),
+      div('q1', '2025-09-10', 100), div('q2', '2025-12-10', 100),
+      div('q3', '2026-03-10', 100), div('q4', '2026-06-10', 100),
+      div('roc', '2026-04-01', 200, 'return_of_capital'),
+      div('old-roc', null, 50, 'return_of_capital'),  // undated: lifetime ROC yes, windows no
+      div('mystery', '2026-05-01', 10, 'unclassified'),
+    ];
+    const s = positionIncomeSummary(pos(), lots, TODAY, RATES);
+    expect(s.trailing12m).toBeCloseTo(610, 9); // 400 + 200 + 10; undated 50 excluded
+    expect(s.rocCumulative).toBeCloseTo(250, 9);
+    expect(s.hasUnclassified).toBe(true);
+    expect(s.undatedDividendAmount).toBeCloseTo(50, 9);
+    expect(s.yieldOnCost).not.toBeNull();
+    expect(s.yieldOnCost!).toBeGreaterThan(0);
+  });
+
+  it('dividendTaxYTD: ROC untaxed, capital-gain dist at LT rate, unclassified flagged, other years out', async () => {
+    const { dividendTaxYTD } = await import('../parkedIncome');
+    const lots = [
+      div('a', '2026-02-01', 100),                        // qualified → 15
+      div('b', '2026-03-01', 100, 'ordinary'),            // → 24
+      div('c', '2026-04-01', 200, 'return_of_capital'),   // → 0 (Phase 1: no basis adjustment)
+      div('d', '2026-05-01', 100, 'capital_gain_dist'),   // → 21 at the LT rate
+      div('e', '2026-06-01', 80, 'unclassified'),         // → 12 at qualified rate, flagged
+      div('f', '2025-12-01', 100),                        // prior tax year
+      div('g', null, 50, 'ordinary'),                     // undated — no year to belong to
+    ];
+    const r = dividendTaxYTD(lots, 2026, RATES);
+    expect(r.totalTax).toBeCloseTo(72, 9);
+    expect(r.byClassification.return_of_capital).toEqual({ amount: 200, tax: 0 });
+    expect(r.byClassification.capital_gain_dist?.tax).toBeCloseTo(21, 9);
+    expect(r.unclassifiedAmount).toBe(80);
+  });
+
+  it('estimatedPileTax: explicit rates override the spec defaults', async () => {
+    const { estimatedPileTax } = await import('../parkedLots');
+    expect(estimatedPileTax(1000, 10, 10)).toBeCloseTo(210, 9);          // defaults: all-LT at 21%
+    expect(estimatedPileTax(1000, 10, 10, 0.1, 0.5)).toBeCloseTo(100, 9); // settings-driven LT
+    expect(estimatedPileTax(1000, 10, 0, 0.1, 0.5)).toBeCloseTo(500, 9);  // all-ST at the override
+  });
+});
+
+describe('the wall — parked dividends cannot reach the score', () => {
+  it('totalScore has no parameter through which parked data can enter', async () => {
+    const { totalScore } = await import('../score');
+    const events: CashEvent[] = [
+      { id: 'e1', date: '2026-01-02', type: 'Deposit', amount: 1000 },
+    ] as CashEvent[];
+    const before = totalScore([], {}, events, []);
+    // A parked dividend exists beside the score inputs; the signature
+    // totalScore(lots, prices, events, milestones) offers it no way in.
+    const parkedDividend: ParkedLot = {
+      id: 'wall', parkedPositionId: 'p1', date: '2026-06-01', source: 'dividend',
+      shares: 0, price: null, amount: 500, classification: 'qualified',
+    };
+    expect(parkedDividend.amount).toBe(500);
+    expect(totalScore([], {}, events, [])).toBe(before);
+    expect(totalScore.length).toBe(4);
   });
 });
