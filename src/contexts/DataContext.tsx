@@ -14,14 +14,15 @@ import type {
   Trade,
 } from '../lib/engine';
 import {
-  accountTotal, adjustmentsForLots, aggregateLots, allocateRoc, closeShares, computeAccountCash,
-  concentration, consumeLotsFifo, cumulativeFloor, isArchivedPosition, LT_TAX_RATE,
-  netContributed, ORDINARY_DIVIDEND_TAX_RATE, pileTotal, QUALIFIED_DIVIDEND_TAX_RATE,
-  reservedTotal, round6, roundCents, shadowValue, ST_TAX_RATE, totalScore, trimPreview,
+  accountTotal, adjustmentsForLots, aggregateLots, allocateRoc, buildSaleSnapshot, closeShares,
+  computeAccountCash, concentration, consumeLotsFifo, cumulativeFloor, isArchivedPosition,
+  LT_TAX_RATE, netContributed, ORDINARY_DIVIDEND_TAX_RATE, pileTotal,
+  QUALIFIED_DIVIDEND_TAX_RATE, reservedTotal, round6, roundCents, shadowValue, ST_TAX_RATE,
+  totalScore, trimPreview,
 } from '../lib/engine';
 import type {
   AccountCashBreakdown, DividendClassification, DividendTaxRates, ParkedCashEvent, ParkedLot,
-  ParkedLotAdjustment, ParkedSale,
+  ParkedLotAdjustment, ParkedSale, ParkedSaleSnapshot,
 } from '../lib/engine';
 import { priceMapFor } from '../lib/alerts';
 import { todayISO } from '../lib/utils';
@@ -1108,6 +1109,110 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [refresh],
   );
 
+  /** The sale itself: consume lots, write the consumption snapshot, insert
+   * the sale row, recompute the aggregate. Takes its data as arguments (never
+   * React state) so a caller working from fresh DB reads — sale editing —
+   * behaves identically to one working from state. NO ledger writes and NO
+   * refresh here; recordTrim layers those on. */
+  const trimCore = useCallback(
+    async (args: {
+      position: ParkedPosition;
+      lots: ParkedLot[];
+      adjustments: ParkedLotAdjustment[];
+      /** For dividend-stamp lookups on carried (cross-position) ROC rows. */
+      allLots: ParkedLot[];
+      shares: number;
+      pricePerShare: number;
+      date: string;
+      fundedChallenge: boolean;
+      notes?: string | null;
+    }) => {
+      const client = db();
+      const { position: p, lots: positionLots, adjustments: positionAdjustments } = args;
+      let costBasis: number | null = null;
+      let ltShares: number | null = null;
+      let snapshot: ParkedSaleSnapshot | null = null;
+      if (positionLots.length > 0) {
+        // Consume lots oldest-first so remaining basis and unlock clocks stay
+        // honest — and so the sale record carries the real basis and LT split.
+        const preview = trimPreview(
+          positionLots, args.shares, args.pricePerShare, args.date, positionAdjustments,
+        );
+        // ROC-adjusted basis — what the sale is actually taxed against.
+        costBasis = roundCents(preview.adjustedCostBasis);
+        // Undated shares count as LT, matching estimatedPileTax's documented
+        // assumption (and the TrimModal estimate).
+        ltShares = preview.ltShares + preview.unknownShares;
+        const consumption = consumeLotsFifo(positionLots, args.shares, positionAdjustments);
+        const { updates, deletes, adjustmentUpdates } = consumption;
+        // DRIP dividend lots double as income records. Selling their
+        // reinvested shares is right (the basis went into the sale), but the
+        // dividend still happened — keep the lot at zero shares so trailing
+        // income and the YTD tax estimate don't shrink retroactively.
+        // (Account-cash math tells sold-DRIP relics from cash dividends by
+        // price: cash dividends have none.)
+        const lotSourceById = new Map(positionLots.map((l) => [l.id, l.source]));
+        const dripDeletes = deletes.filter((id) => lotSourceById.get(id) === 'dividend');
+        const hardDeletes = deletes.filter((id) => lotSourceById.get(id) !== 'dividend');
+        const stampLookup = new Map(args.allLots.map((l) => [l.id, l.rocAllocatedAt ?? null]));
+        snapshot = buildSaleSnapshot(
+          p, positionLots, positionAdjustments, consumption, dripDeletes,
+          (id) => stampLookup.get(id),
+        );
+        for (const u of updates) {
+          const { error: err } = await client
+            .from('parked_lots').update({ shares: u.shares, amount: u.amount }).eq('id', u.id);
+          if (err) throw err;
+        }
+        for (const a of adjustmentUpdates) {
+          const { error: err } = await client
+            .from('parked_lot_adjustments').update({ amount: a.amount }).eq('id', a.id);
+          if (err) throw err;
+        }
+        for (const id of dripDeletes) {
+          const { error: err } = await client
+            .from('parked_lots').update({ shares: 0 }).eq('id', id);
+          if (err) throw err;
+        }
+        if (hardDeletes.length > 0) {
+          const { error: err } = await client.from('parked_lots').delete().in('id', hardDeletes);
+          if (err) throw err;
+        }
+        await recomputeParkedAggregate(p.id);
+      } else {
+        // No lot history (legacy) — adjust the aggregate directly; no
+        // snapshot is possible, so the sale stays field-edit-only.
+        const remaining = p.shares - args.shares;
+        if (remaining > 1e-9) {
+          const { error: err } = await client
+            .from('parked_positions').update({ shares: remaining }).eq('id', p.id);
+          if (err) throw err;
+        } else {
+          const { error: err } = await client.from('parked_positions').delete().eq('id', p.id);
+          if (err) throw err;
+        }
+      }
+
+      const { error: saleErr } = await client.from('parked_sales').insert(
+        parkedSalePayload({
+          ticker: p.ticker,
+          accountId: p.accountId,
+          date: args.date,
+          shares: args.shares,
+          pricePerShare: args.pricePerShare,
+          proceeds: roundCents(args.shares * args.pricePerShare),
+          costBasis,
+          ltShares,
+          fundedChallenge: args.fundedChallenge,
+          consumed: snapshot,
+          notes: args.notes ?? null,
+        }),
+      );
+      if (saleErr) throw saleErr;
+    },
+    [recomputeParkedAggregate],
+  );
+
   const recordTrim = useCallback(
     async ({
       parkedId, shares, pricePerShare, date, depositVooPrice,
@@ -1125,79 +1230,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (shares > p.shares + 1e-9) {
         throw new Error(`Only ${p.shares} shares parked; cannot trim ${shares}`);
       }
-
-      // Consume lots oldest-first so remaining basis and unlock clocks stay
-      // honest — and so the sale record carries the real basis and LT split.
       const positionLots = state.parkedLots.filter((l) => l.parkedPositionId === parkedId);
-      const positionAdjustments = adjustmentsForLots(positionLots, state.parkedLotAdjustments);
-      let costBasis: number | null = null;
-      let ltShares: number | null = null;
-      if (positionLots.length > 0) {
-        const preview = trimPreview(positionLots, shares, pricePerShare, date, positionAdjustments);
-        // ROC-adjusted basis — what the sale is actually taxed against.
-        costBasis = roundCents(preview.adjustedCostBasis);
-        // Undated shares count as LT, matching estimatedPileTax's documented
-        // assumption (and the TrimModal estimate).
-        ltShares = preview.ltShares + preview.unknownShares;
-        const { updates, deletes, adjustmentUpdates } = consumeLotsFifo(
-          positionLots, shares, positionAdjustments,
-        );
-        for (const u of updates) {
-          const { error: err } = await client
-            .from('parked_lots').update({ shares: u.shares, amount: u.amount }).eq('id', u.id);
-          if (err) throw err;
-        }
-        for (const a of adjustmentUpdates) {
-          const { error: err } = await client
-            .from('parked_lot_adjustments').update({ amount: a.amount }).eq('id', a.id);
-          if (err) throw err;
-        }
-        // DRIP dividend lots double as income records. Selling their
-        // reinvested shares is right (the basis went into the sale), but the
-        // dividend still happened — keep the lot at zero shares so trailing
-        // income and the YTD tax estimate don't shrink retroactively.
-        // (Account-cash math tells sold-DRIP relics from cash dividends by
-        // price: cash dividends have none.)
-        const lotSourceById = new Map(positionLots.map((l) => [l.id, l.source]));
-        const dripDeletes = deletes.filter((id) => lotSourceById.get(id) === 'dividend');
-        const hardDeletes = deletes.filter((id) => lotSourceById.get(id) !== 'dividend');
-        for (const id of dripDeletes) {
-          const { error: err } = await client
-            .from('parked_lots').update({ shares: 0 }).eq('id', id);
-          if (err) throw err;
-        }
-        if (hardDeletes.length > 0) {
-          const { error: err } = await client.from('parked_lots').delete().in('id', hardDeletes);
-          if (err) throw err;
-        }
-        await recomputeParkedAggregate(parkedId);
-      } else {
-        // No lot history (shouldn't happen post-migration) — adjust the aggregate directly.
-        const remaining = p.shares - shares;
-        if (remaining > 1e-9) {
-          const { error: err } = await client
-            .from('parked_positions').update({ shares: remaining }).eq('id', p.id);
-          if (err) throw err;
-        } else {
-          const { error: err } = await client.from('parked_positions').delete().eq('id', p.id);
-          if (err) throw err;
-        }
-      }
-
-      const { error: saleErr } = await client.from('parked_sales').insert(
-        parkedSalePayload({
-          ticker: p.ticker,
-          accountId: p.accountId,
-          date,
-          shares,
-          pricePerShare,
-          proceeds: roundCents(shares * pricePerShare),
-          costBasis,
-          ltShares,
-          fundedChallenge: Boolean(depositVooPrice),
-        }),
-      );
-      if (saleErr) throw saleErr;
+      await trimCore({
+        position: p,
+        lots: positionLots,
+        adjustments: adjustmentsForLots(positionLots, state.parkedLotAdjustments),
+        allLots: state.parkedLots,
+        shares,
+        pricePerShare,
+        date,
+        fundedChallenge: Boolean(depositVooPrice),
+      });
 
       if (depositVooPrice) {
         const amount = roundCents(shares * pricePerShare);
@@ -1218,7 +1261,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
       await refresh();
     },
-    [refresh, state.parked, state.parkedLots, state.parkedLotAdjustments, recomputeParkedAggregate],
+    [refresh, state.parked, state.parkedLots, state.parkedLotAdjustments, trimCore],
   );
 
   const exampleData = useMemo(() => {
