@@ -96,6 +96,18 @@ Reference implementation: `Challenge_Account_Tracker.xlsx` in this repo — the 
 - Derived: longTermDate = buyDate + 366; ltStatus = "FUNDING UNLOCKED" when today ≥ longTermDate, else countdown
 - Concentration: Semi/AI % of pile; Semi/AI + AI-adjacent %; target cap (default 50%, editable); status "OVER CAP — trim semis first" when exceeded
 - Seed data lives in the reference workbook's Parked Pile tab (MU, AMAT, AMKR, ASML, SOXX, NBIS, AMD, AVGO, GOOGL, GLW, MSTR, plus NVDA/TSLA arriving from a Stash ACATS transfer). MSTR is a conviction hold, category BTC, never trim fuel.
+- Manual income estimate for projections: dividendRate (annual $ per share) + dividendFrequency (monthly/quarterly/semiannual/annual), both nullable.
+
+### Dividend income (context only — the wall holds)
+Added 2026-08-11 as Phase 1 of the parked pile growing into a full tracking system (owner direction: dividends first; ROC basis machinery and a retirement-transition modeler come as later phases).
+
+- Dividends are lots. A dividend is a `parked_lots` row with source `dividend`: cash = shares 0 + amount; DRIP = shares > 0 + reinvest price + amount (basis, own 366-day clock). No separate dividends table.
+- **Classification** per dividend lot: enum [qualified, ordinary, return_of_capital, capital_gain_dist, unclassified]. `unclassified` is the default and the backfill value for pre-existing dividends — visibly flagged (amber), estimated at the qualified rate until confirmed. A payment that splits across classifications is multiple dividend lots on the same date. Optional `ex_date`; `reclassified_at` records post-1099 corrections (edit via the Income screen's reclassify action).
+- **Return of capital, Phase 1 rule:** estimated tax 0%, NO basis adjustment yet. Cumulative ROC per holding is display-only. Lot-level basis reduction (by shares, not dollars) is a later phase.
+- **Projections** (pure engine, `parkedIncome.ts`): per holding, next-12-months income prefers trailing actuals (≥2 dated payments in the last 12 months → cadence from median gap, amount from recent mean, schedule anchored to the last real pay date); falls back to the manual dividendRate × shares at dividendFrequency; excluded with neither. Null-dated dividend lots are excluded from all time windows (they still count in lifetime and ROC totals).
+- **Tax estimates are informational only** and use `app_settings` rates: `qualified_dividend_tax_rate` (0.15), `ordinary_dividend_tax_rate` (0.24), plus `lt_tax_rate` (0.21) / `st_tax_rate` (0.29) which now drive the pile sale estimates. Editable via the Tax Reserve screen's "Estimate rates" modal. None of this touches the challenge account's 30% reserve rule.
+- **The wall, restated:** parked dividends never touch Total Score, milestone progress, YTD realized, or the tax skim. Enforced structurally — `totalScore(lots, prices, events, milestones)` has no parameter that can carry parked data — and documented by a guard test in the engine suite.
+- Known limitation (pre-existing): fully transferring or trimming a position to zero shares deletes it, and the cascade removes its dividend history, shrinking trailing income retroactively. Accepted for now; a fix touches trim/transfer semantics.
 
 ## Screens
 
@@ -108,6 +120,7 @@ Reference implementation: `Challenge_Account_Tracker.xlsx` in this repo — the 
 7. **Benchmark.** Shadow purchases list, VOO price today input, lead display, rolling-12-month verdict once a year of data exists.
 8. **Parked Pile.** Foundation table with funding-unlock countdowns, concentration watch, trim ranks.
 9. **Rules.** Static page with the full rules text (copy from the workbook's Rules tab). Show a link to it after any milestone banking event and after any closed trade with |gain| > 25%.
+10. **Income** (added 2026-08-11). The pile's dividend engine: trailing-12M / projected-12M / est.-tax-YTD / yield-on-cost stat cards, a 24-month bar chart (12 actual + 12 projected), per-holding income table with rate-source badge and set-rate affordance, and the sortable distribution history with reclassify/delete actions. All figures parked-pile context — nothing here enters score math.
 
 ## Calculations to port exactly
 
