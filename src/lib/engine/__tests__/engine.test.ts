@@ -931,6 +931,204 @@ describe('parked sale restore — snapshot, converging undo plan', () => {
   });
 });
 
+describe('transition — scenario projection', () => {
+  const TODAY = '2026-08-14';
+  const SETTINGS = {
+    dividend: { qualified: 0.15, ordinary: 0.24, capitalGainDist: 0.21 },
+    lt: 0.21,
+    st: 0.29,
+  };
+  const pos = (over: Partial<ParkedPosition> = {}): ParkedPosition => ({
+    id: 'A', ticker: 'GRW', accountId: 'a1', account: 'Acct', category: 'Other',
+    shares: 100, avgCost: 50, currentPrice: 100,
+    dividendRate: 1, dividendFrequency: 'quarterly', ...over,
+  });
+  const lot = (id: string, positionId: string, date: string | null, shares: number, amount: number): ParkedLot => ({
+    id, parkedPositionId: positionId, date, source: 'purchase', shares, price: null, amount,
+  });
+  const scen = (over: Partial<import('../transition').IncomeScenario> = {}): import('../transition').IncomeScenario => ({
+    id: 's1', name: 'Base', isActive: true, ...over,
+  });
+  const rot = (over: Partial<import('../transition').ScenarioRotation> = {}): import('../transition').ScenarioRotation => ({
+    id: 'r1', scenarioId: 's1', sellHoldingId: 'A', sellPct: 0.5, rotationDate: '2029-03-15',
+    buySymbol: 'SCHD', buyYieldPct: 0.07, buyDividendGrowthPct: 0,
+    buyClassificationMix: { qualified: 100 }, ...over,
+  });
+
+  it('horizon: max(targetYear+5, Y0+10), inclusive rows', async () => {
+    const { projectScenario } = await import('../transition');
+    const base = { rotations: [], positions: [], lots: [], adjustments: [], today: TODAY, settings: SETTINGS };
+    expect(projectScenario({ scenario: scen({ targetYear: 2030 }), ...base }).horizon).toEqual({ startYear: 2026, endYear: 2036 });
+    expect(projectScenario({ scenario: scen({ targetYear: 2040 }), ...base }).horizon.endYear).toBe(2045);
+    expect(projectScenario({ scenario: scen(), ...base }).years).toHaveLength(11);
+  });
+
+  it('baseline growth compounds; excluded holdings contribute zero and are listed', async () => {
+    const { projectScenario } = await import('../transition');
+    const dead = pos({ id: 'B', ticker: 'DEAD', dividendRate: null, dividendFrequency: null });
+    const r = projectScenario({
+      scenario: scen(), rotations: [],
+      positions: [pos({ dividendGrowthPct: 0.05 }), dead],
+      lots: [], adjustments: [], today: TODAY, settings: SETTINGS,
+    });
+    // $1/sh × 100 sh = $100/yr, growing 5%; manual → unclassified → qualified rate.
+    expect(r.years[0].grossIncome).toBeCloseTo(100, 9);
+    expect(r.years[2].grossIncome).toBeCloseTo(100 * 1.05 ** 2, 9);
+    expect(r.years[0].afterTaxIncome).toBeCloseTo(85, 9);
+    expect(r.excludedPositionIds).toEqual(['B']);
+    expect(r.holdingLabels['pos:A']).toBe('GRW');
+  });
+
+  it('rotation proration: month-after effect on both sides, exact 0.625 weight', async () => {
+    const { projectScenario } = await import('../transition');
+    const r = projectScenario({
+      scenario: scen(), rotations: [rot()],
+      positions: [pos()], lots: [lot('l1', 'A', '2025-01-01', 100, 5000)],
+      adjustments: [], today: TODAY, settings: SETTINGS,
+    });
+    const y2029 = r.years.find((y) => y.year === 2029)!;
+    const y2030 = r.years.find((y) => y.year === 2030)!;
+    // Sell 50 sh @ $100 = $5000; basis $2500; LT gain $2500 → tax $525 → net $4475.
+    expect(r.rotationPreviews[0]).toMatchObject({
+      sellShares: 50, grossProceeds: 5000, gain: 2500, capitalGainsTax: 525, netProceeds: 4475,
+      warnings: [],
+    });
+    // Holding kept 100% for Jan–Mar, 50% after → (3 + 9×0.5)/12 = 0.625.
+    expect(y2029.byHoldingGross['pos:A']).toBeCloseTo(100 * 0.625, 9);
+    // Buy: 4475 × 7% = 313.25/yr; 2029 gets 9/12 of it, 2030 the full year.
+    expect(y2029.byHoldingGross['buy:SCHD']).toBeCloseTo(313.25 * 0.75, 9);
+    expect(y2030.byHoldingGross['buy:SCHD']).toBeCloseTo(313.25, 9);
+    expect(y2030.byHoldingGross['pos:A']).toBeCloseTo(50, 9);
+  });
+
+  it('haircut rates: scenario capital-gain override on LT, settings st on ST, loss untaxed', async () => {
+    const { projectScenario } = await import('../transition');
+    const ltOverride = projectScenario({
+      scenario: scen({ capitalGainRate: 0.1 }), rotations: [rot()],
+      positions: [pos()], lots: [lot('l1', 'A', '2025-01-01', 100, 5000)],
+      adjustments: [], today: TODAY, settings: SETTINGS,
+    });
+    expect(ltOverride.rotationPreviews[0].capitalGainsTax).toBeCloseTo(250, 9); // 2500 × 10%
+    const st = projectScenario({
+      scenario: scen({ capitalGainRate: 0.1 }), rotations: [rot()],
+      positions: [pos()], lots: [lot('l1', 'A', '2029-01-01', 100, 5000)], // bought weeks before
+      adjustments: [], today: TODAY, settings: SETTINGS,
+    });
+    expect(st.rotationPreviews[0].capitalGainsTax).toBeCloseTo(2500 * 0.29, 9); // ST at settings st
+    expect(st.rotationPreviews[0].warnings).toContain('short_term');
+    const loss = projectScenario({
+      scenario: scen(), rotations: [rot()],
+      positions: [pos({ currentPrice: 40 })], lots: [lot('l1', 'A', '2025-01-01', 100, 5000)],
+      adjustments: [], today: TODAY, settings: SETTINGS,
+    });
+    expect(loss.rotationPreviews[0].capitalGainsTax).toBe(0);
+    expect(loss.rotationPreviews[0].netProceeds).toBeCloseTo(2000, 9);
+  });
+
+  it('oversell clamps; the second rotation sees basis the first already consumed', async () => {
+    const { projectScenario } = await import('../transition');
+    const r = projectScenario({
+      scenario: scen(),
+      rotations: [
+        rot({ id: 'r1', sellPct: 0.6, rotationDate: '2028-01-10' }),
+        rot({ id: 'r2', sellPct: 0.6, rotationDate: '2029-01-10' }),
+      ],
+      positions: [pos()], lots: [lot('l1', 'A', '2025-01-01', 100, 5000)],
+      adjustments: [], today: TODAY, settings: SETTINGS,
+    });
+    const [first, second] = r.rotationPreviews;
+    expect(first.sellShares).toBe(60);
+    expect(first.gain).toBeCloseTo(6000 - 3000, 9);
+    expect(second.sellShares).toBeCloseTo(40, 9); // clamped from 60
+    expect(second.warnings).toContain('oversell_clamped');
+    expect(second.gain).toBeCloseTo(4000 - 2000, 9); // remaining basis, not fresh
+  });
+
+  it('cash rotation: no tax, prorated first year', async () => {
+    const { projectScenario } = await import('../transition');
+    const r = projectScenario({
+      scenario: scen(),
+      rotations: [rot({ sellHoldingId: null, sellPct: null, cashAmount: 10000, buyYieldPct: 0.05, rotationDate: '2027-06-01' })],
+      positions: [], lots: [], adjustments: [], today: TODAY, settings: SETTINGS,
+    });
+    expect(r.rotationPreviews[0]).toMatchObject({ capitalGainsTax: 0, netProceeds: 10000 });
+    const y2027 = r.years.find((y) => y.year === 2027)!;
+    expect(y2027.byHoldingGross['buy:SCHD']).toBeCloseTo(500 * 0.5, 9); // live Jul–Dec
+  });
+
+  it('classification mix: ROC untaxed, cumulative ROC tracked, same-symbol rotations merge', async () => {
+    const { projectScenario } = await import('../transition');
+    const mix = { ordinary: 40, return_of_capital: 60 };
+    const r = projectScenario({
+      scenario: scen(),
+      rotations: [
+        rot({ id: 'r1', sellHoldingId: null, sellPct: null, cashAmount: 1000, buySymbol: 'jepi', buyYieldPct: 0.1, buyClassificationMix: mix, rotationDate: '2026-12-20' }),
+        rot({ id: 'r2', sellHoldingId: null, sellPct: null, cashAmount: 2000, buySymbol: 'JEPI', buyYieldPct: 0.1, buyClassificationMix: mix, rotationDate: '2026-12-20' }),
+      ],
+      positions: [], lots: [], adjustments: [], today: TODAY, settings: SETTINGS,
+    });
+    expect(r.netProceedsBySymbol.JEPI).toBe(3000);
+    const y2027 = r.years.find((y) => y.year === 2027)!;
+    expect(y2027.byHoldingGross['buy:JEPI']).toBeCloseTo(300, 9);
+    // atf = 0.4×(1−0.24) + 0.6×1 = 0.904.
+    expect(y2027.byHoldingAfterTax['buy:JEPI']).toBeCloseTo(300 * 0.904, 9);
+    // December rotation → zero income in 2026; ROC accrues only on paid years.
+    expect(r.years[0].byHoldingGross['buy:JEPI']).toBeUndefined();
+    expect(r.rocCumulativeBySymbol.JEPI).toBeCloseTo(
+      r.years.reduce((s, y) => s + (y.byHoldingGross['buy:JEPI'] ?? 0), 0) * 0.6, 6,
+    );
+  });
+
+  it('target-reached uses AFTER-TAX income', async () => {
+    const { projectScenario } = await import('../transition');
+    const r = projectScenario({
+      scenario: scen({ targetAnnualIncome: 100 }),
+      rotations: [],
+      positions: [pos({ dividendRate: 1.1, dividendGrowthPct: 0.05 })], // gross 110 in Y0
+      lots: [], adjustments: [], today: TODAY, settings: SETTINGS,
+    });
+    // Gross crosses 100 immediately, but after-tax (×0.85) needs two growth years.
+    expect(r.years[0].afterTaxIncome).toBeCloseTo(93.5, 9);
+    expect(r.targetReachedYear).toBe(2028);
+  });
+
+  it('per-scenario dividend rates override; resolveScenarioRates falls back per field', async () => {
+    const { projectScenario, resolveScenarioRates } = await import('../transition');
+    const r = projectScenario({
+      scenario: scen({ qualifiedRate: 0.05 }),
+      rotations: [], positions: [pos()], lots: [], adjustments: [], today: TODAY, settings: SETTINGS,
+    });
+    expect(r.years[0].afterTaxIncome).toBeCloseTo(95, 9); // 100 × (1 − 0.05)
+    const rates = resolveScenarioRates(scen({ capitalGainRate: 0.12 }), SETTINGS);
+    expect(rates.capGainLt).toBe(0.12);
+    expect(rates.dividend.capitalGainDist).toBe(0.12); // follows the override
+    expect(rates.dividend.qualified).toBe(0.15);       // falls back
+    expect(rates.capGainSt).toBe(0.29);                // never overridden
+  });
+
+  it('legacy no-lots position: avgCost basis, LT assumption, no_lots warning', async () => {
+    const { projectScenario } = await import('../transition');
+    const r = projectScenario({
+      scenario: scen(), rotations: [rot({ sellShares: 10, sellPct: null })],
+      positions: [pos({ shares: 10 })], lots: [], adjustments: [], today: TODAY, settings: SETTINGS,
+    });
+    const p = r.rotationPreviews[0];
+    expect(p.warnings).toContain('no_lots');
+    expect(p.gain).toBeCloseTo(10 * 100 - 10 * 50, 9);
+    expect(p.capitalGainsTax).toBeCloseTo(500 * 0.21, 9);
+  });
+
+  it('missing or archived holding: skipped with holding_missing', async () => {
+    const { projectScenario } = await import('../transition');
+    const r = projectScenario({
+      scenario: scen(), rotations: [rot({ sellHoldingId: 'GONE' })],
+      positions: [pos()], lots: [], adjustments: [], today: TODAY, settings: SETTINGS,
+    });
+    expect(r.rotationPreviews[0].warnings).toContain('holding_missing');
+    expect(r.rotationPreviews[0].netProceeds).toBe(0);
+  });
+});
+
 describe('the wall — parked dividends cannot reach the score', () => {
   it('totalScore has no parameter through which parked data can enter', async () => {
     const { totalScore } = await import('../score');
