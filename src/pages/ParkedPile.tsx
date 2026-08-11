@@ -23,6 +23,7 @@ import { ConfirmModal } from '../components/ui/ConfirmModal';
 import {
   cn, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls, secondaryBtnCls, todayISO,
 } from '../lib/utils';
+import { useNotional } from '../lib/useNotional';
 
 /** Short pill labels for dividend tax character; unclassified reads as a
  * warning (amber) until the owner confirms what the broker actually paid. */
@@ -747,8 +748,11 @@ function EditSaleModal({ sale: s, onClose }: { sale: ParkedSale; onClose: () => 
   // truly editable. Legacy (pre-snapshot) sales can only correct the record.
   const snapshotMode = Boolean(s.consumed);
   const [date, setDate] = useState(s.date);
-  const [shares, setShares] = useState(String(s.shares));
-  const [price, setPrice] = useState(String(s.pricePerShare));
+  const { shares, price, total, setShares, setPrice, setTotal } = useNotional({
+    shares: String(s.shares),
+    price: String(s.pricePerShare),
+    total: String(s.proceeds), // the stored dollars, not the rounded product
+  });
   const [basis, setBasis] = useState(s.costBasis != null ? String(s.costBasis) : '');
   const [ltShares, setLtShares] = useState(s.ltShares != null ? String(s.ltShares) : '');
   const [funded, setFunded] = useState(s.fundedChallenge);
@@ -821,7 +825,7 @@ function EditSaleModal({ sale: s, onClose }: { sale: ParkedSale; onClose: () => 
       <form onSubmit={submit} className="space-y-3">
         {snapshotMode ? (
           <>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={labelCls}>Date</label>
                 <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
@@ -835,6 +839,12 @@ function EditSaleModal({ sale: s, onClose }: { sale: ParkedSale; onClose: () => 
                 <label className={labelCls}>Price ($)</label>
                 <input type="number" step="any" min="0" required value={price}
                   onChange={(e) => setPrice(e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>Total proceeds ($)</label>
+                <input type="number" step="any" min="0" value={total}
+                  onChange={(e) => setTotal(e.target.value)} className={inputCls}
+                  title="Enter the broker's filled notional and the price derives — no rounding drift." />
               </div>
             </div>
             <p className="text-xs text-gray-400">
@@ -903,8 +913,7 @@ function AddHoldingModal({ onClose }: { onClose: () => void }) {
   const [accountId, setAccountId] = useState(outside[0]?.id ?? '');
   const [category, setCategory] = useState<ParkedPosition['category']>('Semi/AI');
   const [date, setDate] = useState('');
-  const [shares, setShares] = useState('');
-  const [price, setPrice] = useState('');
+  const { shares, price, total, setShares, setPrice, setTotal } = useNotional();
   const [notes, setNotes] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -990,7 +999,7 @@ function AddHoldingModal({ onClose }: { onClose: () => void }) {
         )}
         <AccountSelect accounts={accounts} value={accountId} onChange={setAccountId}
           label="Account" kinds={['outside']} allowNone={false} />
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <div>
             <label className={labelCls}>Shares</label>
             <input type="number" step="any" min="0.00000001" required value={shares}
@@ -1000,6 +1009,12 @@ function AddHoldingModal({ onClose }: { onClose: () => void }) {
             <label className={labelCls}>Cost per share ($)</label>
             <input type="number" step="any" min="0" required value={price}
               onChange={(e) => setPrice(e.target.value)} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Total cost ($)</label>
+            <input type="number" step="any" min="0" value={total}
+              onChange={(e) => setTotal(e.target.value)} className={inputCls}
+              title="Enter the broker's filled notional and the per-share price derives — no rounding drift." />
           </div>
         </div>
         <div>
@@ -1120,6 +1135,33 @@ function LotPanel({ position: p, summary }: { position: ParkedPosition; summary:
   // Dividends accept either entry: dollars (amount) or shares — whichever was
   // typed last drives, the other computes from the reinvest price.
   const [divDriver, setDivDriver] = useState<'amount' | 'shares'>('amount');
+  // Purchases accept price or total — enter the broker's notional and the
+  // per-share price derives at full precision (no rounding drift).
+  const [purTotal, setPurTotal] = useState('');
+  const [purDriver, setPurDriver] = useState<'price' | 'total'>('price');
+  const purSyncPrice = (pr: string) => {
+    setPrice(pr);
+    setPurDriver('price');
+    const p = Number(pr); const s = Number(shares);
+    if (p > 0 && s > 0) setPurTotal(String(roundCents(s * p)));
+  };
+  const purSyncTotal = (t: string) => {
+    setPurTotal(t);
+    setPurDriver('total');
+    const tot = Number(t); const s = Number(shares);
+    if (tot > 0 && s > 0) setPrice(String(tot / s));
+  };
+  const purSyncShares = (sh: string) => {
+    setShares(sh);
+    const s = Number(sh);
+    if (purDriver === 'price') {
+      const p = Number(price);
+      if (p > 0 && s > 0) setPurTotal(String(roundCents(s * p)));
+    } else {
+      const t = Number(purTotal);
+      if (t > 0 && s > 0) setPrice(String(t / s));
+    }
+  };
 
   const syncFromAmount = (amt: string, pr: string) => {
     setAmount(amt);
@@ -1149,6 +1191,8 @@ function LotPanel({ position: p, summary }: { position: ParkedPosition; summary:
     setShares('');
     setAmount('');
     setPrice(m === 'dividend' && effectivePrice ? String(effectivePrice) : '');
+    setPurTotal('');
+    setPurDriver('price');
     setClassification('unclassified');
     setExDate('');
     setFormError(null);
@@ -1269,7 +1313,7 @@ function LotPanel({ position: p, summary }: { position: ParkedPosition; summary:
               {mode === 'purchase' ? 'Past purchase' : 'Dividend'}
             </p>
             {mode === 'purchase' ? (
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={labelCls}>Date</label>
                   <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
@@ -1277,12 +1321,18 @@ function LotPanel({ position: p, summary }: { position: ParkedPosition; summary:
                 <div>
                   <label className={labelCls}>Shares</label>
                   <input type="number" step="any" min="0.00000001" required value={shares}
-                    onChange={(e) => setShares(e.target.value)} className={inputCls} />
+                    onChange={(e) => purSyncShares(e.target.value)} className={inputCls} />
                 </div>
                 <div>
                   <label className={labelCls}>Price ($)</label>
                   <input type="number" step="any" min="0" required value={price}
-                    onChange={(e) => setPrice(e.target.value)} className={inputCls} />
+                    onChange={(e) => purSyncPrice(e.target.value)} className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Total ($)</label>
+                  <input type="number" step="any" min="0" value={purTotal}
+                    onChange={(e) => purSyncTotal(e.target.value)} className={inputCls}
+                    title="Enter the broker's total and the price derives — no rounding drift." />
                 </div>
               </div>
             ) : (
@@ -1438,8 +1488,9 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
   const {
     recordTrim, cashEvents, contributionCap, parkedLots, parkedLotAdjustments, ltTaxRate, stTaxRate,
   } = useData();
-  const [shares, setShares] = useState('');
-  const [price, setPrice] = useState(p.currentPrice ? String(p.currentPrice) : '');
+  const { shares, price, total, setShares, setPrice, setTotal } = useNotional({
+    price: p.currentPrice ? String(p.currentPrice) : '',
+  });
   const [date, setDate] = useState(todayISO());
   // The pile stands on its own: selling does NOT presume funding the challenge.
   const [fund, setFund] = useState(false);
@@ -1531,7 +1582,7 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
           </p>
         )}
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <div>
             <label className={labelCls}>Shares (of {p.shares})</label>
             <input type="number" step="any" min="0.00000001" required value={shares}
@@ -1539,12 +1590,18 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
           </div>
           <div>
             <label className={labelCls}>Price / share ($)</label>
-            <input type="number" step="0.01" min="0.01" required value={price}
+            <input type="number" step="any" min="0.00000001" required value={price}
               onChange={(e) => setPrice(e.target.value)} className={inputCls} />
           </div>
           <div>
             <label className={labelCls}>Date</label>
             <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Total proceeds ($)</label>
+            <input type="number" step="any" min="0" value={total}
+              onChange={(e) => setTotal(e.target.value)} className={inputCls}
+              title="Enter the broker's filled notional (net of fees) and the price derives — no rounding drift." />
           </div>
         </div>
 

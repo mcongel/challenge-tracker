@@ -14,6 +14,7 @@ import {
 import {
   cn, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls, secondaryBtnCls, todayISO,
 } from '../lib/utils';
+import { useNotional } from '../lib/useNotional';
 
 export function Positions() {
   const data = useData();
@@ -176,8 +177,7 @@ function AddPositionModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
   ];
   const [ticker, setTicker] = useState('');
   const [buyDate, setBuyDate] = useState(todayISO());
-  const [shares, setShares] = useState('');
-  const [avgCost, setAvgCost] = useState('');
+  const { shares, price: avgCost, total, setShares, setPrice, setTotal, reset } = useNotional();
   const [exitTarget, setExitTarget] = useState('');
   const [thesis, setThesis] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
@@ -218,7 +218,7 @@ function AddPositionModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
         bailPoint: null,
         thesis: thesis || null,
       });
-      setTicker(''); setShares(''); setAvgCost(''); setExitTarget(''); setThesis('');
+      setTicker(''); reset(); setExitTarget(''); setThesis('');
       onClose();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : String(err));
@@ -252,7 +252,7 @@ function AddPositionModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <div>
             <label className={labelCls}>Shares</label>
             <input type="number" step="any" min="0.00000001" required value={shares}
@@ -260,8 +260,14 @@ function AddPositionModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
           </div>
           <div>
             <label className={labelCls}>Avg cost ($)</label>
-            <input type="number" step="0.01" min="0" required value={avgCost}
-              onChange={(e) => setAvgCost(e.target.value)} className={inputCls} />
+            <input type="number" step="any" min="0" required value={avgCost}
+              onChange={(e) => setPrice(e.target.value)} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Total cost ($)</label>
+            <input type="number" step="any" min="0" value={total}
+              onChange={(e) => setTotal(e.target.value)} className={inputCls}
+              title="Enter the broker's filled notional and the per-share price derives — no rounding drift." />
           </div>
         </div>
         <div>
@@ -308,8 +314,9 @@ function ClosePositionModal({ ticker, onClose }: { ticker: string; onClose: () =
     .sort((a, b) => a.buyDate.localeCompare(b.buyDate));
   const totalShares = tickerLots.reduce((s, l) => s + l.shares, 0);
 
-  const [shares, setShares] = useState(String(totalShares));
-  const [price, setPrice] = useState('');
+  const { shares, price, total, setShares, setPrice, setTotal } = useNotional({
+    shares: String(totalShares),
+  });
   const [closeDate, setCloseDate] = useState(todayISO());
   const [customize, setCustomize] = useState(false);
   const [allocs, setAllocs] = useState<Record<string, string>>({});
@@ -370,20 +377,26 @@ function ClosePositionModal({ ticker, onClose }: { ticker: string; onClose: () =
   return (
     <Modal isOpen onClose={onClose} title={`Close ${ticker}`}>
       <form onSubmit={submit} className="space-y-3">
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <div>
             <label className={labelCls}>Shares (of {totalShares})</label>
             <input type="number" step="any" min="0.00000001" required value={shares}
               onChange={(e) => setShares(e.target.value)} className={inputCls} />
           </div>
           <div>
+            <label className={labelCls}>Close date</label>
+            <input type="date" required value={closeDate} onChange={(e) => setCloseDate(e.target.value)} className={inputCls} />
+          </div>
+          <div>
             <label className={labelCls}>Price / share ($)</label>
-            <input type="number" step="0.01" min="0.01" required value={price}
+            <input type="number" step="any" min="0.00000001" required value={price}
               onChange={(e) => setPrice(e.target.value)} className={inputCls} />
           </div>
           <div>
-            <label className={labelCls}>Close date</label>
-            <input type="date" required value={closeDate} onChange={(e) => setCloseDate(e.target.value)} className={inputCls} />
+            <label className={labelCls}>Total proceeds ($)</label>
+            <input type="number" step="any" min="0" value={total}
+              onChange={(e) => setTotal(e.target.value)} className={inputCls}
+              title="Enter the broker's filled notional (net of fees) and the price derives — no rounding drift." />
           </div>
         </div>
 
