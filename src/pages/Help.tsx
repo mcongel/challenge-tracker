@@ -194,11 +194,22 @@ export function Help() {
             you paid, and a lot at zero basis is flagged "basis 0."
           </li>
           <li>
-            <strong className="text-gray-900">Trim</strong> (scissors icon on a row) does the whole
+            <strong className="text-gray-900">Buy</strong> (toolbar) records a purchase — a new
+            holding, or a new dated lot when the ticker is already held in that account.
+          </li>
+          <li>
+            <strong className="text-gray-900">Sell</strong> (scissors icon on a row) does the whole
             thing in one form: shrinks the position, logs the sale in the wash-sale radar, and —
             if you check "deposit the proceeds" — writes the Deposit and its shadow VOO twin. It
-            warns before unlock and refuses to blow the contribution cap. A full trim (or transfer
+            warns before unlock and refuses to blow the contribution cap. A full sale (or transfer
             away) closes the position but keeps its dividend history on the Income screen.
+          </li>
+          <li>
+            <strong className="text-gray-900">Sales are undoable and editable.</strong> Every sale
+            records exactly which lots it consumed — the undo arrow in the sale history brings
+            lots, basis, and ROC adjustments back precisely, and editing a sale's numbers
+            re-derives everything. Undo newest-first per holding. Undo never touches the challenge
+            ledger: if the sale funded a Deposit, fix the Cash Ledger yourself.
           </li>
           <li>
             <strong className="text-gray-900">Concentration watch</strong>: Semi/AI past the 50%
