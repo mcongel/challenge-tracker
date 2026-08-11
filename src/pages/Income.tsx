@@ -576,6 +576,9 @@ function RateModal({ position: p, onClose }: { position: ParkedPosition; onClose
   const { updateParked } = useData();
   const [rate, setRate] = useState(p.dividendRate != null ? String(p.dividendRate) : '');
   const [frequency, setFrequency] = useState<DividendFrequency>(p.dividendFrequency ?? 'quarterly');
+  const [growth, setGrowth] = useState(
+    p.dividendGrowthPct != null ? String(Math.round(p.dividendGrowthPct * 10000) / 100) : '',
+  );
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -583,9 +586,17 @@ function RateModal({ position: p, onClose }: { position: ParkedPosition; onClose
     e.preventDefault();
     const r = rate === '' ? null : Number(rate);
     if (r != null && (Number.isNaN(r) || r < 0)) return setFormError('Rate is annual dollars per share, ≥ 0.');
+    const g = growth === '' ? null : Number(growth) / 100;
+    if (g != null && (Number.isNaN(g) || g <= -1 || g >= 1)) {
+      return setFormError('Growth is an annual percentage between -99 and 99.');
+    }
     setBusy(true);
     try {
-      await updateParked(p.id, { dividendRate: r, dividendFrequency: r == null ? null : frequency });
+      await updateParked(p.id, {
+        dividendRate: r,
+        dividendFrequency: r == null ? null : frequency,
+        dividendGrowthPct: g,
+      });
       onClose();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : String(err));
@@ -597,7 +608,7 @@ function RateModal({ position: p, onClose }: { position: ParkedPosition; onClose
   return (
     <Modal isOpen onClose={onClose} title={`${p.ticker} dividend rate`}>
       <form onSubmit={submit} className="space-y-3">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <div>
             <label className={labelCls}>Annual rate ($/share)</label>
             <input type="number" step="any" min="0" value={rate} autoFocus
@@ -611,6 +622,12 @@ function RateModal({ position: p, onClose }: { position: ParkedPosition; onClose
                 <option key={f} value={f}>{FREQUENCY_LABELS[f]}</option>
               ))}
             </select>
+          </div>
+          <div>
+            <label className={labelCls}>Div growth (%/yr)</label>
+            <input type="number" step="any" value={growth}
+              onChange={(e) => setGrowth(e.target.value)} className={inputCls}
+              placeholder="for projections" title="Assumed annual dividend growth — used by the Transition modeler." />
           </div>
         </div>
         <p className="text-xs text-gray-400">

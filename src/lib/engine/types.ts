@@ -125,6 +125,8 @@ export interface ParkedPosition {
   /** Manual income estimate: annual dollars per share. Null = no estimate. */
   dividendRate?: number | null;
   dividendFrequency?: DividendFrequency | null;
+  /** Assumed annual dividend growth for projections, as a fraction. */
+  dividendGrowthPct?: number | null;
   notes?: string | null;
 }
 

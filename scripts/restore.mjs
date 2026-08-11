@@ -34,7 +34,7 @@ const TABLES = [
     shares: p.shares, avg_cost: p.avgCost, current_price: p.currentPrice,
     buy_date: p.buyDate ?? null, trim_rank: p.trimRank ?? null,
     dividend_rate: p.dividendRate ?? null, dividend_frequency: p.dividendFrequency ?? null,
-    notes: p.notes ?? null,
+    dividend_growth_pct: p.dividendGrowthPct ?? null, notes: p.notes ?? null,
   })), 'id'],
   ['parked_lots', get('parked_lots').map((l) => ({
     id: l.id, parked_position_id: l.parkedPositionId, date: l.date ?? null, source: l.source,

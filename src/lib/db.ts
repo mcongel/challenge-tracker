@@ -153,6 +153,7 @@ export const mapParked = (r: any): ParkedPosition => ({
   trimRank: r.trim_rank,
   dividendRate: r.dividend_rate == null ? null : Number(r.dividend_rate),
   dividendFrequency: r.dividend_frequency ?? null,
+  dividendGrowthPct: r.dividend_growth_pct == null ? null : Number(r.dividend_growth_pct),
   notes: r.notes,
 });
 
@@ -167,6 +168,7 @@ export const parkedPayload = (p: Omit<ParkedPosition, 'id' | 'account'>) => ({
   trim_rank: p.trimRank ?? null,
   dividend_rate: p.dividendRate ?? null,
   dividend_frequency: p.dividendFrequency ?? null,
+  dividend_growth_pct: p.dividendGrowthPct ?? null,
   notes: p.notes ?? null,
 });
 

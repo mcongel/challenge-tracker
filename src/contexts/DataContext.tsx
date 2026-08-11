@@ -635,6 +635,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (patch.accountId !== undefined) payload.account_id = patch.accountId;
       if (patch.dividendRate !== undefined) payload.dividend_rate = patch.dividendRate;
       if (patch.dividendFrequency !== undefined) payload.dividend_frequency = patch.dividendFrequency;
+      if (patch.dividendGrowthPct !== undefined) payload.dividend_growth_pct = patch.dividendGrowthPct;
       const { error: err } = await db().from('parked_positions').update(payload).eq('id', id);
       if (err) throw err;
       await refresh();
