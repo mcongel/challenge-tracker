@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Landmark } from 'lucide-react';
+import { Landmark, SlidersHorizontal } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
@@ -10,15 +10,23 @@ import {
   computeCheck, estimatedPileTax, formatQuarterLabel, quarterOf, quartersEnded,
   reservedByAccount, roundCents, taxYearOf,
 } from '../lib/engine';
-import { cn, formatCurrency, primaryBtnCls, todayISO } from '../lib/utils';
+import { cn, formatCurrency, inputCls, labelCls, primaryBtnCls, secondaryBtnCls, todayISO } from '../lib/utils';
 
 export function TaxReserve() {
-  const { trades, cashEvents, carryforwards, accounts, parkedSales, loading, error } = useData();
+  const {
+    trades, cashEvents, carryforwards, accounts, parkedSales, ltTaxRate, stTaxRate,
+    dividendTaxRates, updateSetting, loading, error,
+  } = useData();
   const pileEstTax = parkedSales
     .filter((s) => s.costBasis != null)
-    .reduce((sum, s) => sum + estimatedPileTax(s.proceeds - (s.costBasis as number), s.shares, s.ltShares), 0);
+    .reduce(
+      (sum, s) =>
+        sum + estimatedPileTax(s.proceeds - (s.costBasis as number), s.shares, s.ltShares, ltTaxRate, stTaxRate),
+      0,
+    );
   const [rowError, setRowError] = useState<string | null>(null);
   const [pendingSkim, setPendingSkim] = useState<{ label: string; amount: number } | null>(null);
+  const [ratesOpen, setRatesOpen] = useState(false);
 
   const today = todayISO();
   const firstDate = [...trades.map((t) => t.closeDate), ...cashEvents.map((e) => e.date)].sort()[0];
@@ -38,6 +46,15 @@ export function TaxReserve() {
       <PageHeader
         title="Tax Reserve"
         subtitle="Every quarter: 30% of net realized gains YTD moves out of play. Non-negotiable — it's what makes a blown account a shrug instead of a debt."
+        actions={
+          <button
+            onClick={() => setRatesOpen(true)}
+            className={cn(secondaryBtnCls, 'flex items-center gap-1.5')}
+            title="Rates used for informational estimates (pile gains, dividends) — never the 30% skim itself."
+          >
+            <SlidersHorizontal className="h-4 w-4" /> Estimate rates
+          </button>
+        }
       />
 
       {error && <ErrorCard message={error} />}
@@ -149,7 +166,91 @@ export function TaxReserve() {
           onError={setRowError}
         />
       )}
+      {ratesOpen && (
+        <RatesModal
+          ltTaxRate={ltTaxRate}
+          stTaxRate={stTaxRate}
+          qualifiedRate={dividendTaxRates.qualified}
+          ordinaryRate={dividendTaxRates.ordinary}
+          onSave={async (rates) => {
+            await updateSetting('lt_tax_rate', rates.lt);
+            await updateSetting('st_tax_rate', rates.st);
+            await updateSetting('qualified_dividend_tax_rate', rates.qualified);
+            await updateSetting('ordinary_dividend_tax_rate', rates.ordinary);
+          }}
+          onClose={() => setRatesOpen(false)}
+        />
+      )}
     </div>
+  );
+}
+
+function RatesModal({
+  ltTaxRate, stTaxRate, qualifiedRate, ordinaryRate, onSave, onClose,
+}: {
+  ltTaxRate: number;
+  stTaxRate: number;
+  qualifiedRate: number;
+  ordinaryRate: number;
+  onSave: (rates: { lt: number; st: number; qualified: number; ordinary: number }) => Promise<void>;
+  onClose: () => void;
+}) {
+  const toPct = (v: number) => String(Math.round(v * 1000) / 10);
+  const [lt, setLt] = useState(toPct(ltTaxRate));
+  const [st, setSt] = useState(toPct(stTaxRate));
+  const [qualified, setQualified] = useState(toPct(qualifiedRate));
+  const [ordinary, setOrdinary] = useState(toPct(ordinaryRate));
+  const [formError, setFormError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsed = [lt, st, qualified, ordinary].map(Number);
+    if (parsed.some((v) => Number.isNaN(v) || v < 0 || v > 100)) {
+      return setFormError('Rates are percentages between 0 and 100.');
+    }
+    setBusy(true);
+    try {
+      await onSave({
+        lt: parsed[0] / 100, st: parsed[1] / 100, qualified: parsed[2] / 100, ordinary: parsed[3] / 100,
+      });
+      onClose();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const field = (label: string, value: string, set: (v: string) => void) => (
+    <div>
+      <label className={labelCls}>{label}</label>
+      <input type="number" min="0" max="100" step="0.1" required value={value}
+        onChange={(e) => set(e.target.value)} className={inputCls} />
+    </div>
+  );
+
+  return (
+    <Modal isOpen onClose={onClose} title="Estimate rates">
+      <form onSubmit={submit} className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          {field('Long-term gains (%)', lt, setLt)}
+          {field('Short-term gains (%)', st, setSt)}
+          {field('Qualified dividends (%)', qualified, setQualified)}
+          {field('Ordinary dividends (%)', ordinary, setOrdinary)}
+        </div>
+        <p className="text-xs text-gray-400">
+          Used only for informational estimates on pile sales and parked dividends. The quarterly
+          30% skim is fixed and never touched by these.
+        </p>
+        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
+        <div className="flex justify-end">
+          <button type="submit" disabled={busy} className={primaryBtnCls}>
+            {busy ? 'Saving…' : 'Save rates'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

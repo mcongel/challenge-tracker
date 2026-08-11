@@ -90,7 +90,7 @@ function SortHeader({
 export function ParkedPile() {
   const {
     parked, parkedLots, parkedSales, accounts, tickerNames, deleteParkedSale, concentrationCap,
-    updateSetting, accountCash, dayChange, loading, error,
+    updateSetting, accountCash, dayChange, ltTaxRate, stTaxRate, loading, error,
   } = useData();
   const [capOpen, setCapOpen] = useState(false);
   const [deletingSale, setDeletingSale] = useState<ParkedSale | null>(null);
@@ -99,7 +99,8 @@ export function ParkedPile() {
   const realized = parkedSales.filter((s) => s.costBasis != null);
   const realizedTotal = realized.reduce((sum, s) => sum + (s.proceeds - (s.costBasis as number)), 0);
   const estTaxTotal = realized.reduce(
-    (sum, s) => sum + estimatedPileTax(s.proceeds - (s.costBasis as number), s.shares, s.ltShares),
+    (sum, s) =>
+      sum + estimatedPileTax(s.proceeds - (s.costBasis as number), s.shares, s.ltShares, ltTaxRate, stTaxRate),
     0,
   );
   const unknownBasisCount = parkedSales.length - realized.length;
@@ -1224,7 +1225,7 @@ function TransferModal({ position: p, onClose }: { position: ParkedPosition; onC
 const NEVER_TRIM = new Set(['NVDA', 'TSLA', 'MSTR']);
 
 function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose: () => void }) {
-  const { recordTrim, cashEvents, contributionCap, parkedLots } = useData();
+  const { recordTrim, cashEvents, contributionCap, parkedLots, ltTaxRate, stTaxRate } = useData();
   const [shares, setShares] = useState('');
   const [price, setPrice] = useState(p.currentPrice ? String(p.currentPrice) : '');
   const [date, setDate] = useState(todayISO());
@@ -1367,7 +1368,7 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
                 {preview.unknownShares > 0 && ` · ${fmtSh(preview.unknownShares)} sh undated`}
                 {preview.gain > 0 && (
                   <span title="Rough estimate (~21% LT / ~29% ST). The quarterly skim never covers pile sales — set this aside yourself.">
-                    {' '}· est. tax ~{formatCurrency(roundCents(estimatedPileTax(preview.gain, numShares, preview.ltShares + preview.unknownShares)))}
+                    {' '}· est. tax ~{formatCurrency(roundCents(estimatedPileTax(preview.gain, numShares, preview.ltShares + preview.unknownShares, ltTaxRate, stTaxRate)))}
                   </span>
                 )}
                 {isLoss && <span className="text-red-600 font-medium"> · loss — arms the 31-day wash-sale window</span>}

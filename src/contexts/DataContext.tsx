@@ -18,7 +18,10 @@ import {
   cumulativeFloor, netContributed, pileTotal, reservedTotal, roundCents, shadowValue, totalScore,
   trimPreview,
 } from '../lib/engine';
-import type { AccountCashBreakdown, ParkedCashEvent, ParkedLot, ParkedSale } from '../lib/engine';
+import type {
+  AccountCashBreakdown, DividendClassification, DividendTaxRates, ParkedCashEvent, ParkedLot,
+  ParkedSale,
+} from '../lib/engine';
 import { priceMapFor } from '../lib/alerts';
 import { todayISO } from '../lib/utils';
 import {
@@ -95,6 +98,11 @@ interface DataContextValue extends DataState {
   contributionCap: number | null;
   /** Semi/AI concentration cap (editable, default 50%). */
   concentrationCap: number;
+  /** Pile capital-gains estimate rates from app_settings (defaults 21%/29%). */
+  ltTaxRate: number;
+  stTaxRate: number;
+  /** Dividend estimate rates (informational — never the 30% reserve rule). */
+  dividendTaxRates: DividendTaxRates;
   updateSetting: (key: string, value: unknown) => Promise<void>;
   /** Delayed API quotes (override-free). Merged view: overrides win. */
   quotes: Record<string, number>;
@@ -142,6 +150,12 @@ interface DataContextValue extends DataState {
   }) => Promise<void>;
   addParkedLot: (lot: Omit<ParkedLot, 'id'>) => Promise<void>;
   deleteParkedLot: (id: string) => Promise<void>;
+  /** 1099 correction: change a dividend's classification; stamps reclassified_at. */
+  reclassifyDividend: (
+    id: string,
+    classification: DividendClassification,
+    exDate?: string | null,
+  ) => Promise<void>;
   /** New parked holding: creates the position and its first purchase lot. */
   addParkedPosition: (args: {
     ticker: string;
@@ -581,6 +595,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (patch.notes !== undefined) payload.notes = patch.notes;
       if (patch.category !== undefined) payload.category = patch.category;
       if (patch.accountId !== undefined) payload.account_id = patch.accountId;
+      if (patch.dividendRate !== undefined) payload.dividend_rate = patch.dividendRate;
+      if (patch.dividendFrequency !== undefined) payload.dividend_frequency = patch.dividendFrequency;
       const { error: err } = await db().from('parked_positions').update(payload).eq('id', id);
       if (err) throw err;
       await refresh();
@@ -645,6 +661,22 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       await refresh();
     },
     [refresh, recomputeParkedAggregate],
+  );
+
+  /** 1099 correction: change a dividend's tax character after the fact.
+   * Shares/amount untouched, so no aggregate recompute. */
+  const reclassifyDividend = useCallback(
+    async (id: string, classification: DividendClassification, exDate?: string | null) => {
+      const payload: Record<string, unknown> = {
+        classification,
+        reclassified_at: new Date().toISOString(),
+      };
+      if (exDate !== undefined) payload.ex_date = exDate;
+      const { error: err } = await db().from('parked_lots').update(payload).eq('id', id);
+      if (err) throw err;
+      await refresh();
+    },
+    [refresh],
   );
 
   const addParkedPosition = useCallback(
@@ -758,6 +790,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Recreate the slices at the destination with dates/basis/source intact.
+      // Dividend tax character (classification/ex-date/reclassified) must
+      // survive the move too — consumed slices don't carry it, the source lot does.
+      const lotById = new Map(positionLots.map((l) => [l.id, l]));
       const { error: lotErr } = await client.from('parked_lots').insert(
         consumed.map((c) =>
           parkedLotPayload({
@@ -767,6 +802,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             shares: c.shares,
             price: c.shares > 0 ? Math.round((c.amount / c.shares) * 10000) / 10000 : null,
             amount: c.amount,
+            classification: lotById.get(c.id)?.classification ?? null,
+            exDate: lotById.get(c.id)?.exDate ?? null,
+            reclassifiedAt: lotById.get(c.id)?.reclassifiedAt ?? null,
             notes: `ACATS from ${fromName} ${date}`,
           }),
         ),
@@ -1077,6 +1115,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     typeof state.settings.contribution_cap === 'number' ? state.settings.contribution_cap : null;
   const concentrationCap =
     typeof state.settings.concentration_cap === 'number' ? state.settings.concentration_cap : 0.5;
+  const ltTaxRate =
+    typeof state.settings.lt_tax_rate === 'number' ? state.settings.lt_tax_rate : 0.21;
+  const stTaxRate =
+    typeof state.settings.st_tax_rate === 'number' ? state.settings.st_tax_rate : 0.29;
+  const qualifiedDividendTaxRate =
+    typeof state.settings.qualified_dividend_tax_rate === 'number'
+      ? state.settings.qualified_dividend_tax_rate : 0.15;
+  const ordinaryDividendTaxRate =
+    typeof state.settings.ordinary_dividend_tax_rate === 'number'
+      ? state.settings.ordinary_dividend_tax_rate : 0.24;
+  const dividendTaxRates = useMemo<DividendTaxRates>(
+    () => ({
+      qualified: qualifiedDividendTaxRate,
+      ordinary: ordinaryDividendTaxRate,
+      capitalGainDist: ltTaxRate,
+    }),
+    [qualifiedDividendTaxRate, ordinaryDividendTaxRate, ltTaxRate],
+  );
 
   const value = useMemo(
     () => ({
@@ -1089,6 +1145,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       tickerNames,
       contributionCap,
       concentrationCap,
+      ltTaxRate,
+      stTaxRate,
+      dividendTaxRates,
       updateSetting,
       loading,
       error,
@@ -1108,6 +1167,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       recordTrim,
       addParkedLot,
       deleteParkedLot,
+      reclassifyDividend,
       addParkedPosition,
       deleteParkedSale,
       updateParkedSale,
@@ -1123,10 +1183,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       state, mergedParked, quotes, dayChange, quotesAsOf, refreshQuotes, tickerNames, contributionCap,
-      concentrationCap, updateSetting, loading, error,
+      concentrationCap, ltTaxRate, stTaxRate, dividendTaxRates, updateSetting, loading, error,
       refresh, addCashEvent, deleteCashEvent, addLot, closePosition, recordSplit,
       setTradeWashSale, deleteTrade, updateParked, recordMilestone, addAccount, addOutsideSale,
-      deleteOutsideSale, recordTrim, addParkedLot, deleteParkedLot, addParkedPosition,
+      deleteOutsideSale, recordTrim, addParkedLot, deleteParkedLot, reclassifyDividend, addParkedPosition,
       deleteParkedSale, updateParkedSale, transferParked, accountCash, addParkedCashEvent,
       deleteParkedCashEvent, reconcileAccountCash, exampleData, clearExampleData,
       setOverride, clearOverride,
