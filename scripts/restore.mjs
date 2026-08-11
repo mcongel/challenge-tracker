@@ -54,7 +54,8 @@ const TABLES = [
   ['parked_sales', get('parked_sales').map((s) => ({
     id: s.id, ticker: s.ticker, account_id: s.accountId, date: s.date, shares: s.shares,
     price_per_share: s.pricePerShare, proceeds: s.proceeds, cost_basis: s.costBasis ?? null,
-    lt_shares: s.ltShares ?? null, funded_challenge: s.fundedChallenge, notes: s.notes ?? null,
+    lt_shares: s.ltShares ?? null, funded_challenge: s.fundedChallenge,
+    consumed: s.consumed ?? null, created_at: s.createdAt ?? undefined, notes: s.notes ?? null,
   })), 'id'],
   ['outside_sales', get('outside_sales').map((s) => ({
     id: s.id, account_id: s.accountId, ticker: s.ticker, sale_date: s.saleDate,

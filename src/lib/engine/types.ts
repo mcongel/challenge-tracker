@@ -1,5 +1,7 @@
 /** Domain types, mirroring SPEC.md's data model. Dates are ISO yyyy-mm-dd strings. */
 
+import type { DividendClassification } from './parkedLots';
+
 export type CashEventType =
   | 'Deposit'
   | 'Withdrawal'
@@ -126,6 +128,61 @@ export interface ParkedPosition {
   notes?: string | null;
 }
 
+/** One consumed lot's record inside a sale snapshot. Pre-sale absolutes AND
+ * removed deltas: undo restores the absolute when nothing else intervened,
+ * the delta when something did (a later transfer, another sale). */
+export interface SaleSnapshotSlice {
+  lotId: string;
+  /** shrunk = partial consume; zeroed = DRIP full consume (shares only —
+   * amount and ROC rows untouched); deleted = purchase full consume. */
+  mode: 'shrunk' | 'zeroed' | 'deleted';
+  preShares: number;
+  preAmount: number;
+  sharesDelta: number;
+  /** 0 for zeroed slices. */
+  amountDelta: number;
+  // Full metadata so a vanished lot can be recreated with its ORIGINAL id.
+  date: string | null;
+  source: 'purchase' | 'dividend';
+  price: number | null;
+  classification: DividendClassification | null;
+  exDate: string | null;
+  reclassifiedAt: string | null;
+  rocAllocatedAt: string | null;
+  rocOverflow: number | null;
+  notes: string | null;
+  adjustments: {
+    /** Original row id — reused on recreation so retries are idempotent. */
+    id: string;
+    dividendLotId: string | null;
+    preAmount: number;
+    /** 0 for zeroed slices. */
+    amountDelta: number;
+    /** Cascade-removed with a deleted lot. */
+    deleted: boolean;
+    /** The event's allocation stamp at sale time — a different stamp later
+     * means the event was re-allocated and must be re-run, not restored. */
+    dividendRocAllocatedAt: string | null;
+  }[];
+}
+
+/** What a sale consumed, written at sale time so undo can restore exactly. */
+export interface ParkedSaleSnapshot {
+  version: 1;
+  positionId: string;
+  /** For recreating the position row when a full trim deleted it. */
+  position: {
+    category: ParkedCategory;
+    avgCost: number;
+    currentPrice: number;
+    trimRank: number | null;
+    dividendRate: number | null;
+    dividendFrequency: DividendFrequency | null;
+    notes: string | null;
+  };
+  slices: SaleSnapshotSlice[];
+}
+
 /** A parked-pile sale — the pile's own trade log. Real numbers (basis from
  * the lots consumed, LT/ST split) but NEVER score, YTD, or tax-skim math. */
 export interface ParkedSale {
@@ -140,6 +197,10 @@ export interface ParkedSale {
   costBasis?: number | null;
   ltShares?: number | null;
   fundedChallenge: boolean;
+  /** Consumption snapshot; null = legacy sale, field-edit only, no undo. */
+  consumed?: ParkedSaleSnapshot | null;
+  /** Row insert time — gates which ROC allocations postdate the sale. */
+  createdAt?: string | null;
   notes?: string | null;
 }
 
