@@ -467,9 +467,9 @@ describe('parked income — trailing, projection, yield, dividend tax', () => {
   it('mixed-classification payment: one payment for cadence, tax blended by dollar mix', async () => {
     const { projectPositionIncome } = await import('../parkedIncome');
     const lots = [
-      div('a', '2025-12-10', 100),
+      div('a', '2026-03-10', 100),
       // One broker payment split across two classifications = two lots, same date.
-      div('b1', '2026-03-10', 60), div('b2', '2026-03-10', 40, 'ordinary'),
+      div('b1', '2026-06-10', 60), div('b2', '2026-06-10', 40, 'ordinary'),
     ];
     const proj = projectPositionIncome({ position: pos(), lots, today: TODAY, rates: RATES });
     expect(proj?.source).toBe('actual'); // 2 payments, not 3 — same-date lots group
@@ -479,18 +479,44 @@ describe('parked income — trailing, projection, yield, dividend tax', () => {
     expect(proj?.annualAfterTax).toBeCloseTo(400 * (1 - 33.6 / 200), 9);
   });
 
+  it('special dividend days after the regular one merges into its month — no fake monthly cadence', async () => {
+    const { projectPositionIncome } = await import('../parkedIncome');
+    const lots = [
+      div('reg', '2026-06-10', 100),
+      div('special', '2026-06-13', 500), // 3-day gap must NOT read as monthly cadence
+    ];
+    // One merged June payment is not a cadence; with no manual rate → excluded.
+    expect(projectPositionIncome({ position: pos(), lots, today: TODAY, rates: RATES })).toBeNull();
+  });
+
+  it('suspended payer: stale history stops projecting; manual rate takes over if set', async () => {
+    const { projectPositionIncome } = await import('../parkedIncome');
+    const lots = [
+      // Quarterly cadence, but the last payment is 8 months ago — cut dividend.
+      div('q1', '2025-09-10', 100), div('q2', '2025-12-10', 100),
+    ];
+    expect(projectPositionIncome({ position: pos(), lots, today: TODAY, rates: RATES })).toBeNull();
+    const withRate = projectPositionIncome({
+      position: pos({ dividendRate: 1, dividendFrequency: 'annual' }), lots, today: TODAY, rates: RATES,
+    });
+    expect(withRate?.source).toBe('manual');
+  });
+
   it('positionIncomeSummary: yield on cost from original basis, ROC and unclassified surfaced', async () => {
     const { positionIncomeSummary } = await import('../parkedIncome');
     const lots = [
       buy('base', '2025-01-01', 10, 1000),
       div('q1', '2025-09-10', 100), div('q2', '2025-12-10', 100),
       div('q3', '2026-03-10', 100), div('q4', '2026-06-10', 100),
-      div('roc', '2026-04-01', 200, 'return_of_capital'),
+      // ROC/unclassified land in regular payment months so they merge into
+      // those payments rather than reading as extra cadence points.
+      div('roc', '2026-03-15', 200, 'return_of_capital'),
       div('old-roc', null, 50, 'return_of_capital'),  // undated: lifetime ROC yes, windows no
-      div('mystery', '2026-05-01', 10, 'unclassified'),
+      div('mystery', '2026-06-20', 10, 'unclassified'),
     ];
     const s = positionIncomeSummary(pos(), lots, TODAY, RATES);
     expect(s.trailing12m).toBeCloseTo(610, 9); // 400 + 200 + 10; undated 50 excluded
+    expect(s.costBasis).toBeCloseTo(1000, 9);
     expect(s.rocCumulative).toBeCloseTo(250, 9);
     expect(s.hasUnclassified).toBe(true);
     expect(s.undatedDividendAmount).toBeCloseTo(50, 9);
@@ -498,7 +524,7 @@ describe('parked income — trailing, projection, yield, dividend tax', () => {
     expect(s.yieldOnCost!).toBeGreaterThan(0);
   });
 
-  it('dividendTaxYTD: ROC untaxed, capital-gain dist at LT rate, unclassified flagged, other years out', async () => {
+  it('dividendTaxYTD: ROC untaxed, capital-gain dist at LT rate, unclassified flagged, other years and future dates out', async () => {
     const { dividendTaxYTD } = await import('../parkedIncome');
     const lots = [
       div('a', '2026-02-01', 100),                        // qualified → 15
@@ -508,8 +534,9 @@ describe('parked income — trailing, projection, yield, dividend tax', () => {
       div('e', '2026-06-01', 80, 'unclassified'),         // → 12 at qualified rate, flagged
       div('f', '2025-12-01', 100),                        // prior tax year
       div('g', null, 50, 'ordinary'),                     // undated — no year to belong to
+      div('h', '2026-09-15', 100),                        // pre-logged, not yet received
     ];
-    const r = dividendTaxYTD(lots, 2026, RATES);
+    const r = dividendTaxYTD(lots, TODAY, RATES);
     expect(r.totalTax).toBeCloseTo(72, 9);
     expect(r.byClassification.return_of_capital).toEqual({ amount: 200, tax: 0 });
     expect(r.byClassification.capital_gain_dist?.tax).toBeCloseTo(21, 9);

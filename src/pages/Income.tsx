@@ -15,8 +15,7 @@ import type {
   DividendClassification, DividendFrequency, ParkedLot, ParkedPosition, PositionIncomeSummary,
 } from '../lib/engine';
 import {
-  aggregateLots, dividendTaxYTD, positionIncomeSummary, roundCents, taxYearOf,
-  trailingIncomeByMonth,
+  dividendTaxYTD, positionIncomeSummary, roundCents, trailingIncomeByMonth,
 } from '../lib/engine';
 import {
   cn, compactUsd, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls,
@@ -78,21 +77,28 @@ export function Income() {
   const trailing = useMemo(() => trailingIncomeByMonth(parkedLots, today), [parkedLots, today]);
   const trailingTotal = trailing.reduce((t, p) => t + p.amount, 0);
 
-  const projectedGross = summaries.reduce((t, s) => t + (s.summary.projection?.annualGross ?? 0), 0);
-  const projectedAfterTax = summaries.reduce((t, s) => t + (s.summary.projection?.annualAfterTax ?? 0), 0);
-
   const taxYtd = useMemo(
-    () => dividendTaxYTD(parkedLots, taxYearOf(today), dividendTaxRates),
+    () => dividendTaxYTD(parkedLots, today, dividendTaxRates),
     [parkedLots, today, dividendTaxRates],
   );
 
-  // Portfolio yield on cost: only positions that project income count — in
-  // both the numerator and the denominator — so excluded holdings can't dilute.
-  const included = summaries.filter((s) => s.summary.projection);
-  const includedBasis = included.reduce((t, s) => t + aggregateLots(s.lots).costBasis, 0);
-  const portfolioYoc = includedBasis > 0
-    ? included.reduce((t, s) => t + (s.summary.projection?.annualGross ?? 0), 0) / includedBasis
-    : null;
+  // Portfolio yield on cost: only positions that project income AND have a
+  // real cost basis count — in both the numerator and the denominator — so a
+  // basis-less holding (pending ACATS with a manual rate) can't inflate it.
+  const { projectedGross, projectedAfterTax, portfolioYoc, anyProjection } = useMemo(() => {
+    const gross = summaries.reduce((t, s) => t + (s.summary.projection?.annualGross ?? 0), 0);
+    const afterTax = summaries.reduce((t, s) => t + (s.summary.projection?.annualAfterTax ?? 0), 0);
+    const withBasis = summaries.filter((s) => s.summary.projection && s.summary.costBasis > 0);
+    const basis = withBasis.reduce((t, s) => t + s.summary.costBasis, 0);
+    return {
+      projectedGross: gross,
+      projectedAfterTax: afterTax,
+      portfolioYoc: basis > 0
+        ? withBasis.reduce((t, s) => t + (s.summary.projection?.annualGross ?? 0), 0) / basis
+        : null,
+      anyProjection: summaries.some((s) => s.summary.projection),
+    };
+  }, [summaries]);
 
   // 24-month chart: trailing actuals then projected months.
   const isDark = useIsDark();
@@ -115,7 +121,15 @@ export function Income() {
 
   const anyRoc = summaries.some((s) => s.summary.rocCumulative > 0);
   const anyDividends = parkedLots.some((l) => l.source === 'dividend');
-  const anyIncome = anyDividends || included.length > 0;
+  const anyIncome = anyDividends || anyProjection;
+
+  const sortedSummaries = useMemo(
+    () =>
+      [...summaries].sort(
+        (a, b) => (b.summary.projection?.annualGross ?? 0) - (a.summary.projection?.annualGross ?? 0),
+      ),
+    [summaries],
+  );
 
   // Distribution history rows + sorting.
   const histRows = useMemo<HistRow[]>(() => {
@@ -267,12 +281,10 @@ export function Income() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {[...summaries]
-                  .sort((a, b) => (b.summary.projection?.annualGross ?? 0) - (a.summary.projection?.annualGross ?? 0))
-                  .map(({ position: p, summary: s }) => (
-                    <HoldingRow key={p.id} position={p} summary={s} anyRoc={anyRoc}
-                      onEditRate={() => setEditingRate(p)} />
-                  ))}
+                {sortedSummaries.map(({ position: p, summary: s }) => (
+                  <HoldingRow key={p.id} position={p} summary={s} anyRoc={anyRoc}
+                    onEditRate={() => setEditingRate(p)} />
+                ))}
               </tbody>
             </table>
           </div>
@@ -344,7 +356,7 @@ export function Income() {
       {deleting && (
         <ConfirmModal
           title="Delete dividend"
-          message={`Delete this ${deleting.ticker} dividend (${formatCurrency(deleting.lot.amount)}${deleting.lot.shares > 0 ? `, ${deleting.lot.shares} DRIP sh` : ''})? ${deleting.lot.shares > 0 ? "The position's shares and cost recompute without it." : ''}`}
+          message={`Delete this ${deleting.ticker} dividend (${formatCurrency(deleting.lot.amount)}${deleting.lot.shares > 0 ? `, ${deleting.lot.shares} DRIP sh` : ''})? ${deleting.lot.shares > 0 ? "The position's shares and cost recompute without it — and if this is its last share-holding lot, the position and its whole dividend history go with it." : ''}`}
           onConfirm={() => deleteParkedLot(deleting.lot.id)}
           onClose={() => setDeleting(null)}
         />

@@ -150,8 +150,8 @@ export const mapParked = (r: any): ParkedPosition => ({
   currentPrice: Number(r.current_price),
   buyDate: r.buy_date,
   trimRank: r.trim_rank,
-  dividendRate: r.dividend_rate === null ? null : Number(r.dividend_rate),
-  dividendFrequency: r.dividend_frequency,
+  dividendRate: r.dividend_rate == null ? null : Number(r.dividend_rate),
+  dividendFrequency: r.dividend_frequency ?? null,
   notes: r.notes,
 });
 

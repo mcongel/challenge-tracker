@@ -15,7 +15,7 @@ import { cn, formatCurrency, inputCls, labelCls, primaryBtnCls, secondaryBtnCls,
 export function TaxReserve() {
   const {
     trades, cashEvents, carryforwards, accounts, parkedSales, ltTaxRate, stTaxRate,
-    dividendTaxRates, updateSetting, loading, error,
+    dividendTaxRates, updateSettings, loading, error,
   } = useData();
   const pileEstTax = parkedSales
     .filter((s) => s.costBasis != null)
@@ -172,12 +172,14 @@ export function TaxReserve() {
           stTaxRate={stTaxRate}
           qualifiedRate={dividendTaxRates.qualified}
           ordinaryRate={dividendTaxRates.ordinary}
-          onSave={async (rates) => {
-            await updateSetting('lt_tax_rate', rates.lt);
-            await updateSetting('st_tax_rate', rates.st);
-            await updateSetting('qualified_dividend_tax_rate', rates.qualified);
-            await updateSetting('ordinary_dividend_tax_rate', rates.ordinary);
-          }}
+          onSave={(rates) =>
+            updateSettings({
+              lt_tax_rate: rates.lt,
+              st_tax_rate: rates.st,
+              qualified_dividend_tax_rate: rates.qualified,
+              ordinary_dividend_tax_rate: rates.ordinary,
+            })
+          }
           onClose={() => setRatesOpen(false)}
         />
       )}

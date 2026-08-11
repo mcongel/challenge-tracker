@@ -7,11 +7,16 @@
  * so they are excluded from trailing/YTD figures; they still count in lifetime
  * totals (dividendsCollected) and rocCumulative. */
 
-import { addMonths, taxYearOf } from './dates';
+import { addMonths, daysBetween, taxYearOf } from './dates';
 import { sum } from './money';
 import { aggregateLots } from './parkedLots';
 import type { DividendClassification, ParkedLot } from './parkedLots';
 import type { DividendFrequency, ParkedPosition } from './types';
+
+/** Default estimate rates — live values come from app_settings. Single source
+ * for the migration seeds and the DataContext fallbacks. */
+export const QUALIFIED_DIVIDEND_TAX_RATE = 0.15;
+export const ORDINARY_DIVIDEND_TAX_RATE = 0.24;
 
 /** Rates are fractions (0.15 = 15%). capitalGainDist callers pass the LT rate.
  * return_of_capital is always 0 in Phase 1 (basis adjustment comes later). */
@@ -103,18 +108,30 @@ const median = (xs: number[]): number => {
 /** Payment cadence in months from the median gap between recent payments. */
 function inferIntervalMonths(dates: string[]): number {
   const gaps: number[] = [];
-  for (let i = 1; i < dates.length; i++) {
-    gaps.push(
-      (new Date(`${dates[i]}T00:00:00Z`).getTime() -
-        new Date(`${dates[i - 1]}T00:00:00Z`).getTime()) /
-        86_400_000,
-    );
-  }
+  for (let i = 1; i < dates.length; i++) gaps.push(daysBetween(dates[i - 1], dates[i]));
   const gap = median(gaps);
   if (gap <= 45) return 1;
   if (gap <= 135) return 3;
   if (gap <= 270) return 6;
   return 12;
+}
+
+/** Merge payments in the same calendar month (a special dividend lands days
+ * from the regular one) so a two-payment burst can't read as a monthly
+ * cadence. The merged payment carries the month's total and its last date. */
+function mergeByMonth(payments: Payment[]): Payment[] {
+  const byMonth = new Map<string, Payment>();
+  for (const p of payments) {
+    const m = monthOf(p.date);
+    const existing = byMonth.get(m);
+    if (existing) {
+      existing.amount += p.amount;
+      existing.date = p.date;
+    } else {
+      byMonth.set(m, { ...p });
+    }
+  }
+  return [...byMonth.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
 export type RateSource = 'actual' | 'manual';
@@ -128,11 +145,16 @@ export interface IncomeProjection {
   nextPayment: { date: string; amount: number } | null;
 }
 
-/** After-tax multiplier from the classification mix of trailing-12-month
+/** The trailing window is the same 12 calendar months everywhere (buckets,
+ * projection inputs, tax mix): first day of the month 11 months back, through
+ * today. Keeps the T12M column and the projection source consistent. */
+const trailingWindowStart = (today: string) => addMonths(firstOfMonth(today), -11);
+
+/** After-tax multiplier from the classification mix of trailing-window
  * dollars; positions with no classified history assume 'unclassified'. */
 function afterTaxFraction(lots: ParkedLot[], today: string, rates: DividendTaxRates): number {
-  const windowStart = addMonths(today, -12);
-  const recent = datedDividends(lots).filter((l) => l.date > windowStart && l.date <= today);
+  const windowStart = trailingWindowStart(today);
+  const recent = datedDividends(lots).filter((l) => l.date >= windowStart && l.date <= today);
   const total = sum(recent.map((l) => l.amount));
   if (total <= 0) return 1 - rates.qualified; // unclassified assumption
   const taxed = sum(recent.map((l) => l.amount * dividendTaxRateFor(classificationOf(l), rates)));
@@ -140,11 +162,15 @@ function afterTaxFraction(lots: ParkedLot[], today: string, rates: DividendTaxRa
 }
 
 /**
- * Next-12-month income for one position. Trailing actuals win when ≥2 dated
- * payments exist in the last 12 months: cadence from the median gap, amount
- * from the mean of the recent payments, schedule anchored to the last actual
- * pay date. Otherwise the manual dividendRate × shares at dividendFrequency
- * (first payment one interval after today). Neither → null (excluded).
+ * Next-12-month income for one position. Trailing actuals win when payments
+ * exist in ≥2 distinct months of the trailing window AND the latest payment
+ * isn't stale (older than ~1.5 payment intervals — a suspended dividend must
+ * not keep projecting): cadence from the median gap, amount from the mean of
+ * the recent monthly payments, schedule anchored to the last actual pay date.
+ * Same-month payments merge first, so a special dividend days after a regular
+ * one can't masquerade as a monthly cadence. Otherwise the manual
+ * dividendRate × shares at dividendFrequency (first payment one interval
+ * after today). Neither → null (excluded).
  */
 export function projectPositionIncome(args: {
   position: ParkedPosition;
@@ -153,23 +179,36 @@ export function projectPositionIncome(args: {
   rates: DividendTaxRates;
 }): IncomeProjection | null {
   const { position, lots, today, rates } = args;
-  const windowStart = addMonths(today, -12);
-  const recentPayments = paymentsByDate(lots).filter(
-    (p) => p.date > windowStart && p.date <= today,
+  const windowStart = trailingWindowStart(today);
+  const recentPayments = mergeByMonth(
+    paymentsByDate(lots).filter((p) => p.date >= windowStart && p.date <= today),
   );
+
+  let actual: { intervalMonths: number; perPayment: number; anchor: string } | null = null;
+  if (recentPayments.length >= 2) {
+    const intervalMonths = inferIntervalMonths(recentPayments.map((p) => p.date));
+    const last = recentPayments[recentPayments.length - 1];
+    // ~45 days per interval month = 1.5 intervals of slack before we decide
+    // the payer has gone quiet and stop trusting the history.
+    if (daysBetween(last.date, today) <= intervalMonths * 45) {
+      const keep = Math.min(recentPayments.length, Math.round(12 / intervalMonths));
+      const recent = recentPayments.slice(-keep);
+      actual = {
+        intervalMonths,
+        perPayment: sum(recent.map((p) => p.amount)) / recent.length,
+        anchor: last.date,
+      };
+    }
+  }
 
   let source: RateSource;
   let intervalMonths: number;
   let perPayment: number;
   let anchor: string; // a real or synthetic pay date; payments recur from here
 
-  if (recentPayments.length >= 2) {
+  if (actual) {
     source = 'actual';
-    intervalMonths = inferIntervalMonths(recentPayments.map((p) => p.date));
-    const keep = Math.min(recentPayments.length, Math.round(12 / intervalMonths));
-    const recent = recentPayments.slice(-keep);
-    perPayment = sum(recent.map((p) => p.amount)) / recent.length;
-    anchor = recentPayments[recentPayments.length - 1].date;
+    ({ intervalMonths, perPayment, anchor } = actual);
   } else if (position.dividendRate != null && position.dividendRate > 0 && position.dividendFrequency) {
     source = 'manual';
     intervalMonths = MONTHS_PER[position.dividendFrequency];
@@ -207,6 +246,8 @@ export interface PositionIncomeSummary {
   positionId: string;
   trailing12m: number;
   projection: IncomeProjection | null;
+  /** Original cost basis from share lots (purchases + DRIP). */
+  costBasis: number;
   /** Projected annual gross / cost basis from share lots; null when excluded
    * from projections or basis ≤ 0. Original basis — Phase 2 adds ROC-adjusted. */
   yieldOnCost: number | null;
@@ -231,6 +272,7 @@ export function positionIncomeSummary(
     positionId: position.id,
     trailing12m: sum(trailingIncomeByMonth(lots, today).map((p) => p.amount)),
     projection,
+    costBasis,
     yieldOnCost:
       projection && costBasis > 0 ? projection.annualGross / costBasis : null,
     rocCumulative: sum(
@@ -249,18 +291,21 @@ export interface DividendTaxYTD {
   unclassifiedAmount: number;
 }
 
-/** Estimated tax on dividends dated in `year`. Informational only — this is
- * NOT the challenge account's 30% reserve. Undated lots excluded (no year). */
+/** Estimated tax on dividends received in today's tax year, through today —
+ * pre-logged future payments don't count until they land, matching every
+ * other figure on the Income screen. Informational only — this is NOT the
+ * challenge account's 30% reserve. Undated lots excluded (no year). */
 export function dividendTaxYTD(
   lots: ParkedLot[],
-  year: number,
+  today: string,
   rates: DividendTaxRates,
 ): DividendTaxYTD {
+  const year = taxYearOf(today);
   const byClassification: DividendTaxYTD['byClassification'] = {};
   let totalTax = 0;
   let unclassifiedAmount = 0;
   for (const l of datedDividends(lots)) {
-    if (taxYearOf(l.date) !== year) continue;
+    if (taxYearOf(l.date) !== year || l.date > today) continue;
     const c = classificationOf(l);
     const tax = l.amount * dividendTaxRateFor(c, rates);
     const entry = (byClassification[c] ??= { amount: 0, tax: 0 });

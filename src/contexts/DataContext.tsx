@@ -15,7 +15,8 @@ import type {
 } from '../lib/engine';
 import {
   accountTotal, aggregateLots, closeShares, computeAccountCash, concentration, consumeLotsFifo,
-  cumulativeFloor, netContributed, pileTotal, reservedTotal, roundCents, shadowValue, totalScore,
+  cumulativeFloor, LT_TAX_RATE, netContributed, ORDINARY_DIVIDEND_TAX_RATE, pileTotal,
+  QUALIFIED_DIVIDEND_TAX_RATE, reservedTotal, roundCents, shadowValue, ST_TAX_RATE, totalScore,
   trimPreview,
 } from '../lib/engine';
 import type {
@@ -104,6 +105,8 @@ interface DataContextValue extends DataState {
   /** Dividend estimate rates (informational — never the 30% reserve rule). */
   dividendTaxRates: DividendTaxRates;
   updateSetting: (key: string, value: unknown) => Promise<void>;
+  /** Batch variant: one atomic upsert + one refresh for several keys. */
+  updateSettings: (entries: Record<string, unknown>) => Promise<void>;
   /** Delayed API quotes (override-free). Merged view: overrides win. */
   quotes: Record<string, number>;
   /** The day's move per ticker, straight from the quote feed. */
@@ -663,20 +666,23 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [refresh, recomputeParkedAggregate],
   );
 
-  /** 1099 correction: change a dividend's tax character after the fact.
-   * Shares/amount untouched, so no aggregate recompute. */
+  /** Change a dividend's tax character. Confirming an 'unclassified' dividend
+   * is normal bookkeeping; only a change to an already-confirmed class is a
+   * true post-1099 correction and gets the reclassified stamp. Shares/amount
+   * untouched, so no aggregate recompute. */
   const reclassifyDividend = useCallback(
     async (id: string, classification: DividendClassification, exDate?: string | null) => {
-      const payload: Record<string, unknown> = {
-        classification,
-        reclassified_at: new Date().toISOString(),
-      };
+      const prior = state.parkedLots.find((l) => l.id === id)?.classification ?? 'unclassified';
+      const payload: Record<string, unknown> = { classification };
+      if (prior !== 'unclassified' && prior !== classification) {
+        payload.reclassified_at = new Date().toISOString();
+      }
       if (exDate !== undefined) payload.ex_date = exDate;
       const { error: err } = await db().from('parked_lots').update(payload).eq('id', id);
       if (err) throw err;
       await refresh();
     },
-    [refresh],
+    [refresh, state.parkedLots],
   );
 
   const addParkedPosition = useCallback(
@@ -781,6 +787,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             avg_cost: p.avgCost,
             current_price: p.currentPrice,
             trim_rank: p.trimRank ?? null,
+            dividend_rate: p.dividendRate ?? null,
+            dividend_frequency: p.dividendFrequency ?? null,
             notes: p.notes ?? null,
           })
           .select('id')
@@ -1091,6 +1099,19 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [refresh],
   );
 
+  /** Several settings in one atomic upsert + one refresh — a partial save
+   * must not leave a mixed rate set behind. */
+  const updateSettings = useCallback(
+    async (entries: Record<string, unknown>) => {
+      const updated_at = new Date().toISOString();
+      const rows = Object.entries(entries).map(([key, value]) => ({ key, value, updated_at }));
+      const { error: err } = await db().from('app_settings').upsert(rows);
+      if (err) throw err;
+      await refresh();
+    },
+    [refresh],
+  );
+
   const setOverride = useCallback(
     async (ticker: string, price: number) => {
       const { error: err } = await db()
@@ -1116,15 +1137,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const concentrationCap =
     typeof state.settings.concentration_cap === 'number' ? state.settings.concentration_cap : 0.5;
   const ltTaxRate =
-    typeof state.settings.lt_tax_rate === 'number' ? state.settings.lt_tax_rate : 0.21;
+    typeof state.settings.lt_tax_rate === 'number' ? state.settings.lt_tax_rate : LT_TAX_RATE;
   const stTaxRate =
-    typeof state.settings.st_tax_rate === 'number' ? state.settings.st_tax_rate : 0.29;
+    typeof state.settings.st_tax_rate === 'number' ? state.settings.st_tax_rate : ST_TAX_RATE;
   const qualifiedDividendTaxRate =
     typeof state.settings.qualified_dividend_tax_rate === 'number'
-      ? state.settings.qualified_dividend_tax_rate : 0.15;
+      ? state.settings.qualified_dividend_tax_rate : QUALIFIED_DIVIDEND_TAX_RATE;
   const ordinaryDividendTaxRate =
     typeof state.settings.ordinary_dividend_tax_rate === 'number'
-      ? state.settings.ordinary_dividend_tax_rate : 0.24;
+      ? state.settings.ordinary_dividend_tax_rate : ORDINARY_DIVIDEND_TAX_RATE;
   const dividendTaxRates = useMemo<DividendTaxRates>(
     () => ({
       qualified: qualifiedDividendTaxRate,
@@ -1149,6 +1170,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       stTaxRate,
       dividendTaxRates,
       updateSetting,
+      updateSettings,
       loading,
       error,
       refresh,
@@ -1183,7 +1205,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       state, mergedParked, quotes, dayChange, quotesAsOf, refreshQuotes, tickerNames, contributionCap,
-      concentrationCap, ltTaxRate, stTaxRate, dividendTaxRates, updateSetting, loading, error,
+      concentrationCap, ltTaxRate, stTaxRate, dividendTaxRates, updateSetting, updateSettings,
+      loading, error,
       refresh, addCashEvent, deleteCashEvent, addLot, closePosition, recordSplit,
       setTradeWashSale, deleteTrade, updateParked, recordMilestone, addAccount, addOutsideSale,
       deleteOutsideSale, recordTrim, addParkedLot, deleteParkedLot, reclassifyDividend, addParkedPosition,
