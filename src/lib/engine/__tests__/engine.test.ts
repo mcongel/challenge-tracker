@@ -795,7 +795,7 @@ describe('parked sale restore — snapshot, converging undo plan', () => {
     const b = snap.slices.find((s) => s.lotId === 'B')!;
     expect(b.mode).toBe('deleted');
     expect(b).toMatchObject({ preShares: 5, preAmount: 500, sharesDelta: 5, amountDelta: 500 });
-    expect(b.adjustments[0]).toMatchObject({ id: 'rb', preAmount: 50, amountDelta: 50, deleted: true });
+    expect(b.adjustments[0]).toMatchObject({ id: 'rb', preAmount: 50, amountDelta: 50 });
     const a = snap.slices.find((s) => s.lotId === 'A')!;
     expect(a.mode).toBe('shrunk');
     expect(a).toMatchObject({ preShares: 10, preAmount: 1000, sharesDelta: 7, amountDelta: 700 });
@@ -872,6 +872,23 @@ describe('parked sale restore — snapshot, converging undo plan', () => {
     expect(plan.lotSets).toEqual([{ id: 'A', shares: 9, amount: 900 }]);
   });
 
+  it('planSaleRestore: sub-cent adjustment deltas still restore (6dp tolerance)', async () => {
+    const { planSaleRestore, buildSaleSnapshot } = await import('../parkedSaleRestore');
+    const { consumeLotsFifo } = await import('../parkedLots');
+    const preLots = [buy('A', '2025-06-01', 10, 1000)];
+    const rows = [adj('ra', 'A', 0.02)]; // tiny 6dp ROC reduction
+    const snap = buildSaleSnapshot(pos(), preLots, rows, consumeLotsFifo(preLots, 3, rows), []);
+    expect(snap.slices[0].adjustments[0].amountDelta).toBeCloseTo(0.006, 9);
+    const plan = planSaleRestore(sale({ shares: 3 }), snap, {
+      position: pos({ shares: 7 }),
+      lots: [buy('A', '2025-06-01', 7, 700)],
+      adjustments: [adj('ra', 'A', 0.014)], // post-sale scaled row
+      dividendLots: [rocCash('divX', '2026-05-01', 1, null)],
+    });
+    // A cent-scale tolerance would call 0.014 ≈ 0.02 "already restored".
+    expect(plan.adjustmentSets).toEqual([{ id: 'ra', amount: 0.02 }]);
+  });
+
   it('planSaleRestore: event gates — removed events skip, re-allocated events re-run', async () => {
     const { planSaleRestore, buildSaleSnapshot } = await import('../parkedSaleRestore');
     const { consumeLotsFifo } = await import('../parkedLots');
@@ -888,10 +905,6 @@ describe('parked sale restore — snapshot, converging undo plan', () => {
       // divGone was deleted; divMoved was re-allocated (different stamp).
       dividendLots: [rocCash('divMoved', '2026-06-01', 60, '2026-08-14T00:00:00Z')],
     });
-    expect(plan.skipped).toEqual([
-      { dividendLotId: 'divGone', reason: 'event-removed' },
-      { dividendLotId: 'divMoved', reason: 'event-reallocated' },
-    ]);
     expect(plan.adjustmentUpserts).toEqual([]); // neither row comes back directly
     expect(plan.reallocate.map((r) => r.id)).toEqual(['divMoved']);
   });

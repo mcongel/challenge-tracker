@@ -769,15 +769,25 @@ function EditSaleModal({ sale: s, onClose }: { sale: ParkedSale; onClose: () => 
       const pr = Number(price);
       if (!sh || sh <= 0) return setFormError('Enter the shares sold.');
       if (!pr || pr <= 0) return setFormError('Enter the sale price.');
+      // Only a real number change goes through the destructive undo+re-apply;
+      // funded/notes-only edits patch the record in place.
+      const numbersChanged =
+        Math.abs(sh - s.shares) > 1e-9 ||
+        Math.abs(pr - s.pricePerShare) > 1e-9 ||
+        date !== s.date;
       setBusy(true);
       try {
-        await editParkedSaleAmounts(s.id, {
-          shares: sh,
-          pricePerShare: pr,
-          date,
-          fundedChallenge: funded,
-          notes: notes || null,
-        });
+        if (numbersChanged) {
+          await editParkedSaleAmounts(s.id, {
+            shares: sh,
+            pricePerShare: pr,
+            date,
+            fundedChallenge: funded,
+            notes: notes || null,
+          });
+        } else {
+          await updateParkedSale(s.id, { fundedChallenge: funded, notes: notes || null });
+        }
         onClose();
       } catch (err) {
         setFormError(err instanceof Error ? err.message : String(err));

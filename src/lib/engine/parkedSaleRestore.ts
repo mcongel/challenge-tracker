@@ -15,7 +15,10 @@ import type { ParkedLotAdjustment } from './parkedRoc';
 import type { ParkedSale, ParkedSaleSnapshot, ParkedPosition, SaleSnapshotSlice } from './types';
 
 const SHARES_TOL = 1e-6;
+/** Lot amounts are cents-precision. */
 const AMOUNT_TOL = 0.01;
+/** Adjustment amounts are 6dp — a sub-cent delta is real and must restore. */
+const ADJ_TOL = 1e-6;
 
 export function buildSaleSnapshot(
   position: ParkedPosition,
@@ -75,7 +78,6 @@ export function buildSaleSnapshot(
               : mode === 'deleted'
                 ? a.amount
                 : round6(a.amount - round6(a.amount * keptFraction)),
-          deleted: mode === 'deleted',
           dividendRocAllocatedAt: a.dividendLotId ? stampOf(a.dividendLotId) : null,
         })),
     };
@@ -133,7 +135,6 @@ export interface SaleRestorePlan {
   adjustmentSets: { id: string; amount: number }[];
   /** ROC events to re-run (idempotent allocation), oldest first. */
   reallocate: { id: string; parkedPositionId: string; amount: number; date: string | null }[];
-  skipped: { dividendLotId: string | null; reason: 'event-removed' | 'event-reallocated' }[];
 }
 
 /** Field-level three-branch convergence: already restored → null (no-op);
@@ -176,7 +177,6 @@ export function planSaleRestore(
     adjustmentUpserts: [],
     adjustmentSets: [],
     reallocate: [],
-    skipped: [],
   };
   const lotById = new Map(current.lots.map((l) => [l.id, l]));
   const adjById = new Map(current.adjustments.map((a) => [a.id, a]));
@@ -231,14 +231,12 @@ export function planSaleRestore(
         const div = divById.get(entry.dividendLotId);
         if (!div || classificationOf(div) !== 'return_of_capital') {
           // The event's reductions were legitimately reversed everywhere —
-          // had the sale never happened, this row would be gone too.
-          plan.skipped.push({ dividendLotId: entry.dividendLotId, reason: 'event-removed' });
+          // had the sale never happened, this row would be gone too. Skip.
           continue;
         }
         if ((div.rocAllocatedAt ?? null) !== (entry.dividendRocAllocatedAt ?? null)) {
           // Re-allocated since the sale: restoring the old portion would
           // double-reduce. Re-run the whole event over the restored lots.
-          plan.skipped.push({ dividendLotId: entry.dividendLotId, reason: 'event-reallocated' });
           queueReallocate(div);
           continue;
         }
@@ -252,7 +250,7 @@ export function planSaleRestore(
           amount: entry.amountDelta > 0 ? entry.amountDelta : entry.preAmount,
         });
       } else {
-        const target = converge(curRow.amount, entry.preAmount, entry.amountDelta, AMOUNT_TOL);
+        const target = converge(curRow.amount, entry.preAmount, entry.amountDelta, ADJ_TOL);
         if (target !== null) plan.adjustmentSets.push({ id: entry.id, amount: round6(target) });
       }
     }

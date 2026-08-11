@@ -158,8 +158,6 @@ export interface SaleSnapshotSlice {
     preAmount: number;
     /** 0 for zeroed slices. */
     amountDelta: number;
-    /** Cascade-removed with a deleted lot. */
-    deleted: boolean;
     /** The event's allocation stamp at sale time — a different stamp later
      * means the event was re-allocated and must be re-run, not restored. */
     dividendRocAllocatedAt: string | null;

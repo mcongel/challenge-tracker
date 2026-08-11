@@ -1293,6 +1293,22 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const snapshot = sale.consumed;
       if (!snapshot) throw new Error('This sale predates undo support — edit its numbers instead.');
 
+      // LIFO invariant, enforced where it matters (both undo AND edit route
+      // through here): restoring an older sale beneath a newer one would
+      // corrupt both records' basis history.
+      const { data: newer, error: newerErr } = await client
+        .from('parked_sales')
+        .select('id')
+        .eq('ticker', sale.ticker)
+        .eq('account_id', sale.accountId)
+        .not('consumed', 'is', null)
+        .gt('created_at', sale.createdAt ?? '')
+        .limit(1);
+      if (newerErr) throw newerErr;
+      if ((newer ?? []).length > 0) {
+        throw new Error(`Undo or edit the newer ${sale.ticker} sale first — restores go newest-first.`);
+      }
+
       // Fresh reads: the position, its lots, snapshot-referenced lots (which
       // may live on other positions after transfers), and both adjustment
       // views (by lot and by snapshot row id).
@@ -1325,47 +1341,55 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         }),
       );
       const lots = [...lotMap.values()];
-      const adjRowIds = snapshot.slices.flatMap((s) => s.adjustments.map((a) => a.id));
+      // A snapshot adjustment's share lot is always its slice's lot, and rows
+      // cascade with their lot — so the by-lot query covers every restorable
+      // row; a row whose lot vanished is gone and goes through the upsert path.
       const lotIds = lots.map((l) => l.id);
-      const [adjByLot, adjByIds] = await Promise.all([
-        lotIds.length > 0
-          ? client.from('parked_lot_adjustments').select('*').in('share_lot_id', lotIds)
-          : Promise.resolve({ data: [], error: null }),
-        adjRowIds.length > 0
-          ? client.from('parked_lot_adjustments').select('*').in('id', adjRowIds)
-          : Promise.resolve({ data: [], error: null }),
-      ]);
-      if (adjByLot.error) throw adjByLot.error;
-      if (adjByIds.error) throw adjByIds.error;
-      const adjMap = new Map(
-        [...(adjByLot.data ?? []), ...(adjByIds.data ?? [])].map((r) => {
-          const a = mapParkedLotAdjustment(r);
-          return [a.id, a] as const;
-        }),
-      );
+      let adjustments: ParkedLotAdjustment[] = [];
+      if (lotIds.length > 0) {
+        const { data: adjRows, error: adjErr } = await client
+          .from('parked_lot_adjustments').select('*').in('share_lot_id', lotIds);
+        if (adjErr) throw adjErr;
+        adjustments = (adjRows ?? []).map(mapParkedLotAdjustment);
+      }
 
       const plan = planSaleRestore(sale, snapshot, {
         position,
         lots,
-        adjustments: [...adjMap.values()],
+        adjustments,
         dividendLots: lots.filter((l) => l.source === 'dividend'),
       });
 
+      // If the holding was re-bought after the full sale, a fresh position
+      // row owns (ticker, account) — restore the lots under it instead of
+      // colliding with the unique key.
+      let effectivePositionId = snapshot.positionId;
       if (plan.recreatePosition) {
-        const { error: err } = await client.from('parked_positions').upsert({
-          id: plan.recreatePosition.id,
-          ticker: plan.recreatePosition.ticker,
-          account_id: plan.recreatePosition.accountId,
-          category: snapshot.position.category,
-          shares: 0, // recomputed from restored lots below
-          avg_cost: snapshot.position.avgCost,
-          current_price: snapshot.position.currentPrice,
-          trim_rank: snapshot.position.trimRank,
-          dividend_rate: snapshot.position.dividendRate,
-          dividend_frequency: snapshot.position.dividendFrequency,
-          notes: snapshot.position.notes,
-        });
-        if (err) throw err;
+        const { data: clash, error: clashErr } = await client
+          .from('parked_positions')
+          .select('id')
+          .eq('ticker', plan.recreatePosition.ticker)
+          .eq('account_id', plan.recreatePosition.accountId)
+          .maybeSingle();
+        if (clashErr) throw clashErr;
+        if (clash) {
+          effectivePositionId = clash.id as string;
+        } else {
+          const { error: err } = await client.from('parked_positions').upsert({
+            id: plan.recreatePosition.id,
+            ticker: plan.recreatePosition.ticker,
+            account_id: plan.recreatePosition.accountId,
+            category: snapshot.position.category,
+            shares: 0, // recomputed from restored lots below
+            avg_cost: snapshot.position.avgCost,
+            current_price: snapshot.position.currentPrice,
+            trim_rank: snapshot.position.trimRank,
+            dividend_rate: snapshot.position.dividendRate,
+            dividend_frequency: snapshot.position.dividendFrequency,
+            notes: snapshot.position.notes,
+          });
+          if (err) throw err;
+        }
       }
       if (plan.revivePrice !== null) {
         const { error: err } = await client
@@ -1378,7 +1402,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         const { error: err } = await client.from('parked_lots').upsert(
           plan.lotUpserts.map((u) => ({
             id: u.id,
-            parked_position_id: u.parkedPositionId,
+            parked_position_id: effectivePositionId,
             date: u.date,
             source: u.source,
             shares: u.shares,
@@ -1395,11 +1419,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         );
         if (err) throw err;
       }
-      for (const s of plan.lotSets) {
-        const { error: err } = await client
-          .from('parked_lots').update({ shares: s.shares, amount: s.amount }).eq('id', s.id);
-        if (err) throw err;
-      }
+      const lotSetResults = await Promise.all(
+        plan.lotSets.map((s) =>
+          client.from('parked_lots').update({ shares: s.shares, amount: s.amount }).eq('id', s.id),
+        ),
+      );
+      for (const r of lotSetResults) if (r.error) throw r.error;
       if (plan.adjustmentUpserts.length > 0) {
         const { error: err } = await client.from('parked_lot_adjustments').upsert(
           plan.adjustmentUpserts.map((u) => ({
@@ -1412,15 +1437,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         );
         if (err) throw err;
       }
-      for (const s of plan.adjustmentSets) {
-        const { error: err } = await client
-          .from('parked_lot_adjustments').update({ amount: s.amount }).eq('id', s.id);
-        if (err) throw err;
-      }
+      const adjSetResults = await Promise.all(
+        plan.adjustmentSets.map((s) =>
+          client.from('parked_lot_adjustments').update({ amount: s.amount }).eq('id', s.id),
+        ),
+      );
+      for (const r of adjSetResults) if (r.error) throw r.error;
       for (const r of plan.reallocate) {
-        await insertRocAllocations(r); // idempotent; re-spreads over restored basis
+        await insertRocAllocations(r); // idempotent; re-spreads over restored basis — stays serial
       }
-      await recomputeParkedAggregate(snapshot.positionId);
+      await recomputeParkedAggregate(effectivePositionId);
       const { error: delErr } = await client.from('parked_sales').delete().eq('id', saleId);
       if (delErr) throw delErr;
     },
@@ -1461,40 +1487,68 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (saleErr) throw saleErr;
       const old = mapParkedSale(saleRow);
       if (!old.consumed) throw new Error('This sale predates undo support — edit its numbers instead.');
+      // Validate BEFORE the destructive undo — a rejected edit must leave the
+      // sale record untouched. After restore, availability is the current
+      // position's shares plus what this sale removed.
+      const { data: prePosRow, error: prePosErr } = await client
+        .from('parked_positions')
+        .select('shares')
+        .eq('ticker', old.ticker)
+        .eq('account_id', old.accountId)
+        .maybeSingle();
+      if (prePosErr) throw prePosErr;
+      const available = Number(prePosRow?.shares ?? 0) + old.shares;
+      if (next.shares > available + 1e-9) {
+        throw new Error(
+          `Only ${Math.round(available * 1e8) / 1e8} shares would be available; cannot sell ${next.shares}.`,
+        );
+      }
       try {
         await undoCore(saleId);
-        const { data: posRow, error: posErr } = await client
-          .from('parked_positions')
-          .select('*, account:accounts(name)')
-          .eq('id', old.consumed.positionId)
-          .single();
-        if (posErr) throw posErr;
-        const position = mapParked(posRow);
-        if (next.shares > position.shares + 1e-9) {
-          throw new Error(`Only ${position.shares} shares parked; cannot sell ${next.shares}`);
+        try {
+          // By ticker+account, not the snapshot's position id — undo may have
+          // retargeted a re-bought position.
+          const { data: posRow, error: posErr } = await client
+            .from('parked_positions')
+            .select('*, account:accounts(name)')
+            .eq('ticker', old.ticker)
+            .eq('account_id', old.accountId)
+            .single();
+          if (posErr) throw posErr;
+          const position = mapParked(posRow);
+          if (next.shares > position.shares + 1e-9) {
+            throw new Error(`Only ${position.shares} shares parked; cannot sell ${next.shares}`);
+          }
+          // All lots, not just the position's — snapshot stamps for carried
+          // (cross-position) ROC rows need the wide lookup.
+          const { data: allLotRows, error: lotsErr } = await client.from('parked_lots').select('*');
+          if (lotsErr) throw lotsErr;
+          const allLots = (allLotRows ?? []).map(mapParkedLot);
+          const lots = allLots.filter((l) => l.parkedPositionId === position.id);
+          let adjustments: ParkedLotAdjustment[] = [];
+          if (lots.length > 0) {
+            const { data: adjRows, error: adjErr } = await client
+              .from('parked_lot_adjustments').select('*').in('share_lot_id', lots.map((l) => l.id));
+            if (adjErr) throw adjErr;
+            adjustments = (adjRows ?? []).map(mapParkedLotAdjustment);
+          }
+          await trimCore({
+            position,
+            lots,
+            adjustments,
+            allLots,
+            shares: next.shares,
+            pricePerShare: next.pricePerShare,
+            date: next.date,
+            fundedChallenge: next.fundedChallenge ?? old.fundedChallenge,
+            notes: next.notes !== undefined ? next.notes : old.notes ?? null,
+          });
+        } catch (redoErr) {
+          const msg = redoErr instanceof Error ? redoErr.message : String(redoErr);
+          throw new Error(
+            `The sale was undone but re-applying failed (${msg}). Your shares are restored — record the sale again.`,
+          );
         }
-        const { data: lotRows, error: lotsErr } = await client
-          .from('parked_lots').select('*').eq('parked_position_id', position.id);
-        if (lotsErr) throw lotsErr;
-        const lots = (lotRows ?? []).map(mapParkedLot);
-        let adjustments: ParkedLotAdjustment[] = [];
-        if (lots.length > 0) {
-          const { data: adjRows, error: adjErr } = await client
-            .from('parked_lot_adjustments').select('*').in('share_lot_id', lots.map((l) => l.id));
-          if (adjErr) throw adjErr;
-          adjustments = (adjRows ?? []).map(mapParkedLotAdjustment);
-        }
-        await trimCore({
-          position,
-          lots,
-          adjustments,
-          allLots: lots,
-          shares: next.shares,
-          pricePerShare: next.pricePerShare,
-          date: next.date,
-          fundedChallenge: next.fundedChallenge ?? old.fundedChallenge,
-          notes: next.notes !== undefined ? next.notes : old.notes ?? null,
-        });
       } finally {
         await refresh();
       }
