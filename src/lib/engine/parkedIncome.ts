@@ -9,8 +9,9 @@
 
 import { addDays, addMonths, daysBetween, taxYearOf } from './dates';
 import { sum } from './money';
+import { isArchivedPosition } from './parked';
 import type { DividendClassification, ParkedLot } from './parkedLots';
-import { aggregateLotsAdjusted, overflowForDividend } from './parkedRoc';
+import { aggregateLotsAdjusted } from './parkedRoc';
 import type { ParkedLotAdjustment } from './parkedRoc';
 import type { DividendFrequency, ParkedPosition } from './types';
 
@@ -184,9 +185,9 @@ export function projectPositionIncome(args: {
   rates: DividendTaxRates;
 }): IncomeProjection | null {
   const { position, lots, today, rates } = args;
-  // Archived (zero-share) positions keep their history but never project —
-  // recent payments belong to shares that are no longer held.
-  if (position.shares <= 1e-9) return null;
+  // Archived positions keep their history but never project — recent
+  // payments belong to shares that are no longer held.
+  if (isArchivedPosition(position)) return null;
   const windowStart = trailingWindowStart(today);
   const recentPayments = mergeByMonth(
     paymentsByDate(lots).filter((p) => p.date >= windowStart && p.date <= today),
@@ -276,8 +277,6 @@ export interface PositionIncomeSummary {
   yieldOnCost: number | null;
   /** Lifetime return-of-capital dollars, undated included. */
   rocCumulative: number;
-  /** ROC dollars whose basis allocation hasn't run yet (backfill badge). */
-  rocUnallocated: number;
   hasUnclassified: boolean;
   /** Dollars excluded from time windows because the lot has no date. */
   undatedDividendAmount: number;
@@ -304,11 +303,6 @@ export function positionIncomeSummary(
     rocCumulative: sum(
       dividends.filter((l) => classificationOf(l) === 'return_of_capital').map((l) => l.amount),
     ),
-    rocUnallocated: sum(
-      dividends
-        .filter((l) => classificationOf(l) === 'return_of_capital' && !l.rocAllocatedAt)
-        .map((l) => l.amount),
-    ),
     hasUnclassified: dividends.some((l) => classificationOf(l) === 'unclassified'),
     undatedDividendAmount: sum(dividends.filter((l) => l.date === null).map((l) => l.amount)),
   };
@@ -330,13 +324,14 @@ export interface DividendTaxYTD {
 
 /** Estimated tax on dividends received in today's tax year, through today —
  * pre-logged future payments don't count until they land, matching every
- * other figure on the Income screen. Informational only — this is NOT the
- * challenge account's 30% reserve. Undated lots excluded (no year). */
+ * other figure on the Income screen. ROC overflow comes from the value stored
+ * at allocation time (rocOverflow) — never derived from adjustment rows,
+ * which trims/transfers legitimately mutate. Informational only — this is
+ * NOT the challenge account's 30% reserve. Undated lots excluded (no year). */
 export function dividendTaxYTD(
   lots: ParkedLot[],
   today: string,
   rates: DividendTaxRates,
-  adjustments: ParkedLotAdjustment[] = [],
 ): DividendTaxYTD {
   const year = taxYearOf(today);
   const byClassification: DividendTaxYTD['byClassification'] = {};
@@ -350,7 +345,7 @@ export function dividendTaxYTD(
     let tax = l.amount * dividendTaxRateFor(c, rates);
     if (c === 'return_of_capital') {
       if (l.rocAllocatedAt) {
-        const overflow = overflowForDividend(l, adjustments);
+        const overflow = l.rocOverflow ?? 0;
         rocOverflowAmount += overflow;
         tax = overflow * rates.capitalGainDist;
       } else {

@@ -8,9 +8,9 @@
  * two cash events, one benchmark deposit) into empty tables, useful for
  * checking app numbers against the workbook before real data exists.
  *
- * CAUTION: the ticker+account upsert will overwrite an ARCHIVED (zero-share)
- * position's aggregates if the same ticker was later fully trimmed away —
- * this is a bootstrap tool, don't re-run it against a live dataset.
+ * CAUTION: this is a bootstrap tool. A preflight aborts if parked_positions
+ * already has rows (the upsert would overwrite live aggregates or resurrect
+ * archived positions); --force overrides, on your head be it.
  *
  * After seeding it re-reads everything and diffs computed totals against the
  * workbook's numbers — "import worked" as a check, not a vibe.
@@ -27,8 +27,25 @@ if (!url || !key) {
   process.exit(1);
 }
 const withExamples = process.argv.includes('--with-examples');
+const force = process.argv.includes('--force');
 
 const supabase = createClient(url, key, { db: { schema: 'challenge' } });
+
+// Bootstrap guard: the ticker+account upsert would overwrite live aggregates
+// or resurrect archived (zero-share) positions on a dataset that has moved
+// past the workbook. Refuse unless the pile is empty or --force is given.
+{
+  const { count, error } = await supabase
+    .from('parked_positions').select('id', { count: 'exact', head: true });
+  if (error) { console.error('preflight read failed:', error.message); process.exit(1); }
+  if ((count ?? 0) > 0 && !force) {
+    console.error(
+      `parked_positions already has ${count} rows — this seed is a bootstrap tool. ` +
+      'Re-running would overwrite live data. Pass --force only if you really mean it.',
+    );
+    process.exit(1);
+  }
+}
 
 const fixturePath = join(
   dirname(fileURLToPath(import.meta.url)),

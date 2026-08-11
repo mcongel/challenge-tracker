@@ -63,9 +63,12 @@ export function computeAccountCash(
     args.parked.filter((p) => p.accountId === accountId).map((p) => p.id),
   );
   const accountLots = args.parkedLots.filter((l) => positionIds.has(l.parkedPositionId));
+  // Cash dividends only: price is null exactly when nothing was reinvested.
+  // A DRIP lot whose shares were later fully trimmed keeps its price and
+  // sits at zero shares as an income record — it never brought cash in.
   const cashDividends = sum(
     accountLots
-      .filter((l) => l.source === 'dividend' && l.shares <= 0)
+      .filter((l) => l.source === 'dividend' && l.shares <= 0 && l.price == null)
       .map((l) => l.amount),
   );
   const purchases = sum(

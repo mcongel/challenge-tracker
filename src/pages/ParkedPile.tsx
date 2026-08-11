@@ -14,9 +14,10 @@ import type {
   ParkedSale, UnlockSummary,
 } from '../lib/engine';
 import {
-  aggregateLotsAdjusted, basisExhaustedLotIds, concentration, contributionStatus, daysBetween,
-  depositExceedsCap, dividendsCollected, estimatedPileTax, netContributed, parkedCostBasis,
-  parkedMarketValue, roundCents, trimPreview, unlockSummary,
+  adjustmentsForLots, aggregateLotsAdjusted, basisExhaustedLotIds, concentration,
+  contributionStatus, daysBetween, depositExceedsCap, dividendsCollected, estimatedPileTax,
+  isArchivedPosition, netContributed, parkedCostBasis, parkedMarketValue, roundCents, trimPreview,
+  unlockSummary,
 } from '../lib/engine';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import {
@@ -114,7 +115,7 @@ export function ParkedPile() {
   } = useData();
   // Archived (zero-share) rows keep dividend history alive on the Income
   // screen; this table shows live holdings only.
-  const parked = useMemo(() => allParked.filter((p) => p.shares > 1e-9), [allParked]);
+  const parked = useMemo(() => allParked.filter((p) => !isArchivedPosition(p)), [allParked]);
   const [capOpen, setCapOpen] = useState(false);
   const [deletingSale, setDeletingSale] = useState<ParkedSale | null>(null);
   const [editingSale, setEditingSale] = useState<ParkedSale | null>(null);
@@ -964,13 +965,17 @@ function unlockSentence(s: UnlockSummary): string {
 
 function LotPanel({ position: p, summary }: { position: ParkedPosition; summary: UnlockSummary }) {
   const { parkedLots, parkedLotAdjustments, addParkedLot, deleteParkedLot, overrides, quotes } = useData();
-  const lots = parkedLots
-    .filter((l) => l.parkedPositionId === p.id)
-    .sort((a, b) => (a.date ?? '').localeCompare(b.date ?? ''));
-  const lotIdSet = new Set(lots.map((l) => l.id));
-  const positionAdjs = parkedLotAdjustments.filter((a) => lotIdSet.has(a.shareLotId));
-  const adjustedAgg = aggregateLotsAdjusted(lots, positionAdjs);
-  const exhausted = new Set(basisExhaustedLotIds(lots, positionAdjs));
+  const { lots, adjustedAgg, exhausted } = useMemo(() => {
+    const positionLots = parkedLots
+      .filter((l) => l.parkedPositionId === p.id)
+      .sort((a, b) => (a.date ?? '').localeCompare(b.date ?? ''));
+    const positionAdjs = adjustmentsForLots(positionLots, parkedLotAdjustments);
+    return {
+      lots: positionLots,
+      adjustedAgg: aggregateLotsAdjusted(positionLots, positionAdjs),
+      exhausted: new Set(basisExhaustedLotIds(positionLots, positionAdjs)),
+    };
+  }, [parkedLots, parkedLotAdjustments, p.id]);
   const effectivePrice = overrides[p.ticker] ?? quotes[p.ticker] ?? p.currentPrice;
 
   const [mode, setMode] = useState<'purchase' | 'dividend' | null>(null);
@@ -1322,10 +1327,9 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
   let preview: ReturnType<typeof trimPreview> | null = null;
   if (numShares > 0 && numShares <= p.shares + 1e-9 && numPrice > 0 && positionLots.length > 0) {
     try {
-      const lotIds = new Set(positionLots.map((l) => l.id));
       preview = trimPreview(
         positionLots, numShares, numPrice, date,
-        parkedLotAdjustments.filter((a) => lotIds.has(a.shareLotId)),
+        adjustmentsForLots(positionLots, parkedLotAdjustments),
       );
     } catch {
       preview = null;

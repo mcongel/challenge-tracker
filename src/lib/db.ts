@@ -182,6 +182,7 @@ export const mapParkedLot = (r: any): ParkedLot => ({
   exDate: r.ex_date,
   reclassifiedAt: r.reclassified_at,
   rocAllocatedAt: r.roc_allocated_at,
+  rocOverflow: r.roc_overflow == null ? null : Number(r.roc_overflow),
   notes: r.notes,
 });
 
@@ -196,6 +197,7 @@ export const parkedLotPayload = (l: Omit<ParkedLot, 'id'>) => ({
   ex_date: l.exDate ?? null,
   reclassified_at: l.reclassifiedAt ?? null,
   roc_allocated_at: l.rocAllocatedAt ?? null,
+  roc_overflow: l.rocOverflow ?? null,
   notes: l.notes ?? null,
 });
 

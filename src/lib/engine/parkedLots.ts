@@ -1,5 +1,5 @@
 import { longTermDate } from './dates';
-import { round6, sum } from './money';
+import { round6, roundCents, sum } from './money';
 import type { ParkedLotAdjustment } from './parkedRoc';
 
 /** Tax character of a dividend. Brokers reclassify after the 1099, so lots
@@ -32,6 +32,10 @@ export interface ParkedLot {
   /** ROC dividends only: set when basis allocation ran (null = not yet
    * allocated; set with zero adjustment rows = basis was already exhausted). */
   rocAllocatedAt?: string | null;
+  /** ROC dividends only: the beyond-basis excess recorded AT allocation time
+   * (estimated capital gain). Never derived from adjustment rows — trims and
+   * transfers legitimately scale or cascade those away. */
+  rocOverflow?: number | null;
   notes?: string | null;
 }
 
@@ -137,8 +141,8 @@ export function consumeLotsFifo(
     const left = lot.shares - take;
     if (left > 1e-9) {
       const keptFraction = left / lot.shares;
-      const keptAmount = Math.round(lot.amount * keptFraction * 100) / 100;
-      const consumedAmount = Math.round((lot.amount - keptAmount) * 100) / 100;
+      const keptAmount = roundCents(lot.amount * keptFraction);
+      const consumedAmount = roundCents(lot.amount - keptAmount);
       const consumedAdj = lotAdjTotal * (take / lot.shares);
       updates.push({ id: lot.id, shares: left, amount: keptAmount });
       for (const a of lotAdjs) {

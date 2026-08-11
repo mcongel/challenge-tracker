@@ -41,7 +41,7 @@ const TABLES = [
     shares: l.shares, price: l.price ?? null, amount: l.amount,
     classification: l.classification ?? null, ex_date: l.exDate ?? null,
     reclassified_at: l.reclassifiedAt ?? null, roc_allocated_at: l.rocAllocatedAt ?? null,
-    notes: l.notes ?? null,
+    roc_overflow: l.rocOverflow ?? null, notes: l.notes ?? null,
   })), 'id'],
   ['parked_lot_adjustments', get('parked_lot_adjustments').map((a) => ({
     id: a.id, share_lot_id: a.shareLotId, dividend_lot_id: a.dividendLotId ?? null,

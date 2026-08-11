@@ -14,10 +14,10 @@ import type {
   Trade,
 } from '../lib/engine';
 import {
-  accountTotal, aggregateLots, allocateRoc, closeShares, computeAccountCash, concentration,
-  consumeLotsFifo, cumulativeFloor, LT_TAX_RATE, netContributed, ORDINARY_DIVIDEND_TAX_RATE,
-  pileTotal, QUALIFIED_DIVIDEND_TAX_RATE, reservedTotal, roundCents, shadowValue, ST_TAX_RATE,
-  totalScore, trimPreview,
+  accountTotal, adjustmentsForLots, aggregateLots, allocateRoc, closeShares, computeAccountCash,
+  concentration, consumeLotsFifo, cumulativeFloor, isArchivedPosition, LT_TAX_RATE,
+  netContributed, ORDINARY_DIVIDEND_TAX_RATE, pileTotal, QUALIFIED_DIVIDEND_TAX_RATE,
+  reservedTotal, round6, roundCents, shadowValue, ST_TAX_RATE, totalScore, trimPreview,
 } from '../lib/engine';
 import type {
   AccountCashBreakdown, DividendClassification, DividendTaxRates, ParkedCashEvent, ParkedLot,
@@ -165,8 +165,9 @@ interface DataContextValue extends DataState {
     classification: DividendClassification,
     exDate?: string | null,
   ) => Promise<void>;
-  /** Backfill: run basis allocation for an ROC dividend that predates Phase 2. */
-  allocateRocDividend: (dividendLotId: string) => Promise<void>;
+  /** Backfill: allocate basis for ROC dividends that predate Phase 2, oldest
+   * first. Idempotent per dividend; one refresh at the end. */
+  allocateRocDividends: (dividendLotIds: string[]) => Promise<void>;
   /** New parked holding: creates the position and its first purchase lot. */
   addParkedPosition: (args: {
     ticker: string;
@@ -290,7 +291,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const persistQuotedPrices = useCallback(
     async (fresh: Record<string, { price: number }>) => {
       const stale = state.parked.filter((p) => {
-        if (p.shares <= 1e-9) return false; // archived rows don't need fresh prices
+        if (isArchivedPosition(p)) return false; // archived rows don't need fresh prices
         const quoted = fresh[p.ticker]?.price;
         // 0.5c tolerance keeps us from writing on every rounding wobble.
         return quoted !== undefined && Math.abs(quoted - p.currentPrice) > 0.005;
@@ -315,7 +316,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const tickers = [
       ...new Set([
         ...state.lots.map((l) => l.ticker),
-        ...state.parked.filter((p) => p.shares > 1e-9).map((p) => p.ticker),
+        ...state.parked.filter((p) => !isArchivedPosition(p)).map((p) => p.ticker),
         'VOO',
       ]),
     ];
@@ -367,7 +368,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const tickers = [
       ...new Set([
         ...state.lots.map((l) => l.ticker),
-        ...state.parked.filter((p) => p.shares > 1e-9).map((p) => p.ticker),
+        ...state.parked.filter((p) => !isArchivedPosition(p)).map((p) => p.ticker),
       ]),
     ];
     if (tickers.length > 0) {
@@ -681,19 +682,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   /** Allocate an ROC dividend's basis reductions across the position's
-   * current share lots (its own DRIP lot excluded — a distribution doesn't
-   * reduce its own reinvested shares). Reads lots and adjustments fresh from
-   * the DB so sequential allocations (Allocate all) see each other's rows.
-   * Inserts rows + stamps the dividend. Does NOT refresh — callers do. */
+   * current share lots (its own DRIP lot excluded via allocateRoc's
+   * excludeLotId — a distribution doesn't reduce its own reinvested shares).
+   * Reads lots and adjustments fresh from the DB so sequential allocations
+   * see each other's rows, and deletes any prior rows for this dividend
+   * first so a retry (or a stale second tab) can never double-reduce.
+   * Stores the beyond-basis overflow ON the dividend at allocation time —
+   * later trims/transfers mutate the rows, so overflow must not be derived.
+   * Does NOT refresh — callers do. */
   const insertRocAllocations = useCallback(
     async (divLot: Pick<ParkedLot, 'id' | 'parkedPositionId' | 'amount' | 'date'>) => {
       const client = db();
+      const { error: clearErr } = await client
+        .from('parked_lot_adjustments').delete().eq('dividend_lot_id', divLot.id);
+      if (clearErr) throw clearErr;
       const { data: lotRows, error: lotsErr } = await client
         .from('parked_lots').select('*').eq('parked_position_id', divLot.parkedPositionId);
       if (lotsErr) throw lotsErr;
-      const shareLots = (lotRows ?? [])
-        .map(mapParkedLot)
-        .filter((l) => l.shares > 0 && l.id !== divLot.id);
+      const shareLots = (lotRows ?? []).map(mapParkedLot).filter((l) => l.shares > 0);
       let adjs: ParkedLotAdjustment[] = [];
       if (shareLots.length > 0) {
         const { data: adjRows, error: adjErr } = await client
@@ -703,9 +709,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         if (adjErr) throw adjErr;
         adjs = (adjRows ?? []).map(mapParkedLotAdjustment);
       }
-      const { allocations } = allocateRoc(shareLots, adjs, {
+      const { allocations, overflow } = allocateRoc(shareLots, adjs, {
         amount: divLot.amount,
         date: divLot.date,
+        excludeLotId: divLot.id,
       });
       if (allocations.length > 0) {
         const { error: err } = await client.from('parked_lot_adjustments').insert(
@@ -721,7 +728,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
       const { error: stampErr } = await client
         .from('parked_lots')
-        .update({ roc_allocated_at: new Date().toISOString() })
+        .update({ roc_allocated_at: new Date().toISOString(), roc_overflow: overflow.total })
         .eq('id', divLot.id);
       if (stampErr) throw stampErr;
     },
@@ -737,26 +744,35 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         .select('id')
         .single();
       if (err) throw err;
-      if (lot.source === 'dividend' && lot.classification === 'return_of_capital') {
-        await insertRocAllocations({ ...lot, id: data.id as string });
+      try {
+        if (lot.source === 'dividend' && lot.classification === 'return_of_capital') {
+          await insertRocAllocations({ ...lot, id: data.id as string });
+        }
+      } finally {
+        // Even if allocation fails, the inserted lot must reach the aggregate
+        // and the UI — otherwise a natural retry duplicates the dividend. The
+        // failed allocation stays repairable via the unallocated badge.
+        await recomputeParkedAggregate(lot.parkedPositionId);
+        await refresh();
       }
-      await recomputeParkedAggregate(lot.parkedPositionId);
-      await refresh();
     },
     [refresh, recomputeParkedAggregate, insertRocAllocations],
   );
 
-  /** Backfill/repair: run basis allocation for an ROC dividend that predates
-   * Phase 2 (or whose allocation was reversed). */
-  const allocateRocDividend = useCallback(
-    async (dividendLotId: string) => {
-      const divLot = state.parkedLots.find((l) => l.id === dividendLotId);
-      if (!divLot) throw new Error('Dividend not found');
-      if (divLot.classification !== 'return_of_capital') {
-        throw new Error('Only return-of-capital dividends allocate basis.');
+  /** Backfill/repair: allocate basis for ROC dividends that predate Phase 2
+   * or whose allocation failed midway. Oldest-first ordering is the caller's
+   * job; allocation itself is idempotent. One refresh at the end. */
+  const allocateRocDividends = useCallback(
+    async (dividendLotIds: string[]) => {
+      try {
+        for (const id of dividendLotIds) {
+          const divLot = state.parkedLots.find((l) => l.id === id);
+          if (!divLot || divLot.classification !== 'return_of_capital') continue;
+          await insertRocAllocations(divLot);
+        }
+      } finally {
+        await refresh();
       }
-      await insertRocAllocations(divLot);
-      await refresh();
     },
     [refresh, state.parkedLots, insertRocAllocations],
   );
@@ -773,19 +789,27 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const prior = lot?.classification ?? 'unclassified';
       const toRoc = classification === 'return_of_capital' && prior !== 'return_of_capital';
       const fromRoc = prior === 'return_of_capital' && classification !== 'return_of_capital';
+      if (fromRoc) {
+        // Converging order: first back to "unallocated ROC", then drop the
+        // rows, then change the class. A failure at any step leaves a state
+        // the (idempotent) allocate affordance or a retry repairs — never
+        // orphaned reductions under a non-ROC classification.
+        const { error: unstampErr } = await client
+          .from('parked_lots')
+          .update({ roc_allocated_at: null, roc_overflow: null })
+          .eq('id', id);
+        if (unstampErr) throw unstampErr;
+        const { error: delErr } = await client
+          .from('parked_lot_adjustments').delete().eq('dividend_lot_id', id);
+        if (delErr) throw delErr;
+      }
       const payload: Record<string, unknown> = { classification };
       if (prior !== 'unclassified' && prior !== classification) {
         payload.reclassified_at = new Date().toISOString();
       }
       if (exDate !== undefined) payload.ex_date = exDate;
-      if (fromRoc) payload.roc_allocated_at = null;
       const { error: err } = await client.from('parked_lots').update(payload).eq('id', id);
       if (err) throw err;
-      if (fromRoc) {
-        const { error: delErr } = await client
-          .from('parked_lot_adjustments').delete().eq('dividend_lot_id', id);
-        if (delErr) throw delErr;
-      }
       if (toRoc && lot) await insertRocAllocations(lot);
       await refresh();
     },
@@ -807,7 +831,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const client = db();
       const upper = ticker.toUpperCase();
       const existing = state.parked.find((x) => x.ticker === upper && x.accountId === accountId);
-      if (existing && existing.shares > 1e-9) {
+      if (existing && !isArchivedPosition(existing)) {
         throw new Error(`${upper} is already held in that account — add a lot from its row instead.`);
       }
       let positionId: string;
@@ -893,8 +917,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
       const positionLots = state.parkedLots.filter((l) => l.parkedPositionId === parkedId);
       if (positionLots.length === 0) throw new Error('No lots to transfer — add lots first.');
-      const lotIds = new Set(positionLots.map((l) => l.id));
-      const positionAdjustments = state.parkedLotAdjustments.filter((a) => lotIds.has(a.shareLotId));
+      const positionAdjustments = adjustmentsForLots(positionLots, state.parkedLotAdjustments);
 
       const fromName = p.account;
       const { updates, deletes, adjustmentUpdates, consumed } = consumeLotsFifo(
@@ -902,9 +925,19 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       );
 
       // Destination position: merge into an existing one or create it.
-      let destId = state.parked.find(
+      const dest = state.parked.find(
         (x) => x.ticker === p.ticker && x.accountId === toAccountId,
-      )?.id;
+      );
+      let destId = dest?.id;
+      if (dest && isArchivedPosition(dest)) {
+        // Reviving an archived row: its price froze at archive time and the
+        // quote loop has been skipping it — carry the source's current price.
+        const { error: priceErr } = await client
+          .from('parked_positions')
+          .update({ current_price: p.currentPrice })
+          .eq('id', dest.id);
+        if (priceErr) throw priceErr;
+      }
       if (!destId) {
         const { data, error: posErr } = await client
           .from('parked_positions')
@@ -927,18 +960,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Recreate the slices at the destination with dates/basis/source intact.
-      // Dividend tax character (classification/ex-date/reclassified/ROC stamp)
-      // must survive the move — consumed slices don't carry it, the source lot
-      // does. Per-slice inserts (transfers are rare) so each new lot's id is
-      // known: a slice whose basis was ROC-reduced gets a carried adjustment
-      // row, keeping adjusted basis honest at the destination.
+      // Dividend tax character (classification/ex-date/reclassified/ROC stamp
+      // and stored overflow) must survive the move — consumed slices don't
+      // carry it, the source lot does. One ordered batch insert: PostgREST
+      // returns rows in input order, so consumed[i] ↔ newLots[i].
       const lotById = new Map(positionLots.map((l) => [l.id, l]));
-      for (const c of consumed) {
-        const src = lotById.get(c.id);
-        const { data: newLot, error: lotErr } = await client
-          .from('parked_lots')
-          .insert(
-            parkedLotPayload({
+      const { data: newLots, error: lotErr } = await client
+        .from('parked_lots')
+        .insert(
+          consumed.map((c) => {
+            const src = lotById.get(c.id);
+            return parkedLotPayload({
               parkedPositionId: destId as string,
               date: c.date,
               source: c.source,
@@ -949,23 +981,41 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
               exDate: src?.exDate ?? null,
               reclassifiedAt: src?.reclassifiedAt ?? null,
               rocAllocatedAt: src?.rocAllocatedAt ?? null,
+              rocOverflow: src?.rocOverflow ?? null,
               notes: `ACATS from ${fromName} ${date}`,
-            }),
-          )
-          .select('id')
-          .single();
-        if (lotErr) throw lotErr;
-        const carried = Math.round((c.amount - c.adjustedAmount) * 1e6) / 1e6;
-        if (carried > 0) {
-          const { error: adjErr } = await client.from('parked_lot_adjustments').insert(
+            });
+          }),
+        )
+        .select('id');
+      if (lotErr) throw lotErr;
+      const oldToNew = new Map(consumed.map((c, i) => [c.id, (newLots ?? [])[i]?.id as string]));
+
+      // Recreate each moved slice's ROC adjustment rows at the destination,
+      // event linkage intact — reversal by dividend id must keep working
+      // after the move. A dividend lot moving in this same transfer maps to
+      // its new id; one that stays behind (cash ROC on the archived source)
+      // keeps its original id.
+      const destAdjRows = consumed.flatMap((c) => {
+        const srcLot = lotById.get(c.id);
+        if (!srcLot) return [];
+        const fraction = srcLot.shares > 0 ? c.shares / srcLot.shares : 1;
+        return positionAdjustments
+          .filter((a) => a.shareLotId === c.id)
+          .map((a) => ({ a, amount: round6(a.amount * fraction) }))
+          .filter((x) => x.amount > 0)
+          .map(({ a, amount }) =>
             parkedLotAdjustmentPayload({
-              shareLotId: newLot.id as string,
-              dividendLotId: null,
-              amount: carried,
+              shareLotId: oldToNew.get(c.id) as string,
+              dividendLotId: a.dividendLotId
+                ? oldToNew.get(a.dividendLotId) ?? a.dividendLotId
+                : null,
+              amount,
             }),
           );
-          if (adjErr) throw adjErr;
-        }
+      });
+      if (destAdjRows.length > 0) {
+        const { error: adjErr } = await client.from('parked_lot_adjustments').insert(destAdjRows);
+        if (adjErr) throw adjErr;
       }
 
       // Then shrink the source (lots and their surviving adjustment rows).
@@ -1079,8 +1129,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       // Consume lots oldest-first so remaining basis and unlock clocks stay
       // honest — and so the sale record carries the real basis and LT split.
       const positionLots = state.parkedLots.filter((l) => l.parkedPositionId === parkedId);
-      const lotIds = new Set(positionLots.map((l) => l.id));
-      const positionAdjustments = state.parkedLotAdjustments.filter((a) => lotIds.has(a.shareLotId));
+      const positionAdjustments = adjustmentsForLots(positionLots, state.parkedLotAdjustments);
       let costBasis: number | null = null;
       let ltShares: number | null = null;
       if (positionLots.length > 0) {
@@ -1103,8 +1152,22 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             .from('parked_lot_adjustments').update({ amount: a.amount }).eq('id', a.id);
           if (err) throw err;
         }
-        if (deletes.length > 0) {
-          const { error: err } = await client.from('parked_lots').delete().in('id', deletes);
+        // DRIP dividend lots double as income records. Selling their
+        // reinvested shares is right (the basis went into the sale), but the
+        // dividend still happened — keep the lot at zero shares so trailing
+        // income and the YTD tax estimate don't shrink retroactively.
+        // (Account-cash math tells sold-DRIP relics from cash dividends by
+        // price: cash dividends have none.)
+        const lotSourceById = new Map(positionLots.map((l) => [l.id, l.source]));
+        const dripDeletes = deletes.filter((id) => lotSourceById.get(id) === 'dividend');
+        const hardDeletes = deletes.filter((id) => lotSourceById.get(id) !== 'dividend');
+        for (const id of dripDeletes) {
+          const { error: err } = await client
+            .from('parked_lots').update({ shares: 0 }).eq('id', id);
+          if (err) throw err;
+        }
+        if (hardDeletes.length > 0) {
+          const { error: err } = await client.from('parked_lots').delete().in('id', hardDeletes);
           if (err) throw err;
         }
         await recomputeParkedAggregate(parkedId);
@@ -1356,7 +1419,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       addParkedLot,
       deleteParkedLot,
       reclassifyDividend,
-      allocateRocDividend,
+      allocateRocDividends,
       addParkedPosition,
       deleteParkedSale,
       updateParkedSale,
@@ -1377,7 +1440,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       refresh, addCashEvent, deleteCashEvent, addLot, closePosition, recordSplit,
       setTradeWashSale, deleteTrade, updateParked, recordMilestone, addAccount, addOutsideSale,
       deleteOutsideSale, recordTrim, addParkedLot, deleteParkedLot, reclassifyDividend,
-      allocateRocDividend, addParkedPosition,
+      allocateRocDividends, addParkedPosition,
       deleteParkedSale, updateParkedSale, transferParked, accountCash, addParkedCashEvent,
       deleteParkedCashEvent, reconcileAccountCash, exampleData, clearExampleData,
       setOverride, clearOverride,

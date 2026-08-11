@@ -2,6 +2,11 @@ import type { ParkedPosition } from './types';
 import { daysBetween, longTermDate } from './dates';
 import { sum } from './money';
 
+/** Archived: fully trimmed/transferred away, kept for dividend history.
+ * The single definition of "closed" — use this, not a raw epsilon. */
+export const isArchivedPosition = (p: Pick<ParkedPosition, 'shares'>): boolean =>
+  p.shares <= 1e-9;
+
 export const DEFAULT_CONCENTRATION_CAP = 0.5;
 
 export function parkedMarketValue(p: ParkedPosition): number {

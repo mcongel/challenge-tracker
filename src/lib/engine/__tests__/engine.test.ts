@@ -324,6 +324,7 @@ describe('parked cash — tracked balance with auto-flows', () => {
         { id: 'l1', parkedPositionId: 'p1', date: '2026-04-01', source: 'purchase', shares: 4, amount: 400 },
         { id: 'l2', parkedPositionId: 'p1', date: '2026-06-01', source: 'dividend', shares: 0, amount: 25 },      // cash dividend
         { id: 'l3', parkedPositionId: 'p1', date: '2026-06-15', source: 'dividend', shares: 0.1, amount: 15 },    // DRIP — no cash effect
+        { id: 'l6', parkedPositionId: 'p1', date: '2026-05-15', source: 'dividend', shares: 0, price: 12, amount: 9 }, // sold-DRIP relic (price set) — never cash
         { id: 'l4', parkedPositionId: 'p1', date: null, source: 'purchase', shares: 1, amount: 90, notes: 'ACATS from Stash 2026-08-06' },
         { id: 'l5', parkedPositionId: 'p1', date: '2026-07-01', source: 'purchase', shares: 1, amount: 80, notes: 'Milestone 100000 bank' },
       ],
@@ -590,9 +591,12 @@ describe('parked ROC — allocation, adjusted basis, overflow', () => {
   const buy = (id: string, date: string | null, shares: number, amount: number): ParkedLot => ({
     id, parkedPositionId: 'p1', date, source: 'purchase', shares, price: null, amount,
   });
-  const rocDiv = (id: string, date: string | null, amount: number, allocated = false): ParkedLot => ({
+  const rocDiv = (
+    id: string, date: string | null, amount: number, allocated = false, overflow = 0,
+  ): ParkedLot => ({
     id, parkedPositionId: 'p1', date, source: 'dividend', shares: 0, price: null, amount,
     classification: 'return_of_capital', rocAllocatedAt: allocated ? '2026-08-12T00:00:00Z' : null,
+    rocOverflow: allocated ? overflow : null,
   });
   const adj = (
     id: string, shareLotId: string, amount: number, dividendLotId: string | null = 'd1',
@@ -675,29 +679,36 @@ describe('parked ROC — allocation, adjusted basis, overflow', () => {
     expect(agg.avgCost).toBe(100);               // avgCost stays original
   });
 
-  it('overflowForDividend derives from rows; basisExhaustedLotIds flags empty lots', async () => {
-    const { overflowForDividend, basisExhaustedLotIds } = await import('../parkedRoc');
-    const d = rocDiv('d1', '2026-06-01', 10, true);
-    expect(overflowForDividend(d, [adj('r1', 'a', 7)])).toBeCloseTo(3, 9);
-    expect(overflowForDividend(d, [adj('r1', 'a', 10)])).toBe(0);
+  it('basisExhaustedLotIds flags empty lots; adjustmentsForLots joins by lot id', async () => {
+    const { adjustmentsForLots, basisExhaustedLotIds } = await import('../parkedRoc');
     const lots = [buy('a', '2025-01-01', 10, 5), buy('b', '2025-01-01', 10, 500)];
     expect(basisExhaustedLotIds(lots, [adj('r1', 'a', 5)])).toEqual(['a']);
+    const rows = [adj('r1', 'a', 5), adj('r2', 'other-position-lot', 9)];
+    expect(adjustmentsForLots(lots, rows)).toEqual([rows[0]]);
   });
 
-  it('dividendTaxYTD: allocated ROC taxed only on overflow, unallocated flagged at zero tax', async () => {
+  it('dividendTaxYTD: overflow comes from the STORED value, immune to later row mutation', async () => {
     const { dividendTaxYTD } = await import('../parkedIncome');
     const RATES = { qualified: 0.15, ordinary: 0.24, capitalGainDist: 0.21 };
     const lots = [
-      rocDiv('d1', '2026-04-01', 10, true),  // allocated: 7 absorbed, 3 overflow
-      rocDiv('d2', '2026-05-01', 8, true),   // allocated: fully absorbed
-      rocDiv('d3', '2026-06-01', 5, false),  // never allocated — backfill pending
+      rocDiv('d1', '2026-04-01', 10, true, 3), // allocated: 7 absorbed, 3 overflow at allocation
+      rocDiv('d2', '2026-05-01', 8, true),     // allocated: fully absorbed
+      rocDiv('d3', '2026-06-01', 5, false),    // never allocated — backfill pending
     ];
-    const rows = [adj('r1', 'a', 7, 'd1'), adj('r2', 'a', 8, 'd2')];
-    const r = dividendTaxYTD(lots, '2026-08-12', RATES, rows);
+    // Note: no adjustment rows passed at all — a later trim may have cascaded
+    // them away, and the estimate must not change when that happens.
+    const r = dividendTaxYTD(lots, '2026-08-12', RATES);
     expect(r.rocOverflowAmount).toBeCloseTo(3, 9);
     expect(r.rocUnallocatedAmount).toBe(5);
-    expect(r.totalTax).toBeCloseTo(3 * 0.21, 9); // only the overflow is taxed
+    expect(r.totalTax).toBeCloseTo(3 * 0.21, 9); // only the recorded overflow is taxed
     expect(r.byClassification.return_of_capital?.amount).toBe(23);
+  });
+
+  it('isUnallocatedRoc: only ROC dividends without the allocation stamp', async () => {
+    const { isUnallocatedRoc } = await import('../parkedRoc');
+    expect(isUnallocatedRoc(rocDiv('d1', '2026-06-01', 5, false))).toBe(true);
+    expect(isUnallocatedRoc(rocDiv('d2', '2026-06-01', 5, true))).toBe(false);
+    expect(isUnallocatedRoc(buy('a', '2026-06-01', 1, 100))).toBe(false);
   });
 
   it('consumeLotsFifo prorates adjustments on partial consume; full consume relies on cascade', async () => {

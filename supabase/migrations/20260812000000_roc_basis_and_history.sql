@@ -36,4 +36,9 @@ grant all on challenge.parked_lot_adjustments to authenticated, service_role;
 
 -- Distinguishes "ROC not yet allocated" (backfill badge in the UI) from
 -- "allocated, possibly zero rows because basis was already exhausted".
-alter table challenge.parked_lots add column roc_allocated_at timestamptz;
+-- roc_overflow records the beyond-basis excess AT allocation time — it must
+-- not be derived from adjustment rows later, because trims and transfers
+-- legitimately scale or cascade those rows away.
+alter table challenge.parked_lots
+  add column roc_allocated_at timestamptz,
+  add column roc_overflow numeric(16,6);

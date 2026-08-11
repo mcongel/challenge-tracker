@@ -6,6 +6,7 @@
 
 import { longTermDate } from './dates';
 import { round6, sum } from './money';
+import { aggregateLots } from './parkedLots';
 import type { ParkedLot } from './parkedLots';
 
 export interface ParkedLotAdjustment {
@@ -87,24 +88,27 @@ export function allocateRoc(
 /** Position aggregate with both basis views: original (yield-on-cost,
  * display) and ROC-adjusted (tax truth). avgCost stays original. */
 export function aggregateLotsAdjusted(lots: ParkedLot[], adjustments: ParkedLotAdjustment[]) {
-  const shareLots = lots.filter((l) => l.shares > 0);
-  const shares = sum(shareLots.map((l) => l.shares));
-  const costBasis = sum(shareLots.map((l) => l.amount));
-  const adjustedCostBasis = sum(shareLots.map((l) => adjustedLotAmount(l, adjustments)));
-  return { shares, costBasis, adjustedCostBasis, avgCost: shares > 0 ? costBasis / shares : 0 };
+  return {
+    ...aggregateLots(lots),
+    adjustedCostBasis: sum(
+      lots.filter((l) => l.shares > 0).map((l) => adjustedLotAmount(l, adjustments)),
+    ),
+  };
 }
 
-/** Derived event overflow: dividend amount − Σ its adjustment rows. Only
- * meaningful when the dividend's rocAllocatedAt is set (otherwise the event
- * simply hasn't been allocated yet). */
-export function overflowForDividend(
-  dividendLot: ParkedLot,
+/** An ROC dividend whose basis allocation hasn't run — the backfill state. */
+export const isUnallocatedRoc = (l: ParkedLot): boolean =>
+  l.source === 'dividend' &&
+  (l.classification ?? 'unclassified') === 'return_of_capital' &&
+  !l.rocAllocatedAt;
+
+/** The adjustment rows belonging to these lots — the standard join. */
+export function adjustmentsForLots(
+  lots: ParkedLot[],
   adjustments: ParkedLotAdjustment[],
-): number {
-  const applied = sum(
-    adjustments.filter((a) => a.dividendLotId === dividendLot.id).map((a) => a.amount),
-  );
-  return Math.max(0, dividendLot.amount - applied);
+): ParkedLotAdjustment[] {
+  const ids = new Set(lots.map((l) => l.id));
+  return adjustments.filter((a) => ids.has(a.shareLotId));
 }
 
 /** Share lots whose basis has been fully consumed by ROC — further ROC on

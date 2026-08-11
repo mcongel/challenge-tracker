@@ -10,8 +10,8 @@
  */
 import { createClient } from '@supabase/supabase-js';
 import {
-  accountTotal, concentration, cumulativeFloor, netContributed, pileTotal, reservedTotal,
-  roundCents, shadowValue, totalScore,
+  accountTotal, concentration, cumulativeFloor, isArchivedPosition, netContributed, pileTotal,
+  reservedTotal, roundCents, shadowValue, totalScore,
 } from '../src/lib/engine';
 import type {
   BenchmarkDeposit, CashEvent, MilestoneRecord, ParkedPosition, PositionLot,
@@ -78,7 +78,9 @@ async function main(): Promise<void> {
     ...new Set([
       ...lots.map((l) => l.ticker),
       // Archived (zero-share) positions keep history, not quotes.
-      ...parkedRows.filter((r) => num(r.shares) > 1e-9).map((r) => r.ticker),
+      ...parkedRows
+        .filter((r) => !isArchivedPosition({ shares: num(r.shares) }))
+        .map((r) => r.ticker),
       'VOO',
     ]),
   ];
