@@ -203,10 +203,17 @@ interface DataContextValue extends DataState {
   /** Exact undo of a snapshot-bearing sale: lots, basis, and ROC come back.
    * Never touches the challenge ledger. */
   undoParkedSale: (saleId: string) => Promise<void>;
-  /** Edit a sale's numbers: undo + re-apply against fresh data. */
+  /** Edit a sale's numbers: undo + re-apply against fresh data. Optional
+   * funded/notes overrides; defaults carry the old row's values. */
   editParkedSaleAmounts: (
     saleId: string,
-    next: { shares: number; pricePerShare: number; date: string },
+    next: {
+      shares: number;
+      pricePerShare: number;
+      date: string;
+      fundedChallenge?: boolean;
+      notes?: string | null;
+    },
   ) => Promise<void>;
   /** Rows seeded from the workbook, identified by EXAMPLE in their notes. */
   exampleData: { cashEvents: CashEvent[]; lots: PositionLot[]; trades: Trade[]; total: number };
@@ -1438,7 +1445,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const editParkedSaleAmounts = useCallback(
     async (
       saleId: string,
-      next: { shares: number; pricePerShare: number; date: string },
+      next: {
+        shares: number;
+        pricePerShare: number;
+        date: string;
+        fundedChallenge?: boolean;
+        notes?: string | null;
+      },
     ) => {
       const client = db();
       if (next.shares <= 0) throw new Error('Shares must be positive');
@@ -1479,8 +1492,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           shares: next.shares,
           pricePerShare: next.pricePerShare,
           date: next.date,
-          fundedChallenge: old.fundedChallenge,
-          notes: old.notes ?? null,
+          fundedChallenge: next.fundedChallenge ?? old.fundedChallenge,
+          notes: next.notes !== undefined ? next.notes : old.notes ?? null,
         });
       } finally {
         await refresh();

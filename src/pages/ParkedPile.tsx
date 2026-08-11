@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useMemo, useState } from 'react';
 import {
   AlertTriangle, Archive, ArrowDown, ArrowLeftRight, ArrowUp, ArrowUpDown, ChevronDown,
-  ChevronRight, Lock, Pencil, Plus, Scissors, Settings2, Trash2, Unlock,
+  ChevronRight, Lock, Pencil, Plus, Scissors, Settings2, Trash2, Undo2, Unlock,
 } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
@@ -111,7 +111,8 @@ export function SortHeader<K extends string = SortKey>({
 export function ParkedPile() {
   const {
     parked: allParked, parkedLots, parkedSales, accounts, tickerNames, deleteParkedSale,
-    concentrationCap, updateSetting, accountCash, dayChange, ltTaxRate, stTaxRate, loading, error,
+    undoParkedSale, concentrationCap, updateSetting, accountCash, dayChange, ltTaxRate, stTaxRate,
+    loading, error,
   } = useData();
   // Archived (zero-share) rows keep dividend history alive on the Income
   // screen; this table shows live holdings only.
@@ -119,6 +120,20 @@ export function ParkedPile() {
   const [capOpen, setCapOpen] = useState(false);
   const [deletingSale, setDeletingSale] = useState<ParkedSale | null>(null);
   const [editingSale, setEditingSale] = useState<ParkedSale | null>(null);
+  const [undoingSale, setUndoingSale] = useState<ParkedSale | null>(null);
+
+  // Undo is LIFO per holding: only the newest snapshot sale for a
+  // ticker+account can be undone (older restores would fight newer state).
+  const newestSnapshotSaleIds = useMemo(() => {
+    const newest = new Map<string, ParkedSale>();
+    for (const s of parkedSales) {
+      if (!s.consumed) continue;
+      const key = `${s.ticker}|${s.accountId}`;
+      const cur = newest.get(key);
+      if (!cur || (s.createdAt ?? s.date) > (cur.createdAt ?? cur.date)) newest.set(key, s);
+    }
+    return new Set([...newest.values()].map((s) => s.id));
+  }, [parkedSales]);
 
   const realized = parkedSales.filter((s) => s.costBasis != null);
   const realizedTotal = realized.reduce((sum, s) => sum + (s.proceeds - (s.costBasis as number)), 0);
@@ -618,6 +633,19 @@ export function ParkedPile() {
                       )}
                     </td>
                     <td className="px-2 py-2 whitespace-nowrap">
+                      {s.consumed && (
+                        <button
+                          onClick={() => setUndoingSale(s)}
+                          disabled={!newestSnapshotSaleIds.has(s.id)}
+                          className="p-1 rounded hover:bg-gray-100 disabled:opacity-30"
+                          aria-label="Undo sale"
+                          title={newestSnapshotSaleIds.has(s.id)
+                            ? 'Undo — lots and basis come back exactly'
+                            : 'Undo newer sales of this holding first'}
+                        >
+                          <Undo2 className="h-4 w-4 text-gray-300 hover:text-gray-600" />
+                        </button>
+                      )}
                       <button onClick={() => setEditingSale(s)} className="p-1 rounded hover:bg-gray-100" aria-label="Edit sale record">
                         <Pencil className="h-4 w-4 text-gray-300 hover:text-gray-600" />
                       </button>
@@ -641,9 +669,18 @@ export function ParkedPile() {
       {deletingSale && (
         <ConfirmModal
           title="Delete sale record"
-          message={`Delete the ${deletingSale.ticker} sale from ${deletingSale.date} (${formatCurrency(deletingSale.proceeds)})? This removes only the history record — it does not restore shares or lots.`}
+          message={`Delete the ${deletingSale.ticker} sale from ${deletingSale.date} (${formatCurrency(deletingSale.proceeds)})? This removes only the history record — it does not restore shares or lots.${deletingSale.consumed ? ' If you want the shares back, use Undo instead.' : ''}`}
           onConfirm={() => deleteParkedSale(deletingSale.id)}
           onClose={() => setDeletingSale(null)}
+        />
+      )}
+      {undoingSale && (
+        <ConfirmModal
+          title="Undo sale"
+          message={`Undo the ${undoingSale.ticker} sale from ${undoingSale.date} (${fmtSh(undoingSale.shares)} sh, ${formatCurrency(undoingSale.proceeds)})? Lots, basis, and ROC adjustments come back exactly; ROC recorded after this sale is recomputed over the restored lots.${undoingSale.fundedChallenge ? ' IMPORTANT: this sale funded the challenge — the ledger Deposit and its shadow VOO twin are NOT removed. Fix the Cash Ledger yourself.' : ''}`}
+          confirmLabel="Undo sale"
+          onConfirm={() => undoParkedSale(undoingSale.id)}
+          onClose={() => setUndoingSale(null)}
         />
       )}
       {editingSale && <EditSaleModal sale={editingSale} onClose={() => setEditingSale(null)} />}
@@ -705,8 +742,13 @@ function CapModal({
 }
 
 function EditSaleModal({ sale: s, onClose }: { sale: ParkedSale; onClose: () => void }) {
-  const { updateParkedSale } = useData();
+  const { updateParkedSale, editParkedSaleAmounts } = useData();
+  // Snapshot sales re-derive basis and term from the lots — their numbers are
+  // truly editable. Legacy (pre-snapshot) sales can only correct the record.
+  const snapshotMode = Boolean(s.consumed);
   const [date, setDate] = useState(s.date);
+  const [shares, setShares] = useState(String(s.shares));
+  const [price, setPrice] = useState(String(s.pricePerShare));
   const [basis, setBasis] = useState(s.costBasis != null ? String(s.costBasis) : '');
   const [ltShares, setLtShares] = useState(s.ltShares != null ? String(s.ltShares) : '');
   const [funded, setFunded] = useState(s.fundedChallenge);
@@ -715,11 +757,35 @@ function EditSaleModal({ sale: s, onClose }: { sale: ParkedSale; onClose: () => 
   const [busy, setBusy] = useState(false);
 
   const numBasis = Number(basis);
-  const gainPreview = basis !== '' && numBasis >= 0 ? s.proceeds - numBasis : null;
+  const gainPreview = snapshotMode
+    ? null
+    : basis !== '' && numBasis >= 0 ? s.proceeds - numBasis : null;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
+    if (snapshotMode) {
+      const sh = Number(shares);
+      const pr = Number(price);
+      if (!sh || sh <= 0) return setFormError('Enter the shares sold.');
+      if (!pr || pr <= 0) return setFormError('Enter the sale price.');
+      setBusy(true);
+      try {
+        await editParkedSaleAmounts(s.id, {
+          shares: sh,
+          pricePerShare: pr,
+          date,
+          fundedChallenge: funded,
+          notes: notes || null,
+        });
+        onClose();
+      } catch (err) {
+        setFormError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     if (ltShares !== '' && Number(ltShares) > s.shares + 1e-9) {
       return setFormError(`Long-term shares can't exceed the ${fmtSh(s.shares)} sh sold.`);
     }
@@ -743,22 +809,53 @@ function EditSaleModal({ sale: s, onClose }: { sale: ParkedSale; onClose: () => 
   return (
     <Modal isOpen onClose={onClose} title={`Edit sale — ${s.ticker} (${fmtSh(s.shares)} sh, ${formatCurrency(s.proceeds)})`}>
       <form onSubmit={submit} className="space-y-3">
-        <div className="grid grid-cols-3 gap-3">
-          <div>
-            <label className={labelCls}>Date</label>
-            <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
-          </div>
-          <div>
-            <label className={labelCls}>Cost basis ($)</label>
-            <input type="number" step="any" min="0" value={basis} placeholder="unknown"
-              onChange={(e) => setBasis(e.target.value)} className={inputCls} />
-          </div>
-          <div>
-            <label className={labelCls}>Long-term shares (of {fmtSh(s.shares)})</label>
-            <input type="number" step="any" min="0" value={ltShares} placeholder="unknown"
-              onChange={(e) => setLtShares(e.target.value)} className={inputCls} />
-          </div>
-        </div>
+        {snapshotMode ? (
+          <>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className={labelCls}>Date</label>
+                <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>Shares</label>
+                <input type="number" step="any" min="0.00000001" required value={shares}
+                  onChange={(e) => setShares(e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>Price ($)</label>
+                <input type="number" step="any" min="0" required value={price}
+                  onChange={(e) => setPrice(e.target.value)} className={inputCls} />
+              </div>
+            </div>
+            <p className="text-xs text-gray-400">
+              Saving undoes this sale and re-applies it with the corrected numbers — lots, basis,
+              and long-term split all re-derive. The challenge ledger is never touched; if this
+              sale funded a Deposit whose amount changed, fix it on the Cash Ledger.
+            </p>
+          </>
+        ) : (
+          <>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className={labelCls}>Date</label>
+                <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>Cost basis ($)</label>
+                <input type="number" step="any" min="0" value={basis} placeholder="unknown"
+                  onChange={(e) => setBasis(e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>Long-term shares (of {fmtSh(s.shares)})</label>
+                <input type="number" step="any" min="0" value={ltShares} placeholder="unknown"
+                  onChange={(e) => setLtShares(e.target.value)} className={inputCls} />
+              </div>
+            </div>
+            <p className="text-xs text-gray-400">
+              Recorded before undo support — numbers only; shares and lots don't change.
+            </p>
+          </>
+        )}
         {gainPreview !== null && (
           <p className="text-sm text-gray-600">
             Realized gain:{' '}
