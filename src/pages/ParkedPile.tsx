@@ -297,7 +297,7 @@ export function ParkedPile() {
             </button>
             <button onClick={() => setAddOpen(true)}
               className={cn(primaryBtnCls, 'flex items-center gap-1.5')}>
-              <Plus className="h-4 w-4" /> Add holding
+              <Plus className="h-4 w-4" /> Buy
             </button>
           </div>
         }
@@ -522,7 +522,7 @@ export function ParkedPile() {
                         <UnlockCell summary={summ} />
                       </td>
                       <td className="px-2 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        <button onClick={() => setTrimming(p)} className="p-1 rounded hover:bg-green-50" aria-label={`Trim ${p.ticker}`} title="Record trim">
+                        <button onClick={() => setTrimming(p)} className="p-1 rounded hover:bg-green-50" aria-label={`Sell ${p.ticker}`} title="Sell shares (Rule 5 trim)">
                           <Scissors className="h-4 w-4 text-gray-300 hover:text-green-700" />
                         </button>
                         <button onClick={() => setTransferring(p)} className="p-1 rounded hover:bg-gray-100" aria-label={`Transfer ${p.ticker}`} title="Transfer between accounts (ACATS)">
@@ -887,7 +887,7 @@ function EditSaleModal({ sale: s, onClose }: { sale: ParkedSale; onClose: () => 
 }
 
 function AddHoldingModal({ onClose }: { onClose: () => void }) {
-  const { accounts, parked, addParkedPosition } = useData();
+  const { accounts, parked, addParkedPosition, addParkedLot } = useData();
   const outside = accounts.filter((a) => a.kind === 'outside');
   const [ticker, setTicker] = useState('');
   const [accountId, setAccountId] = useState(outside[0]?.id ?? '');
@@ -899,29 +899,44 @@ function AddHoldingModal({ onClose }: { onClose: () => void }) {
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Buying more of something already held merges as a new purchase lot; the
+  // existing position's category wins. (Archived matches go through the
+  // revive path in addParkedPosition instead.)
+  const existing = parked.find(
+    (p) => p.ticker === ticker.trim().toUpperCase() && p.accountId === accountId,
+  );
+  const liveMatch = existing && !isArchivedPosition(existing) ? existing : null;
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
     const t = ticker.trim().toUpperCase();
-    if (parked.some((p) => p.ticker === t && p.accountId === accountId)) {
-      return setFormError(
-        `${t} is already parked in that account — expand its row and add a lot instead.`,
-      );
-    }
     const sh = Number(shares);
     const pr = Number(price);
     if (!sh || sh <= 0 || !pr || pr <= 0) return setFormError('Enter shares and cost per share.');
     setBusy(true);
     try {
-      await addParkedPosition({
-        ticker: t,
-        accountId,
-        category,
-        date: date || null,
-        shares: sh,
-        price: pr,
-        notes: notes || null,
-      });
+      if (liveMatch) {
+        await addParkedLot({
+          parkedPositionId: liveMatch.id,
+          date: date || null,
+          source: 'purchase',
+          shares: sh,
+          price: pr,
+          amount: roundCents(sh * pr),
+          notes: notes || null,
+        });
+      } else {
+        await addParkedPosition({
+          ticker: t,
+          accountId,
+          category,
+          date: date || null,
+          shares: sh,
+          price: pr,
+          notes: notes || null,
+        });
+      }
       onClose();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : String(err));
@@ -931,7 +946,7 @@ function AddHoldingModal({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <Modal isOpen onClose={onClose} title="Add parked holding">
+    <Modal isOpen onClose={onClose} title="Buy — parked pile">
       <form onSubmit={submit} className="space-y-3">
         <div className="grid grid-cols-3 gap-3">
           <div>
@@ -941,8 +956,11 @@ function AddHoldingModal({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <label className={labelCls}>Category</label>
-            <select value={category} onChange={(e) => setCategory(e.target.value as ParkedPosition['category'])}
-              className={inputCls}>
+            <select
+              value={liveMatch ? liveMatch.category : category}
+              disabled={Boolean(liveMatch)}
+              onChange={(e) => setCategory(e.target.value as ParkedPosition['category'])}
+              className={cn(inputCls, liveMatch && 'opacity-60')}>
               <option>Semi/AI</option>
               <option>AI-adjacent</option>
               <option>BTC</option>
@@ -954,6 +972,12 @@ function AddHoldingModal({ onClose }: { onClose: () => void }) {
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
           </div>
         </div>
+        {liveMatch && (
+          <p className="text-xs text-sky-700 bg-sky-50 rounded-md px-3 py-2">
+            {liveMatch.ticker} is already held in this account — this buy adds a purchase lot to
+            the existing position ({fmtSh(liveMatch.shares)} sh held).
+          </p>
+        )}
         <AccountSelect accounts={accounts} value={accountId} onChange={setAccountId}
           label="Account" kinds={['outside']} allowNone={false} />
         <div className="grid grid-cols-2 gap-3">
@@ -973,13 +997,13 @@ function AddHoldingModal({ onClose }: { onClose: () => void }) {
           <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls} />
         </div>
         <p className="text-xs text-gray-400">
-          This becomes the first purchase lot. Add more purchases and dividends by expanding the
-          row afterward. Context only — never in the score.
+          Each buy is its own dated lot with its own 366-day unlock clock. Dividends go in from
+          the row's lot panel. Context only — never in the score.
         </p>
         {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
         <div className="flex justify-end">
           <button type="submit" disabled={busy} className={primaryBtnCls}>
-            {busy ? 'Adding…' : 'Add holding'}
+            {busy ? 'Buying…' : 'Buy'}
           </button>
         </div>
       </form>
@@ -1472,7 +1496,7 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
   };
 
   return (
-    <Modal isOpen onClose={onClose} title={`Trim ${p.ticker} (${p.account})`}>
+    <Modal isOpen onClose={onClose} title={`Sell ${p.ticker} (${p.account})`}>
       <form onSubmit={submit} className="space-y-3">
         {neverTrimFuel && (
           <div className="flex gap-2 bg-red-50 text-red-700 rounded-md px-3 py-2 text-sm font-medium">
@@ -1562,6 +1586,7 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
             <p className="text-xs text-gray-400">
               Recorded in the pile's sale history with basis and term
               {fund ? ', and the Deposit + shadow VOO twin hit the ledger.' : '. Nothing touches the challenge account.'}
+              {' '}Sales are undoable from the history — lots and basis come back exactly.
             </p>
           </div>
         )}
@@ -1569,7 +1594,7 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
         {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
         <div className="flex justify-end">
           <button type="submit" disabled={busy} className={primaryBtnCls}>
-            {busy ? 'Recording…' : 'Record trim'}
+            {busy ? 'Recording…' : 'Record sale'}
           </button>
         </div>
       </form>
