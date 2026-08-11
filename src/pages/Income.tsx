@@ -34,7 +34,12 @@ const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Se
 const monthLabel = (m: string) => `${MONTH_NAMES[Number(m.slice(5, 7)) - 1]} '${m.slice(2, 4)}`;
 
 const FREQUENCY_LABELS: Record<DividendFrequency, string> = {
-  monthly: 'monthly', quarterly: 'quarterly', semiannual: 'semiannual', annual: 'annual',
+  daily: 'daily',
+  semimonthly: 'twice a month',
+  monthly: 'monthly',
+  quarterly: 'quarterly',
+  semiannual: 'semiannual',
+  annual: 'annual',
 };
 
 type HistSortKey = 'date' | 'ticker' | 'amount' | 'classification';

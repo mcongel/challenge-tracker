@@ -7,7 +7,7 @@
  * so they are excluded from trailing/YTD figures; they still count in lifetime
  * totals (dividendsCollected) and rocCumulative. */
 
-import { addMonths, daysBetween, taxYearOf } from './dates';
+import { addDays, addMonths, daysBetween, taxYearOf } from './dates';
 import { sum } from './money';
 import { aggregateLots } from './parkedLots';
 import type { DividendClassification, ParkedLot } from './parkedLots';
@@ -46,7 +46,10 @@ export function dividendTaxRateFor(
   }
 }
 
-const MONTHS_PER: Record<DividendFrequency, number> = {
+/** Payment interval in whole months. Sub-monthly frequencies (daily,
+ * semimonthly) aren't listed — they project as monthly aggregates since the
+ * output buckets are calendar months anyway. */
+const MONTHS_PER: Partial<Record<DividendFrequency, number>> = {
   monthly: 1,
   quarterly: 3,
   semiannual: 6,
@@ -205,14 +208,27 @@ export function projectPositionIncome(args: {
   let intervalMonths: number;
   let perPayment: number;
   let anchor: string; // a real or synthetic pay date; payments recur from here
+  let subMonthlyNext: { date: string; amount: number } | null = null;
 
   if (actual) {
     source = 'actual';
     ({ intervalMonths, perPayment, anchor } = actual);
   } else if (position.dividendRate != null && position.dividendRate > 0 && position.dividendFrequency) {
     source = 'manual';
-    intervalMonths = MONTHS_PER[position.dividendFrequency];
-    perPayment = (position.dividendRate * position.shares) / (12 / intervalMonths);
+    const annual = position.dividendRate * position.shares;
+    const freq = position.dividendFrequency;
+    if (freq === 'daily' || freq === 'semimonthly') {
+      // Sub-monthly cadences project as monthly aggregates (the buckets are
+      // calendar months anyway); the next-payment hint keeps the true cadence.
+      intervalMonths = 1;
+      perPayment = annual / 12;
+      subMonthlyNext = freq === 'daily'
+        ? { date: addDays(today, 1), amount: annual / 365 }
+        : { date: addDays(today, 15), amount: annual / 24 };
+    } else {
+      intervalMonths = MONTHS_PER[freq]!;
+      perPayment = annual / (12 / intervalMonths);
+    }
     anchor = today;
   } else {
     return null;
@@ -238,7 +254,7 @@ export function projectPositionIncome(args: {
     annualGross,
     annualAfterTax: annualGross * afterTaxFraction(lots, today, rates),
     source,
-    nextPayment: next ? { date: next, amount: perPayment } : null,
+    nextPayment: subMonthlyNext ?? (next ? { date: next, amount: perPayment } : null),
   };
 }
 

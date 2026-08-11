@@ -453,6 +453,39 @@ describe('parked income — trailing, projection, yield, dividend tax', () => {
     expect(proj?.annualAfterTax).toBeCloseTo(34, 9); // no history → unclassified → qualified rate
   });
 
+  it('sub-monthly manual rates (daily, twice a month) project as monthly aggregates', async () => {
+    const { projectPositionIncome } = await import('../parkedIncome');
+    // STRC-style: $2.40/sh/yr paid twice a month, 10 shares → $24/yr, $2/mo.
+    const semi = projectPositionIncome({
+      position: pos({ dividendRate: 2.4, dividendFrequency: 'semimonthly' }),
+      lots: [], today: TODAY, rates: RATES,
+    });
+    expect(semi?.source).toBe('manual');
+    expect(semi?.annualGross).toBeCloseTo(24, 9);
+    expect(semi?.monthly[0].amount).toBeCloseTo(2, 9);
+    expect(semi?.nextPayment).toEqual({ date: '2026-08-25', amount: 1 }); // today + 15d, annual/24
+    // SATA-style: $3.65/sh/yr daily, 10 shares → $36.50/yr, ~$0.10/day.
+    const daily = projectPositionIncome({
+      position: pos({ dividendRate: 3.65, dividendFrequency: 'daily' }),
+      lots: [], today: TODAY, rates: RATES,
+    });
+    expect(daily?.annualGross).toBeCloseTo(36.5, 9);
+    expect(daily?.nextPayment?.date).toBe('2026-08-11'); // tomorrow
+    expect(daily?.nextPayment?.amount).toBeCloseTo(0.1, 9);
+  });
+
+  it('semimonthly actuals merge per month: cadence reads monthly, annual total right', async () => {
+    const { projectPositionIncome } = await import('../parkedIncome');
+    // Two $5 payments per month for 6 months (STRC with history).
+    const lots = ['2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08'].flatMap((m, i) => [
+      div(`a${i}`, `${m}-01`, 5), div(`b${i}`, `${m}-05`, 5),
+    ]);
+    const proj = projectPositionIncome({ position: pos(), lots, today: TODAY, rates: RATES });
+    expect(proj?.source).toBe('actual');
+    expect(proj?.nextPayment?.amount).toBeCloseTo(10, 9); // merged monthly payment
+    expect(proj?.annualGross).toBeCloseTo(120, 9);
+  });
+
   it('single actual is not a cadence; falls back to manual, else excluded entirely', async () => {
     const { projectPositionIncome } = await import('../parkedIncome');
     const oneActual = [div('x', '2026-05-01', 75)];

@@ -99,7 +99,13 @@ export interface BenchmarkDeposit {
 
 export type ParkedCategory = 'Semi/AI' | 'AI-adjacent' | 'BTC' | 'Other';
 
-export type DividendFrequency = 'monthly' | 'quarterly' | 'semiannual' | 'annual';
+export type DividendFrequency =
+  | 'daily'        // e.g. SATA
+  | 'semimonthly'  // twice a month, e.g. STRC
+  | 'monthly'
+  | 'quarterly'
+  | 'semiannual'
+  | 'annual';
 
 export interface ParkedPosition {
   id: string;
