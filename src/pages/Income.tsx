@@ -59,7 +59,8 @@ interface HistRow {
 
 export function Income() {
   const {
-    parked, parkedLots, dividendTaxRates, deleteParkedLot, loading, error,
+    parked, parkedLots, parkedLotAdjustments, dividendTaxRates, deleteParkedLot,
+    allocateRocDividend, loading, error,
   } = useData();
   const today = todayISO();
 
@@ -74,17 +75,19 @@ export function Income() {
       parked.map((p) => ({
         position: p,
         lots: lotsByPosition.get(p.id) ?? [],
-        summary: positionIncomeSummary(p, lotsByPosition.get(p.id) ?? [], today, dividendTaxRates),
+        summary: positionIncomeSummary(
+          p, lotsByPosition.get(p.id) ?? [], today, dividendTaxRates, parkedLotAdjustments,
+        ),
       })),
-    [parked, lotsByPosition, today, dividendTaxRates],
+    [parked, lotsByPosition, today, dividendTaxRates, parkedLotAdjustments],
   );
 
   const trailing = useMemo(() => trailingIncomeByMonth(parkedLots, today), [parkedLots, today]);
   const trailingTotal = trailing.reduce((t, p) => t + p.amount, 0);
 
   const taxYtd = useMemo(
-    () => dividendTaxYTD(parkedLots, today, dividendTaxRates),
-    [parkedLots, today, dividendTaxRates],
+    () => dividendTaxYTD(parkedLots, today, dividendTaxRates, parkedLotAdjustments),
+    [parkedLots, today, dividendTaxRates, parkedLotAdjustments],
   );
 
   // Portfolio yield on cost: only positions that project income AND have a
@@ -128,13 +131,22 @@ export function Income() {
   const anyDividends = parkedLots.some((l) => l.source === 'dividend');
   const anyIncome = anyDividends || anyProjection;
 
+  // Live holdings always; archived (zero-share) rows only when they actually
+  // have dividend history worth remembering.
   const sortedSummaries = useMemo(
     () =>
-      [...summaries].sort(
-        (a, b) => (b.summary.projection?.annualGross ?? 0) - (a.summary.projection?.annualGross ?? 0),
-      ),
+      summaries
+        .filter(
+          (s) =>
+            s.position.shares > 1e-9 || s.lots.some((l) => l.source === 'dividend'),
+        )
+        .sort(
+          (a, b) =>
+            (b.summary.projection?.annualGross ?? 0) - (a.summary.projection?.annualGross ?? 0),
+        ),
     [summaries],
   );
+
 
   // Distribution history rows + sorting.
   const histRows = useMemo<HistRow[]>(() => {
@@ -147,6 +159,33 @@ export function Income() {
         account: posById.get(l.parkedPositionId)?.account ?? '',
       }));
   }, [parkedLots, parked]);
+
+  const unallocatedRoc = useMemo(
+    () =>
+      histRows
+        .filter(
+          (r) =>
+            (r.lot.classification ?? 'unclassified') === 'return_of_capital' &&
+            !r.lot.rocAllocatedAt,
+        )
+        .sort((a, b) => (a.lot.date ?? '9999').localeCompare(b.lot.date ?? '9999')),
+    [histRows],
+  );
+  const [allocatingAll, setAllocatingAll] = useState(false);
+  const [allocError, setAllocError] = useState<string | null>(null);
+  const allocateAll = async () => {
+    setAllocatingAll(true);
+    setAllocError(null);
+    try {
+      // Date order matters: each event caps against basis the earlier ones
+      // already reduced.
+      for (const r of unallocatedRoc) await allocateRocDividend(r.lot.id);
+    } catch (err) {
+      setAllocError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAllocatingAll(false);
+    }
+  };
 
   const [histSort, setHistSortState] = useState<SortState<HistSortKey>>(() => {
     try {
@@ -226,6 +265,14 @@ export function Income() {
                 <p className="text-xs text-amber-700 mt-0.5">
                   {formatCurrency(roundCents(taxYtd.unclassifiedAmount))} unclassified
                 </p>
+              ) : taxYtd.rocUnallocatedAmount > 0 ? (
+                <p className="text-xs text-amber-700 mt-0.5">
+                  {formatCurrency(roundCents(taxYtd.rocUnallocatedAmount))} ROC unallocated
+                </p>
+              ) : taxYtd.rocOverflowAmount > 0 ? (
+                <p className="text-xs text-gray-400 mt-0.5">
+                  incl. ROC beyond basis: {formatCurrency(roundCents(taxYtd.rocOverflowAmount))}
+                </p>
               ) : (
                 <p className="text-xs text-gray-400 mt-0.5">informational — not the skim</p>
               )}
@@ -280,7 +327,7 @@ export function Income() {
                   <th className="px-4 py-2 text-right">Next payment</th>
                   <th className="px-4 py-2">Source</th>
                   {anyRoc && (
-                    <th className="px-4 py-2 text-right" title="Cumulative return of capital. Display-only for now — basis adjustment comes in a later phase.">ROC</th>
+                    <th className="px-4 py-2 text-right" title="Cumulative return of capital — applied against lot cost basis, so sales realize a bigger gain.">ROC</th>
                   )}
                   <th className="px-4 py-2 w-10" />
                 </tr>
@@ -295,9 +342,24 @@ export function Income() {
           </div>
 
           <div className="bg-white rounded-lg shadow-lg overflow-x-auto">
-            <p className="px-4 pt-4 text-xs font-semibold uppercase tracking-wider text-gray-400">
-              Distribution history
-            </p>
+            <div className="px-4 pt-4 flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+                Distribution history
+              </p>
+              {unallocatedRoc.length > 0 && (
+                <button
+                  onClick={allocateAll}
+                  disabled={allocatingAll}
+                  className={cn(secondaryBtnCls, 'text-xs px-2.5 py-1')}
+                  title="Apply basis reductions for every ROC distribution that predates basis tracking, oldest first."
+                >
+                  {allocatingAll ? 'Allocating…' : `Allocate ${unallocatedRoc.length} ROC to basis`}
+                </button>
+              )}
+            </div>
+            {allocError && (
+              <p className="mx-4 mt-2 text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{allocError}</p>
+            )}
             <table className="w-full text-sm compact-table">
               <thead className="bg-gray-50 group/head">
                 <tr className="text-left text-xs">
@@ -330,6 +392,13 @@ export function Income() {
                         <History className="ml-1 inline h-3.5 w-3.5 text-gray-400"
                           aria-label="Reclassified" />
                       )}
+                      {(r.lot.classification ?? 'unclassified') === 'return_of_capital' &&
+                        !r.lot.rocAllocatedAt && (
+                          <span className="ml-1 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-800"
+                            title="This ROC hasn't been applied to lot basis yet — use the allocate button above.">
+                            unallocated
+                          </span>
+                        )}
                     </td>
                     <td className="px-4 py-2 text-xs text-gray-500">{r.lot.shares > 0 ? 'DRIP' : 'cash'}</td>
                     <td className="px-2 py-2">
@@ -361,7 +430,7 @@ export function Income() {
       {deleting && (
         <ConfirmModal
           title="Delete dividend"
-          message={`Delete this ${deleting.ticker} dividend (${formatCurrency(deleting.lot.amount)}${deleting.lot.shares > 0 ? `, ${deleting.lot.shares} DRIP sh` : ''})? ${deleting.lot.shares > 0 ? "The position's shares and cost recompute without it — and if this is its last share-holding lot, the position and its whole dividend history go with it." : ''}`}
+          message={`Delete this ${deleting.ticker} dividend (${formatCurrency(deleting.lot.amount)}${deleting.lot.shares > 0 ? `, ${deleting.lot.shares} DRIP sh` : ''})? ${deleting.lot.shares > 0 ? "The position's shares and cost recompute without it." : ''} Any basis reductions from this distribution are reversed.`}
           onConfirm={() => deleteParkedLot(deleting.lot.id)}
           onClose={() => setDeleting(null)}
         />
@@ -382,11 +451,18 @@ function HoldingRow({
   onEditRate: () => void;
 }) {
   const proj = s.projection;
+  const archived = p.shares <= 1e-9;
   return (
-    <tr className="hover:bg-gray-50">
+    <tr className={cn('hover:bg-gray-50', archived && 'text-gray-400')}>
       <td className="px-4 py-2 font-medium text-gray-900">
         {p.ticker}
         <span className="ml-1 text-xs text-gray-400">{p.account}</span>
+        {archived && (
+          <span className="ml-1 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-gray-100 text-gray-500"
+            title="Fully trimmed or transferred away — history kept, nothing projected.">
+            closed
+          </span>
+        )}
         {s.hasUnclassified && (
           <span className="ml-1 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-800"
             title="Some dividends are unclassified — estimates assume the qualified rate.">
@@ -414,6 +490,8 @@ function HoldingRow({
             proj.source === 'actual' ? 'bg-green-50 text-green-700' : 'bg-indigo-50 text-indigo-700')}>
             {proj.source === 'actual' ? 'actual' : 'manual rate'}
           </span>
+        ) : archived ? (
+          <span className="text-xs text-gray-400">—</span>
         ) : (
           <button onClick={onEditRate} className="text-xs text-green-700 hover:underline font-medium">
             set rate
@@ -421,15 +499,20 @@ function HoldingRow({
         )}
       </td>
       {anyRoc && (
-        <td className="px-4 py-2 text-right tabular-nums text-gray-600">
+        <td className="px-4 py-2 text-right tabular-nums text-gray-600"
+          title={s.rocCumulative > 0 && s.adjustedCostBasis < s.costBasis
+            ? `Adjusted basis ${formatCurrency(roundCents(s.adjustedCostBasis))} (original ${formatCurrency(roundCents(s.costBasis))})`
+            : undefined}>
           {s.rocCumulative > 0 ? formatCurrency(roundCents(s.rocCumulative)) : '—'}
         </td>
       )}
       <td className="px-2 py-2 text-right">
-        <button onClick={onEditRate} className="p-1 rounded hover:bg-gray-100"
-          aria-label="Edit dividend rate" title="Manual rate & frequency (used when there's no payment history)">
-          <Pencil className="h-3.5 w-3.5 text-gray-300 hover:text-gray-600" />
-        </button>
+        {!archived && (
+          <button onClick={onEditRate} className="p-1 rounded hover:bg-gray-100"
+            aria-label="Edit dividend rate" title="Manual rate & frequency (used when there's no payment history)">
+            <Pencil className="h-3.5 w-3.5 text-gray-300 hover:text-gray-600" />
+          </button>
+        )}
       </td>
     </tr>
   );

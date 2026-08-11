@@ -14,9 +14,9 @@ import type {
   ParkedSale, UnlockSummary,
 } from '../lib/engine';
 import {
-  concentration, contributionStatus, daysBetween, depositExceedsCap, dividendsCollected,
-  estimatedPileTax, netContributed, parkedCostBasis, parkedMarketValue, roundCents, trimPreview,
-  unlockSummary,
+  aggregateLotsAdjusted, basisExhaustedLotIds, concentration, contributionStatus, daysBetween,
+  depositExceedsCap, dividendsCollected, estimatedPileTax, netContributed, parkedCostBasis,
+  parkedMarketValue, roundCents, trimPreview, unlockSummary,
 } from '../lib/engine';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import {
@@ -963,10 +963,14 @@ function unlockSentence(s: UnlockSummary): string {
 }
 
 function LotPanel({ position: p, summary }: { position: ParkedPosition; summary: UnlockSummary }) {
-  const { parkedLots, addParkedLot, deleteParkedLot, overrides, quotes } = useData();
+  const { parkedLots, parkedLotAdjustments, addParkedLot, deleteParkedLot, overrides, quotes } = useData();
   const lots = parkedLots
     .filter((l) => l.parkedPositionId === p.id)
     .sort((a, b) => (a.date ?? '').localeCompare(b.date ?? ''));
+  const lotIdSet = new Set(lots.map((l) => l.id));
+  const positionAdjs = parkedLotAdjustments.filter((a) => lotIdSet.has(a.shareLotId));
+  const adjustedAgg = aggregateLotsAdjusted(lots, positionAdjs);
+  const exhausted = new Set(basisExhaustedLotIds(lots, positionAdjs));
   const effectivePrice = overrides[p.ticker] ?? quotes[p.ticker] ?? p.currentPrice;
 
   const [mode, setMode] = useState<'purchase' | 'dividend' | null>(null);
@@ -1062,7 +1066,16 @@ function LotPanel({ position: p, summary }: { position: ParkedPosition; summary:
       <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">
         {p.ticker} — lots &amp; dividends
       </p>
-      <p className="text-sm text-gray-600 mb-3">{unlockSentence(summary)}</p>
+      <p className="text-sm text-gray-600 mb-3">
+        {unlockSentence(summary)}
+        {adjustedAgg.adjustedCostBasis < adjustedAgg.costBasis - 0.005 && (
+          <span className="text-gray-500">
+            {' '}Basis {formatCurrency(roundCents(adjustedAgg.costBasis))} original ·{' '}
+            {formatCurrency(roundCents(adjustedAgg.adjustedCostBasis))} after ROC — sales are taxed
+            against the adjusted number.
+          </span>
+        )}
+      </p>
       <div className="grid lg:grid-cols-2 gap-4 items-start">
         <div className="max-h-64 overflow-y-auto rounded-md border border-gray-200 bg-white">
           <table className="w-full text-sm">
@@ -1081,6 +1094,12 @@ function LotPanel({ position: p, summary }: { position: ParkedPosition; summary:
                       <span className={cn('ml-1 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium',
                         classificationPillCls(l.classification ?? 'unclassified'))}>
                         {CLASSIFICATION_LABELS[l.classification ?? 'unclassified']}
+                      </span>
+                    )}
+                    {exhausted.has(l.id) && (
+                      <span className="ml-1 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-800"
+                        title="ROC has consumed this lot's entire basis — further ROC on it is capital gain.">
+                        basis 0
                       </span>
                     )}
                   </td>
@@ -1424,7 +1443,7 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
                   </span>
                 </>
               )}
-              {fullTrim && <span className="ml-2 text-gray-500">· sells the whole position (row removed)</span>}
+              {fullTrim && <span className="ml-2 text-gray-500">· sells the whole position — dividend history stays on the Income screen</span>}
             </p>
             {preview && (
               <p className="text-xs text-gray-500 tabular-nums">

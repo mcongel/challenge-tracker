@@ -682,16 +682,27 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   /** Allocate an ROC dividend's basis reductions across the position's
    * current share lots (its own DRIP lot excluded — a distribution doesn't
-   * reduce its own reinvested shares). Inserts rows + stamps the dividend.
-   * Does NOT refresh — callers do. */
+   * reduce its own reinvested shares). Reads lots and adjustments fresh from
+   * the DB so sequential allocations (Allocate all) see each other's rows.
+   * Inserts rows + stamps the dividend. Does NOT refresh — callers do. */
   const insertRocAllocations = useCallback(
-    async (divLot: ParkedLot) => {
+    async (divLot: Pick<ParkedLot, 'id' | 'parkedPositionId' | 'amount' | 'date'>) => {
       const client = db();
-      const shareLots = state.parkedLots.filter(
-        (l) => l.parkedPositionId === divLot.parkedPositionId && l.shares > 0 && l.id !== divLot.id,
-      );
-      const ids = new Set(shareLots.map((l) => l.id));
-      const adjs = state.parkedLotAdjustments.filter((a) => ids.has(a.shareLotId));
+      const { data: lotRows, error: lotsErr } = await client
+        .from('parked_lots').select('*').eq('parked_position_id', divLot.parkedPositionId);
+      if (lotsErr) throw lotsErr;
+      const shareLots = (lotRows ?? [])
+        .map(mapParkedLot)
+        .filter((l) => l.shares > 0 && l.id !== divLot.id);
+      let adjs: ParkedLotAdjustment[] = [];
+      if (shareLots.length > 0) {
+        const { data: adjRows, error: adjErr } = await client
+          .from('parked_lot_adjustments')
+          .select('*')
+          .in('share_lot_id', shareLots.map((l) => l.id));
+        if (adjErr) throw adjErr;
+        adjs = (adjRows ?? []).map(mapParkedLotAdjustment);
+      }
       const { allocations } = allocateRoc(shareLots, adjs, {
         amount: divLot.amount,
         date: divLot.date,
@@ -714,48 +725,25 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         .eq('id', divLot.id);
       if (stampErr) throw stampErr;
     },
-    [state.parkedLots, state.parkedLotAdjustments],
+    [],
   );
 
   const addParkedLot = useCallback(
     async (lot: Omit<ParkedLot, 'id'>) => {
       const client = db();
-      const isRoc = lot.source === 'dividend' && lot.classification === 'return_of_capital';
       const { data, error: err } = await client
         .from('parked_lots')
-        .insert(parkedLotPayload(isRoc ? { ...lot, rocAllocatedAt: new Date().toISOString() } : lot))
+        .insert(parkedLotPayload(lot))
         .select('id')
         .single();
       if (err) throw err;
-      if (isRoc) {
-        // Allocate over the pre-insert share lots — a DRIP ROC lot isn't in
-        // the snapshot yet, so it can't absorb its own distribution.
-        const shareLots = state.parkedLots.filter(
-          (l) => l.parkedPositionId === lot.parkedPositionId && l.shares > 0,
-        );
-        const ids = new Set(shareLots.map((l) => l.id));
-        const adjs = state.parkedLotAdjustments.filter((a) => ids.has(a.shareLotId));
-        const { allocations } = allocateRoc(shareLots, adjs, {
-          amount: lot.amount,
-          date: lot.date,
-        });
-        if (allocations.length > 0) {
-          const { error: adjErr } = await client.from('parked_lot_adjustments').insert(
-            allocations.map((x) =>
-              parkedLotAdjustmentPayload({
-                shareLotId: x.shareLotId,
-                dividendLotId: data.id as string,
-                amount: x.amount,
-              }),
-            ),
-          );
-          if (adjErr) throw adjErr;
-        }
+      if (lot.source === 'dividend' && lot.classification === 'return_of_capital') {
+        await insertRocAllocations({ ...lot, id: data.id as string });
       }
       await recomputeParkedAggregate(lot.parkedPositionId);
       await refresh();
     },
-    [refresh, recomputeParkedAggregate, state.parkedLots, state.parkedLotAdjustments],
+    [refresh, recomputeParkedAggregate, insertRocAllocations],
   );
 
   /** Backfill/repair: run basis allocation for an ROC dividend that predates

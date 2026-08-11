@@ -20,7 +20,8 @@ export const QUALIFIED_DIVIDEND_TAX_RATE = 0.15;
 export const ORDINARY_DIVIDEND_TAX_RATE = 0.24;
 
 /** Rates are fractions (0.15 = 15%). capitalGainDist callers pass the LT rate.
- * return_of_capital is always 0 in Phase 1 (basis adjustment comes later). */
+ * return_of_capital is 0 while basis remains; the overflow beyond basis is
+ * estimated at the capitalGainDist rate in dividendTaxYTD. */
 export interface DividendTaxRates {
   /** Also applied to 'unclassified' (flagged upstream, not taxed harder). */
   qualified: number;

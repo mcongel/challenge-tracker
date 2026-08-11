@@ -187,14 +187,18 @@ export function Help() {
           </li>
           <li>
             <strong className="text-gray-900">Dividends</strong> go in from the same lots view: date,
-            amount, and whether it reinvested (a DRIP buys its own dated sliver; cash just logs as
-            income context). One entry per brokerage statement line.
+            amount, classification, and whether it reinvested (a DRIP buys its own dated sliver;
+            cash just logs as income context). One entry per brokerage statement line.
+            Return-of-capital distributions automatically reduce lot cost basis (the original stays
+            recoverable) — sales get taxed against the adjusted number, yield on cost stays on what
+            you paid, and a lot at zero basis is flagged "basis 0."
           </li>
           <li>
             <strong className="text-gray-900">Trim</strong> (scissors icon on a row) does the whole
             thing in one form: shrinks the position, logs the sale in the wash-sale radar, and —
             if you check "deposit the proceeds" — writes the Deposit and its shadow VOO twin. It
-            warns before unlock and refuses to blow the contribution cap.
+            warns before unlock and refuses to blow the contribution cap. A full trim (or transfer
+            away) closes the position but keeps its dividend history on the Income screen.
           </li>
           <li>
             <strong className="text-gray-900">Concentration watch</strong>: Semi/AI past the 50%
