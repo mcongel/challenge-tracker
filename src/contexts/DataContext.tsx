@@ -14,10 +14,10 @@ import type {
   Trade,
 } from '../lib/engine';
 import {
-  accountTotal, aggregateLots, closeShares, computeAccountCash, concentration, consumeLotsFifo,
-  cumulativeFloor, LT_TAX_RATE, netContributed, ORDINARY_DIVIDEND_TAX_RATE, pileTotal,
-  QUALIFIED_DIVIDEND_TAX_RATE, reservedTotal, roundCents, shadowValue, ST_TAX_RATE, totalScore,
-  trimPreview,
+  accountTotal, aggregateLots, allocateRoc, closeShares, computeAccountCash, concentration,
+  consumeLotsFifo, cumulativeFloor, LT_TAX_RATE, netContributed, ORDINARY_DIVIDEND_TAX_RATE,
+  pileTotal, QUALIFIED_DIVIDEND_TAX_RATE, reservedTotal, roundCents, shadowValue, ST_TAX_RATE,
+  totalScore, trimPreview,
 } from '../lib/engine';
 import type {
   AccountCashBreakdown, DividendClassification, DividendTaxRates, ParkedCashEvent, ParkedLot,
@@ -158,12 +158,15 @@ interface DataContextValue extends DataState {
   }) => Promise<void>;
   addParkedLot: (lot: Omit<ParkedLot, 'id'>) => Promise<void>;
   deleteParkedLot: (id: string) => Promise<void>;
-  /** 1099 correction: change a dividend's classification; stamps reclassified_at. */
+  /** 1099 correction: change a dividend's classification; stamps reclassified_at.
+   * Into/out of ROC also allocates or reverses basis reductions. */
   reclassifyDividend: (
     id: string,
     classification: DividendClassification,
     exDate?: string | null,
   ) => Promise<void>;
+  /** Backfill: run basis allocation for an ROC dividend that predates Phase 2. */
+  allocateRocDividend: (dividendLotId: string) => Promise<void>;
   /** New parked holding: creates the position and its first purchase lot. */
   addParkedPosition: (args: {
     ticker: string;
@@ -663,33 +666,128 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  /** Allocate an ROC dividend's basis reductions across the position's
+   * current share lots (its own DRIP lot excluded — a distribution doesn't
+   * reduce its own reinvested shares). Inserts rows + stamps the dividend.
+   * Does NOT refresh — callers do. */
+  const insertRocAllocations = useCallback(
+    async (divLot: ParkedLot) => {
+      const client = db();
+      const shareLots = state.parkedLots.filter(
+        (l) => l.parkedPositionId === divLot.parkedPositionId && l.shares > 0 && l.id !== divLot.id,
+      );
+      const ids = new Set(shareLots.map((l) => l.id));
+      const adjs = state.parkedLotAdjustments.filter((a) => ids.has(a.shareLotId));
+      const { allocations } = allocateRoc(shareLots, adjs, {
+        amount: divLot.amount,
+        date: divLot.date,
+      });
+      if (allocations.length > 0) {
+        const { error: err } = await client.from('parked_lot_adjustments').insert(
+          allocations.map((x) =>
+            parkedLotAdjustmentPayload({
+              shareLotId: x.shareLotId,
+              dividendLotId: divLot.id,
+              amount: x.amount,
+            }),
+          ),
+        );
+        if (err) throw err;
+      }
+      const { error: stampErr } = await client
+        .from('parked_lots')
+        .update({ roc_allocated_at: new Date().toISOString() })
+        .eq('id', divLot.id);
+      if (stampErr) throw stampErr;
+    },
+    [state.parkedLots, state.parkedLotAdjustments],
+  );
+
   const addParkedLot = useCallback(
     async (lot: Omit<ParkedLot, 'id'>) => {
-      const { error: err } = await db().from('parked_lots').insert(parkedLotPayload(lot));
+      const client = db();
+      const isRoc = lot.source === 'dividend' && lot.classification === 'return_of_capital';
+      const { data, error: err } = await client
+        .from('parked_lots')
+        .insert(parkedLotPayload(isRoc ? { ...lot, rocAllocatedAt: new Date().toISOString() } : lot))
+        .select('id')
+        .single();
       if (err) throw err;
+      if (isRoc) {
+        // Allocate over the pre-insert share lots — a DRIP ROC lot isn't in
+        // the snapshot yet, so it can't absorb its own distribution.
+        const shareLots = state.parkedLots.filter(
+          (l) => l.parkedPositionId === lot.parkedPositionId && l.shares > 0,
+        );
+        const ids = new Set(shareLots.map((l) => l.id));
+        const adjs = state.parkedLotAdjustments.filter((a) => ids.has(a.shareLotId));
+        const { allocations } = allocateRoc(shareLots, adjs, {
+          amount: lot.amount,
+          date: lot.date,
+        });
+        if (allocations.length > 0) {
+          const { error: adjErr } = await client.from('parked_lot_adjustments').insert(
+            allocations.map((x) =>
+              parkedLotAdjustmentPayload({
+                shareLotId: x.shareLotId,
+                dividendLotId: data.id as string,
+                amount: x.amount,
+              }),
+            ),
+          );
+          if (adjErr) throw adjErr;
+        }
+      }
       await recomputeParkedAggregate(lot.parkedPositionId);
       await refresh();
     },
-    [refresh, recomputeParkedAggregate],
+    [refresh, recomputeParkedAggregate, state.parkedLots, state.parkedLotAdjustments],
+  );
+
+  /** Backfill/repair: run basis allocation for an ROC dividend that predates
+   * Phase 2 (or whose allocation was reversed). */
+  const allocateRocDividend = useCallback(
+    async (dividendLotId: string) => {
+      const divLot = state.parkedLots.find((l) => l.id === dividendLotId);
+      if (!divLot) throw new Error('Dividend not found');
+      if (divLot.classification !== 'return_of_capital') {
+        throw new Error('Only return-of-capital dividends allocate basis.');
+      }
+      await insertRocAllocations(divLot);
+      await refresh();
+    },
+    [refresh, state.parkedLots, insertRocAllocations],
   );
 
   /** Change a dividend's tax character. Confirming an 'unclassified' dividend
    * is normal bookkeeping; only a change to an already-confirmed class is a
-   * true post-1099 correction and gets the reclassified stamp. Shares/amount
-   * untouched, so no aggregate recompute. */
+   * true post-1099 correction and gets the reclassified stamp. Moving into
+   * ROC allocates basis reductions; moving out deletes that event's rows —
+   * exact reversal. Shares/amount untouched, so no aggregate recompute. */
   const reclassifyDividend = useCallback(
     async (id: string, classification: DividendClassification, exDate?: string | null) => {
-      const prior = state.parkedLots.find((l) => l.id === id)?.classification ?? 'unclassified';
+      const client = db();
+      const lot = state.parkedLots.find((l) => l.id === id);
+      const prior = lot?.classification ?? 'unclassified';
+      const toRoc = classification === 'return_of_capital' && prior !== 'return_of_capital';
+      const fromRoc = prior === 'return_of_capital' && classification !== 'return_of_capital';
       const payload: Record<string, unknown> = { classification };
       if (prior !== 'unclassified' && prior !== classification) {
         payload.reclassified_at = new Date().toISOString();
       }
       if (exDate !== undefined) payload.ex_date = exDate;
-      const { error: err } = await db().from('parked_lots').update(payload).eq('id', id);
+      if (fromRoc) payload.roc_allocated_at = null;
+      const { error: err } = await client.from('parked_lots').update(payload).eq('id', id);
       if (err) throw err;
+      if (fromRoc) {
+        const { error: delErr } = await client
+          .from('parked_lot_adjustments').delete().eq('dividend_lot_id', id);
+        if (delErr) throw delErr;
+      }
+      if (toRoc && lot) await insertRocAllocations(lot);
       await refresh();
     },
-    [refresh, state.parkedLots],
+    [refresh, state.parkedLots, insertRocAllocations],
   );
 
   const addParkedPosition = useCallback(
@@ -1238,6 +1336,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       addParkedLot,
       deleteParkedLot,
       reclassifyDividend,
+      allocateRocDividend,
       addParkedPosition,
       deleteParkedSale,
       updateParkedSale,
@@ -1257,7 +1356,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       loading, error,
       refresh, addCashEvent, deleteCashEvent, addLot, closePosition, recordSplit,
       setTradeWashSale, deleteTrade, updateParked, recordMilestone, addAccount, addOutsideSale,
-      deleteOutsideSale, recordTrim, addParkedLot, deleteParkedLot, reclassifyDividend, addParkedPosition,
+      deleteOutsideSale, recordTrim, addParkedLot, deleteParkedLot, reclassifyDividend,
+      allocateRocDividend, addParkedPosition,
       deleteParkedSale, updateParkedSale, transferParked, accountCash, addParkedCashEvent,
       deleteParkedCashEvent, reconcileAccountCash, exampleData, clearExampleData,
       setOverride, clearOverride,
