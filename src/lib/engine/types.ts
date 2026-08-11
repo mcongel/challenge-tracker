@@ -99,6 +99,8 @@ export interface BenchmarkDeposit {
 
 export type ParkedCategory = 'Semi/AI' | 'AI-adjacent' | 'BTC' | 'Other';
 
+export type DividendFrequency = 'monthly' | 'quarterly' | 'semiannual' | 'annual';
+
 export interface ParkedPosition {
   id: string;
   ticker: string;
@@ -112,6 +114,9 @@ export interface ParkedPosition {
   /** Oldest lot's buy date; null until known (e.g. pending ACATS transfer). */
   buyDate?: string | null;
   trimRank?: number | null;
+  /** Manual income estimate: annual dollars per share. Null = no estimate. */
+  dividendRate?: number | null;
+  dividendFrequency?: DividendFrequency | null;
   notes?: string | null;
 }
 

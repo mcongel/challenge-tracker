@@ -32,11 +32,15 @@ const TABLES = [
   ['parked_positions', get('parked_positions').map((p) => ({
     id: p.id, ticker: p.ticker, account_id: p.accountId, category: p.category,
     shares: p.shares, avg_cost: p.avgCost, current_price: p.currentPrice,
-    buy_date: p.buyDate ?? null, trim_rank: p.trimRank ?? null, notes: p.notes ?? null,
+    buy_date: p.buyDate ?? null, trim_rank: p.trimRank ?? null,
+    dividend_rate: p.dividendRate ?? null, dividend_frequency: p.dividendFrequency ?? null,
+    notes: p.notes ?? null,
   })), 'id'],
   ['parked_lots', get('parked_lots').map((l) => ({
     id: l.id, parked_position_id: l.parkedPositionId, date: l.date ?? null, source: l.source,
-    shares: l.shares, price: l.price ?? null, amount: l.amount, notes: l.notes ?? null,
+    shares: l.shares, price: l.price ?? null, amount: l.amount,
+    classification: l.classification ?? null, ex_date: l.exDate ?? null,
+    reclassified_at: l.reclassifiedAt ?? null, notes: l.notes ?? null,
   })), 'id'],
   ['parked_sales', get('parked_sales').map((s) => ({
     id: s.id, ticker: s.ticker, account_id: s.accountId, date: s.date, shares: s.shares,

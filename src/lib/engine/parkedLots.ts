@@ -1,6 +1,15 @@
 import { longTermDate } from './dates';
 import { sum } from './money';
 
+/** Tax character of a dividend. Brokers reclassify after the 1099, so lots
+ * start 'unclassified' until confirmed. */
+export type DividendClassification =
+  | 'qualified'
+  | 'ordinary'
+  | 'return_of_capital'
+  | 'capital_gain_dist'
+  | 'unclassified';
+
 /** One dated slice of a parked position — a purchase or a dividend. Reinvested
  * dividends carry shares (their own 366-day clock); cash dividends carry only
  * the amount. Context only, never score math. */
@@ -14,6 +23,11 @@ export interface ParkedLot {
   price?: number | null;
   /** Cost basis added (purchases, reinvested dividends) or cash received. */
   amount: number;
+  /** Dividend lots only; null on purchases. Treat null-on-dividend as 'unclassified'. */
+  classification?: DividendClassification | null;
+  exDate?: string | null;
+  /** Set when a broker 1099 reclassified this dividend after entry. */
+  reclassifiedAt?: string | null;
   notes?: string | null;
 }
 

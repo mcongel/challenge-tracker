@@ -150,6 +150,8 @@ export const mapParked = (r: any): ParkedPosition => ({
   currentPrice: Number(r.current_price),
   buyDate: r.buy_date,
   trimRank: r.trim_rank,
+  dividendRate: r.dividend_rate === null ? null : Number(r.dividend_rate),
+  dividendFrequency: r.dividend_frequency,
   notes: r.notes,
 });
 
@@ -162,6 +164,8 @@ export const parkedPayload = (p: Omit<ParkedPosition, 'id' | 'account'>) => ({
   current_price: p.currentPrice,
   buy_date: p.buyDate ?? null,
   trim_rank: p.trimRank ?? null,
+  dividend_rate: p.dividendRate ?? null,
+  dividend_frequency: p.dividendFrequency ?? null,
   notes: p.notes ?? null,
 });
 
@@ -173,6 +177,9 @@ export const mapParkedLot = (r: any): ParkedLot => ({
   shares: Number(r.shares),
   price: r.price === null ? null : Number(r.price),
   amount: Number(r.amount),
+  classification: r.classification,
+  exDate: r.ex_date,
+  reclassifiedAt: r.reclassified_at,
   notes: r.notes,
 });
 
@@ -183,6 +190,9 @@ export const parkedLotPayload = (l: Omit<ParkedLot, 'id'>) => ({
   shares: l.shares,
   price: l.price ?? null,
   amount: l.amount,
+  classification: l.classification ?? null,
+  ex_date: l.exDate ?? null,
+  reclassified_at: l.reclassifiedAt ?? null,
   notes: l.notes ?? null,
 });
 
