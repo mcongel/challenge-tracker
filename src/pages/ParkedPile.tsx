@@ -1480,6 +1480,7 @@ const NEVER_TRIM = new Set(['NVDA', 'TSLA', 'MSTR']);
 function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose: () => void }) {
   const {
     recordTrim, cashEvents, contributionCap, parkedLots, parkedLotAdjustments, ltTaxRate, stTaxRate,
+    overrides, quotes,
   } = useData();
   const { shares, price, total, setShares, setPrice, setTotal } = useNotional({
     price: p.currentPrice ? String(p.currentPrice) : '',
@@ -1487,7 +1488,11 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
   const [date, setDate] = useState(todayISO());
   // The pile stands on its own: selling does NOT presume funding the challenge.
   const [fund, setFund] = useState(false);
-  const [vooPrice, setVooPrice] = useState('');
+  // Today's trims prefill the shadow price from the live VOO quote (editable);
+  // backdated trims still need the historical price by hand.
+  const vooQuote = overrides['VOO'] ?? quotes['VOO'];
+  const [vooPrice, setVooPrice] = useState(vooQuote ? String(vooQuote) : '');
+  const vooPrefilled = Boolean(vooQuote) && vooPrice === String(vooQuote) && date === todayISO();
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -1603,6 +1608,12 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
             <label className={labelCls}>VOO price on {date}</label>
             <input type="number" step="0.01" min="0.01" value={vooPrice}
               onChange={(e) => setVooPrice(e.target.value)} className={inputCls} placeholder="for the shadow purchase" />
+            {vooPrefilled && (
+              <p className="mt-0.5 text-xs text-gray-400">from the live quote — edit if the fill differed</p>
+            )}
+            {!vooPrefilled && date !== todayISO() && (
+              <p className="mt-0.5 text-xs text-gray-400">backdated — look up VOO's close for {date}</p>
+            )}
           </div>
         )}
 
@@ -1664,7 +1675,17 @@ const KIND_STYLES: Record<AccountKind, string> = {
 };
 
 function AccountsModal({ onClose }: { onClose: () => void }) {
-  const { accounts, addAccount, accountCash } = useData();
+  const { accounts, addAccount, accountCash, parkedCashEvents } = useData();
+  // Last reconcile per account — the adjustment rows written by the
+  // reconcile flow all carry a 'Reconciled…' note.
+  const lastReconciled = (accountId: string): string | null =>
+    parkedCashEvents
+      .filter((e) => e.accountId === accountId && e.notes?.startsWith('Reconciled'))
+      .map((e) => e.date)
+      .sort()
+      .at(-1) ?? null;
+  const daysAgo = (iso: string) =>
+    Math.max(0, Math.floor((Date.now() - new Date(`${iso}T00:00:00`).getTime()) / 86_400_000));
   const [name, setName] = useState('');
   const [kind, setKind] = useState<AccountKind>('bank');
   const [broker, setBroker] = useState('');
@@ -1737,7 +1758,15 @@ function AccountsModal({ onClose }: { onClose: () => void }) {
                 <p className="text-lg font-bold tabular-nums text-gray-900 mt-0.5">
                   {formatCurrency(roundCents(tracked))}
                 </p>
-                <p className="text-xs text-gray-400">tracked cash · view history & reconcile</p>
+                <p className="text-xs text-gray-400">
+                  tracked cash · view history & reconcile
+                  {(() => {
+                    const last = lastReconciled(a.id);
+                    if (!last) return ' · never reconciled';
+                    const d = daysAgo(last);
+                    return ` · reconciled ${d === 0 ? 'today' : `${d}d ago`}`;
+                  })()}
+                </p>
               </button>
             );
           })}
@@ -1806,6 +1835,7 @@ function AccountCashModal({ account, onClose }: { account: Account; onClose: () 
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('');
   const [actual, setActual] = useState('');
+  const [reconcileNote, setReconcileNote] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<ParkedCashEvent | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1828,12 +1858,18 @@ function AccountCashModal({ account, onClose }: { account: Account; onClose: () 
 
   const reconcile = async () => {
     setFormError(null);
+    setReconcileNote(null);
     const target = Number(actual);
     if (actual === '' || Number.isNaN(target)) return setFormError('Enter the actual balance from the brokerage.');
     setBusy(true);
     try {
-      await reconcileAccountCash(account.id, target);
+      const { adjusted, diff } = await reconcileAccountCash(account.id, target);
       setActual('');
+      setReconcileNote(
+        adjusted
+          ? `Adjusted by ${diff >= 0 ? '+' : '−'}${formatCurrency(Math.abs(diff))} — tracked cash now matches.`
+          : '✓ Matches — no adjustment needed.',
+      );
     } catch (err) {
       setFormError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -1870,6 +1906,9 @@ function AccountCashModal({ account, onClose }: { account: Account; onClose: () 
             Writes an adjustment for the difference. First time? This sets your opening balance.
             A monthly glance keeps it true.
           </p>
+          {reconcileNote && (
+            <p className="text-xs font-medium text-green-800 mt-1.5">{reconcileNote}</p>
+          )}
         </div>
 
         {events.length > 0 && (

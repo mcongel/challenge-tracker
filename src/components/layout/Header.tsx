@@ -12,7 +12,7 @@ interface HeaderProps {
 
 export function Header({ onMenuClick }: HeaderProps) {
   const { signOut } = useAuth();
-  const { quotesAsOf, refreshQuotes } = useData();
+  const { quotesAsOf, quotesError, refreshQuotes } = useData();
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
   const [refreshing, setRefreshing] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -48,9 +48,19 @@ export function Header({ onMenuClick }: HeaderProps) {
 
       <div className="flex items-center gap-1 sm:gap-2">
         {quotesAsOf && (
-          <span className="hidden sm:inline text-xs text-gray-400 tabular-nums">
-            prices as of {new Date(quotesAsOf).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+          <span className={cn('text-xs tabular-nums', quotesError ? 'text-amber-600 font-medium' : 'text-gray-400')}>
+            {/* Short form on phones, full on wider screens — staleness must be visible everywhere. */}
+            <span className="sm:hidden">
+              {quotesError ? 'stale ' : ''}{new Date(quotesAsOf).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+            </span>
+            <span className="hidden sm:inline">
+              {quotesError ? 'quotes stale — last ' : 'prices as of '}
+              {new Date(quotesAsOf).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+            </span>
           </span>
+        )}
+        {!quotesAsOf && quotesError && (
+          <span className="text-xs text-amber-600 font-medium">quotes unavailable</span>
         )}
         <button
           onClick={doRefresh}

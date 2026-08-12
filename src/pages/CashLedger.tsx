@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pencil, Plus, Trash2, Wallet } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
@@ -191,7 +191,7 @@ function AddEventModal({
   onClose: () => void;
   onAdd: (e: Parameters<ReturnType<typeof useData>['addCashEvent']>[0], voo?: number) => Promise<void>;
 }) {
-  const { cashEvents, contributionCap, accounts } = useData();
+  const { cashEvents, contributionCap, accounts, overrides, quotes } = useData();
   const [date, setDate] = useState(todayISO());
   const [type, setType] = useState<CashEventType>('Deposit');
   const [amount, setAmount] = useState('');
@@ -199,6 +199,16 @@ function AddEventModal({
   const [source, setSource] = useState('');
   const [notes, setNotes] = useState('');
   const [vooPrice, setVooPrice] = useState('');
+  const [vooPrefilled, setVooPrefilled] = useState(false);
+  // Same-day deposits prefill the shadow price from the live quote; the field
+  // stays editable and a cleared field is NOT refilled (deps skip vooPrice).
+  const vooQuote = overrides['VOO'] ?? quotes['VOO'];
+  useEffect(() => {
+    if (isOpen && type === 'Deposit' && date === todayISO() && vooPrice === '' && vooQuote) {
+      setVooPrice(String(vooQuote));
+      setVooPrefilled(true);
+    }
+  }, [isOpen, type, date, vooQuote]); // vooPrice deliberately omitted — see above
   const [fromAccount, setFromAccount] = useState('');
   const [toAccount, setToAccount] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
@@ -282,6 +292,9 @@ function AddEventModal({
               <label className={labelCls}>VOO price today</label>
               <input type="number" step="0.01" min="0.01" value={vooPrice}
                 onChange={(e) => setVooPrice(e.target.value)} className={inputCls} placeholder="620.00" />
+              {vooPrefilled && vooQuote !== undefined && vooPrice === String(vooQuote) && (
+                <p className="mt-0.5 text-xs text-gray-400">from the live quote — edit if needed</p>
+              )}
             </div>
           ) : <div />}
         </div>

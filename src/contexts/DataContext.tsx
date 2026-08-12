@@ -132,6 +132,8 @@ interface DataContextValue extends DataState {
   /** The day's move per ticker, straight from the quote feed. */
   dayChange: Record<string, { change: number | null; changePct: number | null }>;
   quotesAsOf: number | null;
+  /** Last quote fetch failed — the stamp shows amber "quotes stale". */
+  quotesError: boolean;
   refreshQuotes: () => Promise<void>;
   /** Company names by ticker (best-effort; ETFs may be absent). */
   tickerNames: Record<string, string>;
@@ -221,8 +223,12 @@ interface DataContextValue extends DataState {
   accountCash: (accountId: string) => AccountCashBreakdown;
   addParkedCashEvent: (e: Omit<ParkedCashEvent, 'id'>) => Promise<void>;
   deleteParkedCashEvent: (id: string) => Promise<void>;
-  /** The reconcile piece: writes an adjustment for actual − tracked. */
-  reconcileAccountCash: (accountId: string, actualBalance: number) => Promise<void>;
+  /** The reconcile piece: writes an adjustment for actual − tracked.
+   * Reports whether one was needed so a clean check can say "matches". */
+  reconcileAccountCash: (
+    accountId: string,
+    actualBalance: number,
+  ) => Promise<{ adjusted: boolean; diff: number }>;
   /** History corrections: basis, term, funded flag, date, notes. */
   updateParkedSale: (
     id: string,
@@ -269,6 +275,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     Record<string, { change: number | null; changePct: number | null }>
   >({});
   const [quotesAsOf, setQuotesAsOf] = useState<number | null>(null);
+  const [quotesError, setQuotesError] = useState(false);
   const [tickerNames, setTickerNames] = useState<Record<string, string>>({});
 
   const refresh = useCallback(async () => {
@@ -384,7 +391,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     if (tickers.length === 0) return;
     try {
       const res = await fetch(`/api/quotes?tickers=${tickers.join(',')}`);
-      if (!res.ok) return; // quotes are best-effort; overrides and cost fallbacks cover us
+      if (!res.ok) {
+        // Best-effort — overrides and cost fallbacks cover us — but the
+        // staleness stamp should turn amber rather than lie quietly.
+        setQuotesError(true);
+        return;
+      }
       const body = (await res.json()) as {
         quotes?: Record<string, { price: number; change?: number | null; changePct?: number | null }>;
         asOf?: number;
@@ -408,10 +420,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         }));
         setQuotesAsOf(body.asOf ?? Date.now());
         lastQuoteFetchAt.current = Date.now();
+        setQuotesError(false);
         void persistQuotedPrices(fresh);
       }
     } catch {
-      // Local dev without the Pages Function, or the API is down — silently fine.
+      // Local dev without the Pages Function, or the API is down — the UI
+      // shows an amber "quotes stale" stamp instead of an error.
+      setQuotesError(true);
     }
   }, [state.lots, state.parked, persistQuotedPrices]);
 
@@ -1337,10 +1352,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   );
 
   const reconcileAccountCash = useCallback(
-    async (accountId: string, actualBalance: number) => {
+    async (accountId: string, actualBalance: number): Promise<{ adjusted: boolean; diff: number }> => {
       const tracked = accountCash(accountId).balance;
       const diff = roundCents(actualBalance - tracked);
-      if (Math.abs(diff) < 0.005) return; // already true
+      if (Math.abs(diff) < 0.005) return { adjusted: false, diff: 0 }; // already true
       const { error: err } = await db().from('parked_cash_events').insert(
         parkedCashEventPayload({
           accountId,
@@ -1352,6 +1367,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       );
       if (err) throw err;
       await refresh();
+      return { adjusted: true, diff };
     },
     [refresh, accountCash],
   );
@@ -2215,6 +2231,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       quotes,
       dayChange,
       quotesAsOf,
+      quotesError,
       refreshQuotes,
       tickerNames,
       contributionCap,
@@ -2273,7 +2290,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       deleteRotation,
     }),
     [
-      state, mergedParked, quotes, dayChange, quotesAsOf, refreshQuotes, tickerNames, contributionCap,
+      state, mergedParked, quotes, dayChange, quotesAsOf, quotesError, refreshQuotes, tickerNames,
+      contributionCap,
       concentrationCap, ltTaxRate, stTaxRate, dividendTaxRates, updateSetting, updateSettings,
       setCarryforward, loading, error,
       refresh, addCashEvent, updateCashEvent, deleteCashEvent, addLot, deleteLot, updateLotDetails,

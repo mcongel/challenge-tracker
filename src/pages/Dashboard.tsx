@@ -6,8 +6,9 @@ import {
 import { useData } from '../contexts/DataContext';
 import { activeAlerts, priceMapFor } from '../lib/alerts';
 import {
-  accountTotal, cumulativeFloor, lead, netContributed, netRealizedYTD, nextMilestone,
-  pileTotal, reservedTotal, roundCents, shadowValue, taxYearOf, totalScore,
+  accountTotal, cumulativeFloor, isArchivedPosition, lead, netContributed, netRealizedYTD,
+  nextMilestone, pileTotal, reservedTotal, roundCents, shadowValue, taxYearOf, totalScore,
+  unlockSummary,
 } from '../lib/engine';
 import { ErrorCard } from './CashLedger';
 import { ContributionCapBadge } from '../components/ui/ContributionCapBadge';
@@ -33,7 +34,7 @@ const ALERT_STYLES: Record<string, string> = {
 
 export function Dashboard() {
   const {
-    lots, cashEvents, trades, milestones, benchmarkDeposits, parked, snapshots,
+    lots, cashEvents, trades, milestones, benchmarkDeposits, parked, parkedLots, snapshots,
     carryforwards, overrides, quotes, contributionCap, concentrationCap, loading, error,
   } = useData();
   const isDark = useIsDark();
@@ -52,6 +53,16 @@ export function Dashboard() {
     lots, cashEvents, trades, milestones, parked, carryforwards, overrides, quotes,
     concentrationCap, today,
   });
+
+  // Soonest unlock across the pile — the trim calendar at a glance.
+  const nextUnlock = parked
+    .filter((p) => !isArchivedPosition(p))
+    .map((p) => ({
+      ticker: p.ticker,
+      next: unlockSummary(parkedLots.filter((l) => l.parkedPositionId === p.id), today).nextUnlock,
+    }))
+    .filter((x): x is { ticker: string; next: NonNullable<typeof x.next> } => x.next != null)
+    .sort((a, b) => a.next.date.localeCompare(b.next.date))[0] ?? null;
 
   const chartData = snapshots.map((s) => ({
     date: s.date.slice(5),
@@ -172,7 +183,11 @@ export function Dashboard() {
           <p className="mt-0.5 text-xl font-bold tabular-nums text-gray-500">
             {formatCurrency(roundCents(pileTotal(parked)))}
           </p>
-          <p className="text-xs text-gray-400 mt-0.5">context only — not in score</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            {nextUnlock
+              ? `next unlock: ${String(Number(nextUnlock.next.shares.toFixed(4)))} sh ${nextUnlock.ticker} on ${nextUnlock.next.date}`
+              : 'context only — not in score'}
+          </p>
         </Link>
       </div>
 

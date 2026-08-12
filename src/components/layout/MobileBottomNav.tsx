@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Wallet, TrendingUp, ScrollText, Archive } from 'lucide-react';
+import { LayoutDashboard, Wallet, TrendingUp, ScrollText, Archive, HandCoins } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 const ITEMS = [
@@ -8,6 +8,7 @@ const ITEMS = [
   { to: '/positions', label: 'Positions', icon: TrendingUp },
   { to: '/trades', label: 'Trades', icon: ScrollText },
   { to: '/parked', label: 'Pile', icon: Archive },
+  { to: '/income', label: 'Income', icon: HandCoins },
 ];
 
 /** Classes mirror SpokenFor's mobile bottom nav. */
