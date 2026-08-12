@@ -16,12 +16,13 @@ import type {
 import {
   adjustmentsForLots, aggregateLotsAdjusted, basisExhaustedLotIds, concentration,
   contributionStatus, daysBetween, depositExceedsCap, dividendsCollected, estimatedPileTax,
-  isArchivedPosition, netContributed, parkedCostBasis, parkedMarketValue, roundCents, trimPreview,
-  unlockSummary,
+  isArchivedPosition, isNeverTrimFuel, netContributed, parkedCostBasis, parkedMarketValue,
+  roundCents, trimPreview, unlockSummary,
 } from '../lib/engine';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import {
-  cn, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls, secondaryBtnCls, todayISO,
+  cn, errorMessage, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls,
+  secondaryBtnCls, todayISO,
 } from '../lib/utils';
 import { useNotional } from '../lib/useNotional';
 import { TotalField } from '../components/ui/TotalField';
@@ -1125,6 +1126,7 @@ function LotPanel({ position: p, summary }: { position: ParkedPosition; summary:
     };
   }, [parkedLots, parkedLotAdjustments, p.id]);
   const effectivePrice = overrides[p.ticker] ?? quotes[p.ticker] ?? p.currentPrice;
+  const lastDiv = lots.filter((l) => l.source === 'dividend' && l.date).at(-1);
 
   const [mode, setMode] = useState<'purchase' | 'dividend' | null>(null);
   const [date, setDate] = useState('');
@@ -1213,10 +1215,13 @@ function LotPanel({ position: p, summary }: { position: ParkedPosition; summary:
           notes: reinvested ? 'reinvested' : 'cash',
         });
         // Streaks are the norm (daily/monthly payers entered in a run) — keep
-        // the form open with date/classification/reinvest intact and only the
-        // per-entry fields cleared.
+        // the form open with date/classification/reinvest intact and the
+        // per-entry fields cleared. Ex-date clears too: it differs per
+        // payment, and a silently inherited one is wrong holding-period
+        // evidence.
         setAmount('');
         setShares('');
+        setExDate('');
         setJustAdded(`Added ${formatCurrency(roundCents(amt))} ✓ — form kept for the next one`);
       }
     } catch (err) {
@@ -1233,12 +1238,9 @@ function LotPanel({ position: p, summary }: { position: ParkedPosition; summary:
       </p>
       <p className="text-sm text-gray-600 mb-3">
         {unlockSentence(summary)}
-        {(() => {
-          const lastDiv = lots.filter((l) => l.source === 'dividend' && l.date).at(-1);
-          return lastDiv ? (
-            <span className="text-gray-500"> Last dividend {lastDiv.date} ({formatCurrency(lastDiv.amount)}).</span>
-          ) : null;
-        })()}
+        {lastDiv && (
+          <span className="text-gray-500"> Last dividend {lastDiv.date} ({formatCurrency(lastDiv.amount)}).</span>
+        )}
         {adjustedAgg.adjustedCostBasis < adjustedAgg.costBasis - 0.005 && (
           <span className="text-gray-500">
             {' '}Basis {formatCurrency(roundCents(adjustedAgg.costBasis))} original ·{' '}
@@ -1475,8 +1477,6 @@ function TransferModal({ position: p, onClose }: { position: ParkedPosition; onC
   );
 }
 
-const NEVER_TRIM = new Set(['NVDA', 'TSLA', 'MSTR']);
-
 function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose: () => void }) {
   const {
     recordTrim, cashEvents, contributionCap, parkedLots, parkedLotAdjustments, ltTaxRate, stTaxRate,
@@ -1489,10 +1489,16 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
   // The pile stands on its own: selling does NOT presume funding the challenge.
   const [fund, setFund] = useState(false);
   // Today's trims prefill the shadow price from the live VOO quote (editable);
-  // backdated trims still need the historical price by hand.
+  // backdated trims still need the historical price by hand — changing the
+  // date away from today clears a still-prefilled value, because the twin's
+  // price is that DAY's price and is never re-derivable later.
   const vooQuote = overrides['VOO'] ?? quotes['VOO'];
   const [vooPrice, setVooPrice] = useState(vooQuote ? String(vooQuote) : '');
   const vooPrefilled = Boolean(vooQuote) && vooPrice === String(vooQuote) && date === todayISO();
+  const changeDate = (d: string) => {
+    setDate(d);
+    if (d !== todayISO() && vooQuote && vooPrice === String(vooQuote)) setVooPrice('');
+  };
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -1503,7 +1509,7 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
   const positionLots = parkedLots.filter((l) => l.parkedPositionId === p.id);
   const summ = unlockSummary(positionLots, date);
   const dipsShortTerm = numShares > 0 && numShares > summ.unlockedShares + 1e-9;
-  const neverTrimFuel = NEVER_TRIM.has(p.ticker) || p.category === 'BTC';
+  const neverTrimFuel = isNeverTrimFuel(p);
   let preview: ReturnType<typeof trimPreview> | null = null;
   if (numShares > 0 && numShares <= p.shares + 1e-9 && numPrice > 0 && positionLots.length > 0) {
     try {
@@ -1593,7 +1599,7 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
           </div>
           <div>
             <label className={labelCls}>Date</label>
-            <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
+            <input type="date" required value={date} onChange={(e) => changeDate(e.target.value)} className={inputCls} />
           </div>
           <TotalField value={total} onChange={setTotal} label="Total proceeds ($)" />
         </div>
@@ -1676,16 +1682,17 @@ const KIND_STYLES: Record<AccountKind, string> = {
 
 function AccountsModal({ onClose }: { onClose: () => void }) {
   const { accounts, addAccount, accountCash, parkedCashEvents } = useData();
-  // Last reconcile per account — the adjustment rows written by the
-  // reconcile flow all carry a 'Reconciled…' note.
-  const lastReconciled = (accountId: string): string | null =>
-    parkedCashEvents
-      .filter((e) => e.accountId === accountId && e.notes?.startsWith('Reconciled'))
-      .map((e) => e.date)
-      .sort()
-      .at(-1) ?? null;
-  const daysAgo = (iso: string) =>
-    Math.max(0, Math.floor((Date.now() - new Date(`${iso}T00:00:00`).getTime()) / 86_400_000));
+  // Last reconcile per account, one pass — the rows written by the reconcile
+  // flow all carry a 'Reconciled…' note (including zero-diff "matched" ones).
+  const lastReconciledByAccount = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const e of parkedCashEvents) {
+      if (!e.notes?.startsWith('Reconciled')) continue;
+      const prev = m.get(e.accountId);
+      if (!prev || e.date > prev) m.set(e.accountId, e.date);
+    }
+    return m;
+  }, [parkedCashEvents]);
   const [name, setName] = useState('');
   const [kind, setKind] = useState<AccountKind>('bank');
   const [broker, setBroker] = useState('');
@@ -1739,6 +1746,11 @@ function AccountsModal({ onClose }: { onClose: () => void }) {
                 </div>
               );
             }
+            const lastRec = lastReconciledByAccount.get(a.id);
+            const recDays = lastRec ? daysBetween(lastRec, todayISO()) : null;
+            const recLabel = recDays == null
+              ? ' · never reconciled'
+              : ` · reconciled ${recDays <= 0 ? 'today' : `${recDays}d ago`}`;
             return (
               <button
                 key={a.id}
@@ -1759,13 +1771,7 @@ function AccountsModal({ onClose }: { onClose: () => void }) {
                   {formatCurrency(roundCents(tracked))}
                 </p>
                 <p className="text-xs text-gray-400">
-                  tracked cash · view history & reconcile
-                  {(() => {
-                    const last = lastReconciled(a.id);
-                    if (!last) return ' · never reconciled';
-                    const d = daysAgo(last);
-                    return ` · reconciled ${d === 0 ? 'today' : `${d}d ago`}`;
-                  })()}
+                  tracked cash · view history & reconcile{recLabel}
                 </p>
               </button>
             );
@@ -1871,7 +1877,7 @@ function AccountCashModal({ account, onClose }: { account: Account; onClose: () 
           : '✓ Matches — no adjustment needed.',
       );
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err));
+      setFormError(errorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -2038,7 +2044,7 @@ function EditParkedModal({ position: p, onClose }: { position: ParkedPosition; o
                 onClick={async () => {
                   setBusy(true);
                   try { await clearOverride(p.ticker); } catch (err) {
-                    setFormError(err instanceof Error ? err.message : String(err));
+                    setFormError(errorMessage(err));
                   } finally { setBusy(false); }
                 }}
               >
@@ -2052,7 +2058,7 @@ function EditParkedModal({ position: p, onClose }: { position: ParkedPosition; o
               onClick={async () => {
                 setBusy(true);
                 try { await setOverride(p.ticker, Number(price)); } catch (err) {
-                  setFormError(err instanceof Error ? err.message : String(err));
+                  setFormError(errorMessage(err));
                 } finally { setBusy(false); }
               }}
             >

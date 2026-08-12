@@ -83,6 +83,7 @@ const TABLES = [
   ['position_lots', get('position_lots').map((l) => ({
     id: l.id, ticker: l.ticker, buy_date: l.buyDate, shares: l.shares, avg_cost: l.avgCost,
     exit_target: l.exitTarget, bail_point: l.bailPoint ?? null, thesis: l.thesis ?? null,
+    buy_event_id: l.buyEventId ?? null,
   })), 'id'],
   ['trades', get('trades').map((t) => ({
     id: t.id, ticker: t.ticker, open_date: t.openDate, close_date: t.closeDate,

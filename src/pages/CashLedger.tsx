@@ -13,7 +13,8 @@ import {
   withRunningBalance,
 } from '../lib/engine';
 import {
-  cn, formatCurrency, formatCurrencyWhole, inputCls, labelCls, primaryBtnCls, todayISO,
+  cn, errorMessage, formatCurrency, formatCurrencyWhole, inputCls, labelCls, primaryBtnCls,
+  todayISO,
 } from '../lib/utils';
 
 const TYPES: CashEventType[] = [
@@ -205,16 +206,27 @@ function AddEventModal({
   const [source, setSource] = useState('');
   const [notes, setNotes] = useState('');
   const [vooPrice, setVooPrice] = useState('');
+  // Same-day deposits prefill the shadow price from the live quote — ONCE
+  // per open (the flag), so a deliberately cleared field is never refilled
+  // by a background quote refresh. Resets when the modal closes.
   const [vooPrefilled, setVooPrefilled] = useState(false);
-  // Same-day deposits prefill the shadow price from the live quote; the field
-  // stays editable and a cleared field is NOT refilled (deps skip vooPrice).
   const vooQuote = overrides['VOO'] ?? quotes['VOO'];
   useEffect(() => {
-    if (isOpen && type === 'Deposit' && date === todayISO() && vooPrice === '' && vooQuote) {
+    if (!isOpen) {
+      setVooPrefilled(false);
+      return;
+    }
+    if (!vooPrefilled && type === 'Deposit' && date === todayISO() && vooPrice === '' && vooQuote) {
       setVooPrice(String(vooQuote));
       setVooPrefilled(true);
     }
-  }, [isOpen, type, date, vooQuote]); // vooPrice deliberately omitted — see above
+  }, [isOpen, vooPrefilled, type, date, vooQuote, vooPrice]);
+  // A backdated deposit must never keep today's quote — the shadow twin's
+  // price is that DAY's price, and it is never re-derivable later.
+  const changeDate = (d: string) => {
+    setDate(d);
+    if (d !== todayISO() && vooQuote && vooPrice === String(vooQuote)) setVooPrice('');
+  };
   const [fromAccount, setFromAccount] = useState('');
   const [toAccount, setToAccount] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
@@ -273,7 +285,7 @@ function AddEventModal({
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className={labelCls}>Date</label>
-            <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
+            <input type="date" required value={date} onChange={(e) => changeDate(e.target.value)} className={inputCls} />
           </div>
           <div>
             <label className={labelCls}>Type</label>
@@ -298,8 +310,11 @@ function AddEventModal({
               <label className={labelCls}>VOO price today</label>
               <input type="number" step="0.01" min="0.01" value={vooPrice}
                 onChange={(e) => setVooPrice(e.target.value)} className={inputCls} placeholder="620.00" />
-              {vooPrefilled && vooQuote !== undefined && vooPrice === String(vooQuote) && (
+              {vooQuote !== undefined && vooPrice === String(vooQuote) && date === todayISO() && (
                 <p className="mt-0.5 text-xs text-gray-400">from the live quote — edit if needed</p>
+              )}
+              {date !== todayISO() && (
+                <p className="mt-0.5 text-xs text-gray-400">backdated — look up VOO's close for {date}</p>
               )}
             </div>
           ) : <div />}
@@ -351,7 +366,7 @@ function EditEventModal({ event, onClose }: { event: CashEvent; onClose: () => v
       await updateCashEvent(event.id, { date, notes: notes || null });
       onClose();
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err));
+      setFormError(errorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -373,6 +388,8 @@ function EditEventModal({ event, onClose }: { event: CashEvent; onClose: () => v
           Delete and re-add if the money is wrong.
           {event.type === 'Deposit' &&
             ' A date change moves the shadow twin’s date too, but keeps its recorded VOO price — fix typos, don’t re-date real deposits.'}
+          {event.type === 'Buy' &&
+            ' The position lot keeps its own buy date — edit it from Positions if both should move.'}
         </p>
         {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
         <div className="flex justify-end">

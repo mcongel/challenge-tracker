@@ -13,7 +13,8 @@ import {
   unrealized, unrealizedPct, washSaleConflicts,
 } from '../lib/engine';
 import {
-  cn, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls, secondaryBtnCls, todayISO,
+  cn, errorMessage, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls,
+  secondaryBtnCls, todayISO,
 } from '../lib/utils';
 import { useNotional } from '../lib/useNotional';
 import { TotalField } from '../components/ui/TotalField';
@@ -218,7 +219,7 @@ function EditLotModal({ lot, onClose }: { lot: PositionLot; onClose: () => void 
       });
       onClose();
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err));
+      setFormError(errorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -245,7 +246,8 @@ function EditLotModal({ lot, onClose }: { lot: PositionLot; onClose: () => void 
         </div>
         <p className="text-xs text-gray-400">
           Shares and cost can't change — they anchor the Buy on the Cash Ledger and the basis math.
-          A buy-date change moves the long-term clock but leaves the ledger row's date alone.
+          A buy-date change moves the long-term clock and, when the lot is linked to its Buy row,
+          moves that ledger date with it.
         </p>
         {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
         <div className="flex justify-end">

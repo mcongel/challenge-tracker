@@ -14,7 +14,7 @@ create table challenge.accounts (
 );
 
 -- Minimal record of a sale in an outside account — just enough to enforce
--- Rule 8's cross-brokerage wash-sale window. Deliberately NOT a trade log:
+-- Rule 9's cross-brokerage wash-sale window. Deliberately NOT a trade log:
 -- no basis, no P&L, and never part of any score or YTD math.
 create table challenge.outside_sales (
   id uuid primary key default gen_random_uuid(),

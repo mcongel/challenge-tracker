@@ -92,7 +92,9 @@ export function Milestones() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {rows.map((row) => (
+              {rows.map((row) => {
+                const rec = milestones.find((m) => m.level === row.level);
+                return (
                 <tr key={row.level} className={cn('hover:bg-gray-50', row.status === 'HIT_BANK_NOW' && 'bg-emerald-50')}>
                   <td className="px-4 py-3 font-medium tabular-nums">{formatCurrency(row.level)}</td>
                   <td className="px-4 py-3 text-right tabular-nums">
@@ -108,18 +110,15 @@ export function Milestones() {
                     {row.status === 'BANKED' ? (
                       <span className="inline-flex items-center gap-1">
                         <span className="inline-block rounded-full bg-green-50 text-green-700 px-2 py-0.5 text-xs font-medium">BANKED</span>
-                        {(() => {
-                          const rec = milestones.find((m) => m.level === row.level);
-                          return rec ? (
-                            <button
-                              onClick={() => setDeleting({ id: rec.id, level: row.level })}
-                              className="p-1 rounded hover:bg-red-50"
-                              aria-label="Delete milestone record"
-                            >
-                              <Trash2 className="h-3.5 w-3.5 text-gray-300 hover:text-red-600" />
-                            </button>
-                          ) : null;
-                        })()}
+                        {rec && (
+                          <button
+                            onClick={() => setDeleting({ id: rec.id, level: row.level })}
+                            className="p-1 rounded hover:bg-red-50"
+                            aria-label="Delete milestone record"
+                          >
+                            <Trash2 className="h-3.5 w-3.5 text-gray-300 hover:text-red-600" />
+                          </button>
+                        )}
                       </span>
                     ) : row.status === 'HIT_BANK_NOW' ? (
                       <button onClick={() => setBanking(row)}
@@ -131,7 +130,8 @@ export function Milestones() {
                     )}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
           <p className="px-4 py-3 text-xs text-gray-400 border-t border-gray-100">

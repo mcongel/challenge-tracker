@@ -37,7 +37,7 @@ export interface Account {
   notes?: string | null;
 }
 
-/** A sale in an outside brokerage — recorded only so Rule 8's cross-account
+/** A sale in an outside brokerage — recorded only so Rule 9's cross-account
  * wash-sale window has teeth. Never part of score or YTD math. */
 export interface OutsideSale {
   id: string;
@@ -60,6 +60,8 @@ export interface PositionLot {
   /** Legacy — the pre-Xu downside exit. Optional since Rules v3 (2026-08-05). */
   bailPoint?: number | null;
   thesis?: string | null;
+  /** Exact link to the Buy cash event; null on legacy lots (fuzzy fallback). */
+  buyEventId?: string | null;
 }
 
 export interface Trade {

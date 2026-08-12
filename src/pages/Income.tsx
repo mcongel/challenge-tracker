@@ -243,28 +243,33 @@ export function Income() {
     () => [...new Set(histRows.map((r) => r.ticker))].sort(),
     [histRows],
   );
+  // Persisted values may reference a year/ticker that no longer exists
+  // (data cleared, dividends deleted) — treat those as "all" so a stale
+  // filter can't invisibly hide every row behind a blank-looking select.
+  const yearFilter = histYears.includes(histFilters.year) ? histFilters.year : '';
+  const tickerFilter = histTickers.includes(histFilters.ticker) ? histFilters.ticker : '';
   const filteredHist = useMemo(
     () => sortedHist.filter(
       (r) =>
-        (!histFilters.year || (r.lot.date ?? '').startsWith(histFilters.year)) &&
-        (!histFilters.ticker || r.ticker === histFilters.ticker),
+        (!yearFilter || (r.lot.date ?? '').startsWith(yearFilter)) &&
+        (!tickerFilter || r.ticker === tickerFilter),
     ),
-    [sortedHist, histFilters],
+    [sortedHist, yearFilter, tickerFilter],
   );
   // Per-classification subtotals for a filtered year — the 1099-DIV boxes.
   const classTotals = useMemo(() => {
-    if (!histFilters.year) return null;
+    if (!yearFilter) return null;
     const m = new Map<DividendClassification, number>();
     for (const r of filteredHist) {
-      const c = (r.lot.classification ?? 'unclassified') as DividendClassification;
+      const c = r.lot.classification ?? 'unclassified';
       m.set(c, (m.get(c) ?? 0) + r.lot.amount);
     }
     return m;
-  }, [filteredHist, histFilters.year]);
+  }, [filteredHist, yearFilter]);
 
   const [bulkClass, setBulkClass] = useState<DividendClassification | ''>('');
   const [bulkConfirm, setBulkConfirm] = useState(false);
-  const filtersActive = Boolean(histFilters.year || histFilters.ticker);
+  const filtersActive = Boolean(yearFilter || tickerFilter);
 
   return (
     <div>
@@ -388,8 +393,8 @@ export function Income() {
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 <select
-                  value={histFilters.year}
-                  onChange={(e) => setHistFilters({ ...histFilters, year: e.target.value })}
+                  value={yearFilter}
+                  onChange={(e) => setHistFilters({ year: e.target.value, ticker: tickerFilter })}
                   className={cn(inputCls, 'w-auto py-1 text-xs')}
                   aria-label="Filter by year"
                 >
@@ -397,8 +402,8 @@ export function Income() {
                   {histYears.map((y) => <option key={y} value={y}>{y}</option>)}
                 </select>
                 <select
-                  value={histFilters.ticker}
-                  onChange={(e) => setHistFilters({ ...histFilters, ticker: e.target.value })}
+                  value={tickerFilter}
+                  onChange={(e) => setHistFilters({ year: yearFilter, ticker: e.target.value })}
                   className={cn(inputCls, 'w-auto py-1 text-xs')}
                   aria-label="Filter by ticker"
                 >
@@ -427,11 +432,9 @@ export function Income() {
                   aria-label="Bulk classification"
                 >
                   <option value="">reclassify to…</option>
-                  <option value="qualified">Qualified</option>
-                  <option value="ordinary">Ordinary (non-qualified)</option>
-                  <option value="return_of_capital">Return of capital</option>
-                  <option value="capital_gain_dist">Capital gain distribution</option>
-                  <option value="unclassified">Unclassified</option>
+                  {(Object.keys(CLASSIFICATION_LABELS) as DividendClassification[]).map((c) => (
+                    <option key={c} value={c}>{CLASSIFICATION_LABELS[c]}</option>
+                  ))}
                 </select>
                 <button
                   onClick={() => setBulkConfirm(true)}
@@ -510,7 +513,7 @@ export function Income() {
             </table>
             {classTotals && filteredHist.length > 0 && (
               <p className="px-4 py-3 text-xs text-gray-500 border-t border-gray-100 tabular-nums">
-                {histFilters.year}{histFilters.ticker ? ` · ${histFilters.ticker}` : ''} by class
+                {yearFilter}{tickerFilter ? ` · ${tickerFilter}` : ''} by class
                 (the 1099-DIV boxes):{' '}
                 {(['qualified', 'ordinary', 'return_of_capital', 'capital_gain_dist', 'unclassified'] as DividendClassification[])
                   .filter((c) => (classTotals.get(c) ?? 0) > 0)
@@ -529,7 +532,7 @@ export function Income() {
       {bulkConfirm && bulkClass && (
         <ConfirmModal
           title={`Reclassify ${filteredHist.length} dividends`}
-          message={`Set all ${filteredHist.length} filtered dividends${histFilters.year ? ` from ${histFilters.year}` : ''}${histFilters.ticker ? ` (${histFilters.ticker})` : ''} to "${CLASSIFICATION_LABELS[bulkClass]}"? Rows already confirmed as another class get the reclassified flag; moves into or out of Return of capital re-run basis allocation per dividend.`}
+          message={`Set all ${filteredHist.length} filtered dividends${yearFilter ? ` from ${yearFilter}` : ''}${tickerFilter ? ` (${tickerFilter})` : ''} to "${CLASSIFICATION_LABELS[bulkClass]}"? Rows already confirmed as another class get the reclassified flag; moves into or out of Return of capital re-run basis allocation per dividend, oldest first.`}
           confirmLabel="Reclassify"
           onConfirm={async () => {
             await reclassifyDividends(filteredHist.map((r) => r.lot.id), bulkClass);

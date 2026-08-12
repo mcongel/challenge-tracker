@@ -640,17 +640,34 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const addLot = useCallback(
     async (lot: Omit<PositionLot, 'id'>) => {
       const client = db();
-      const { error: err } = await client.from('position_lots').insert(lotPayload(lot));
-      if (err) throw err;
-      const { error: cashErr } = await client.from('cash_events').insert(
-        cashEventPayload({
-          date: lot.buyDate,
-          type: 'Buy',
-          amount: roundCents(lot.shares * lot.avgCost),
-          ticker: lot.ticker,
-        }),
-      );
+      // Buy event first so the lot can carry an exact link — matching by
+      // ticker+date+amount breaks the moment either side's date is edited.
+      const { data: cashRow, error: cashErr } = await client
+        .from('cash_events')
+        .insert(
+          cashEventPayload({
+            date: lot.buyDate,
+            type: 'Buy',
+            amount: roundCents(lot.shares * lot.avgCost),
+            ticker: lot.ticker,
+          }),
+        )
+        .select('id')
+        .single();
       if (cashErr) throw cashErr;
+      const { error: err } = await client
+        .from('position_lots')
+        .insert(lotPayload({ ...lot, buyEventId: cashRow.id as string }));
+      if (err) {
+        const { error: compErr } = await client
+          .from('cash_events').delete().eq('id', cashRow.id);
+        if (compErr) {
+          throw new Error(
+            `Lot insert failed (${err.message}) and its Buy event could not be rolled back (${compErr.message}) — remove the ${lot.buyDate} ${lot.ticker} Buy on the Cash Ledger before retrying.`,
+          );
+        }
+        throw err;
+      }
       await refresh();
     },
     [refresh],
@@ -1044,20 +1061,52 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [refresh, reclassifyCore],
   );
 
-  /** 1099 season: confirm a whole filtered set at once. Runs the same
-   * per-dividend logic (including ROC transitions) with ONE refresh at the
-   * end — a mid-list failure refreshes too, so the survivors show. */
+  /** 1099 season: confirm a whole filtered set at once, with ONE refresh at
+   * the end — a mid-list failure refreshes too, so the survivors show.
+   * Oldest-first, ALWAYS: ROC allocation caps against remaining basis, so
+   * order changes which dividend eats the basis and which overflows — this
+   * must match the single-row and backfill paths' convention. Rows with no
+   * ROC transition are plain classification updates and go as two batched
+   * writes (stamped / unstamped) instead of one round trip per dividend. */
   const reclassifyDividends = useCallback(
     async (ids: string[], classification: DividendClassification) => {
+      const client = db();
+      const byId = new Map(state.parkedLots.map((l) => [l.id, l]));
+      const ordered = [...ids].sort(
+        (a, b) => (byId.get(a)?.date ?? '').localeCompare(byId.get(b)?.date ?? ''),
+      );
+      const isRoc = (c: DividendClassification | null | undefined) => c === 'return_of_capital';
+      const transitions: string[] = [];
+      const stamped: string[] = [];
+      const plain: string[] = [];
+      for (const id of ordered) {
+        const prior = byId.get(id)?.classification ?? 'unclassified';
+        if (prior === classification) continue;
+        if (isRoc(prior) !== isRoc(classification)) transitions.push(id);
+        else if (prior !== 'unclassified') stamped.push(id);
+        else plain.push(id);
+      }
       try {
-        for (const id of ids) {
+        if (plain.length > 0) {
+          const { error: err } = await client
+            .from('parked_lots').update({ classification }).in('id', plain);
+          if (err) throw err;
+        }
+        if (stamped.length > 0) {
+          const { error: err } = await client
+            .from('parked_lots')
+            .update({ classification, reclassified_at: new Date().toISOString() })
+            .in('id', stamped);
+          if (err) throw err;
+        }
+        for (const id of transitions) {
           await reclassifyCore(id, classification);
         }
       } finally {
         await refresh();
       }
     },
-    [refresh, reclassifyCore],
+    [refresh, reclassifyCore, state.parkedLots],
   );
 
   const addParkedPosition = useCallback(
@@ -1355,19 +1404,22 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     async (accountId: string, actualBalance: number): Promise<{ adjusted: boolean; diff: number }> => {
       const tracked = accountCash(accountId).balance;
       const diff = roundCents(actualBalance - tracked);
-      if (Math.abs(diff) < 0.005) return { adjusted: false, diff: 0 }; // already true
+      const matched = Math.abs(diff) < 0.005;
+      // A clean reconcile still writes its (zero) row — the "reconciled Nd
+      // ago" stamp keys off these, and the cleanest reconciler must not be
+      // the one nagged as never-reconciled.
       const { error: err } = await db().from('parked_cash_events').insert(
         parkedCashEventPayload({
           accountId,
           date: todayISO(),
           type: 'adjustment',
-          amount: diff,
-          notes: `Reconciled to actual ${roundCents(actualBalance)}`,
+          amount: matched ? 0 : diff,
+          notes: `Reconciled to actual ${roundCents(actualBalance)}${matched ? ' — matched' : ''}`,
         }),
       );
       if (err) throw err;
       await refresh();
-      return { adjusted: true, diff };
+      return { adjusted: !matched, diff: matched ? 0 : diff };
     },
     [refresh, accountCash],
   );
@@ -1907,57 +1959,80 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     await refresh();
   }, [refresh, state.benchmarkDeposits, exampleData]);
 
-  /** Delete a lot; take its Buy cash event too when exactly one Buy row
-   * matches ticker+date+amount. Returns whether the twin went — an ambiguous
-   * or missing match leaves the ledger row for the owner to remove. */
+  /** Delete a lot and its Buy cash event. Linked lots (buy_event_id) delete
+   * the exact row; legacy lots fall back to ticker+date+amount matching, and
+   * only when both the Buy match AND the lot signature are unambiguous —
+   * two same-signature lots could otherwise eat each other's Buy. Returns
+   * whether the ledger row went. */
   const deleteLot = useCallback(
     async (id: string): Promise<{ buyEventDeleted: boolean }> => {
       const client = db();
       const lot = state.lots.find((l) => l.id === id);
       if (!lot) throw new Error('Lot not found');
       const amount = roundCents(lot.shares * lot.avgCost);
-      const buyMatches = state.cashEvents.filter(
-        (e) =>
-          e.type === 'Buy' && e.ticker === lot.ticker && e.date === lot.buyDate &&
-          Math.abs(e.amount - amount) < 0.005,
-      );
+      let buyEventId = lot.buyEventId ?? null;
+      if (!buyEventId) {
+        const buyMatches = state.cashEvents.filter(
+          (e) =>
+            e.type === 'Buy' && e.ticker === lot.ticker && e.date === lot.buyDate &&
+            Math.abs(e.amount - amount) < 0.005,
+        );
+        const sameSignatureLots = state.lots.filter(
+          (l) =>
+            l.ticker === lot.ticker && l.buyDate === lot.buyDate &&
+            Math.abs(roundCents(l.shares * l.avgCost) - amount) < 0.005,
+        );
+        if (buyMatches.length === 1 && sameSignatureLots.length === 1) {
+          buyEventId = buyMatches[0].id;
+        }
+      }
       const { error: err } = await client.from('position_lots').delete().eq('id', id);
       if (err) throw err;
-      let buyEventDeleted = false;
-      if (buyMatches.length === 1) {
+      if (buyEventId) {
         const { error: cashErr } = await client
-          .from('cash_events').delete().eq('id', buyMatches[0].id);
+          .from('cash_events').delete().eq('id', buyEventId);
         if (cashErr) {
           await refresh();
           throw new Error(
             `Lot deleted, but its Buy cash event didn't delete (${cashErr.message}) — remove the ${lot.buyDate} ${lot.ticker} Buy on the Cash Ledger or account cash overstates.`,
           );
         }
-        buyEventDeleted = true;
       }
       await refresh();
-      return { buyEventDeleted };
+      return { buyEventDeleted: Boolean(buyEventId) };
     },
     [refresh, state.lots, state.cashEvents],
   );
 
   /** Non-monetary lot corrections — target, dates, thesis. Shares and cost
-   * are immutable (they anchor the Buy cash event and basis math). */
+   * are immutable (they anchor the Buy cash event and basis math). A linked
+   * lot's Buy ledger row follows a buy-date change so the pair stays true. */
   const updateLotDetails = useCallback(
     async (
       id: string,
       patch: { exitTarget?: number; buyDate?: string; thesis?: string | null },
     ) => {
+      const client = db();
+      const lot = state.lots.find((l) => l.id === id);
       const payload: Record<string, unknown> = {};
       if (patch.exitTarget !== undefined) payload.exit_target = patch.exitTarget;
       if (patch.buyDate !== undefined) payload.buy_date = patch.buyDate;
       if (patch.thesis !== undefined) payload.thesis = patch.thesis;
       if (Object.keys(payload).length === 0) return;
-      const { error: err } = await db().from('position_lots').update(payload).eq('id', id);
+      const { error: err } = await client.from('position_lots').update(payload).eq('id', id);
       if (err) throw err;
+      if (patch.buyDate !== undefined && lot?.buyEventId) {
+        const { error: cashErr } = await client
+          .from('cash_events').update({ date: patch.buyDate }).eq('id', lot.buyEventId);
+        if (cashErr) {
+          throw new Error(
+            `Lot updated, but its Buy ledger row's date didn't follow (${cashErr.message}) — retry, or the ledger shows the buy on the wrong day.`,
+          );
+        }
+      }
       await refresh();
     },
-    [refresh],
+    [refresh, state.lots],
   );
 
   /** Remove a mis-recorded milestone. Its companion artifacts — the

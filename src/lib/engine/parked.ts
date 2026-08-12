@@ -9,6 +9,13 @@ export const isArchivedPosition = (p: Pick<ParkedPosition, 'shares'>): boolean =
 
 export const DEFAULT_CONCENTRATION_CAP = 0.5;
 
+/** Rule 5: NVDA, TSLA, and the MSTR/BTC conviction holds are never trim
+ * fuel. One definition — the Sell guard and every "trim calendar" cue must
+ * agree on it. */
+export const NEVER_TRIM_TICKERS = new Set(['NVDA', 'TSLA', 'MSTR']);
+export const isNeverTrimFuel = (p: Pick<ParkedPosition, 'ticker' | 'category'>): boolean =>
+  NEVER_TRIM_TICKERS.has(p.ticker) || p.category === 'BTC';
+
 export function parkedMarketValue(p: ParkedPosition): number {
   return p.shares * p.currentPrice;
 }

@@ -3,6 +3,7 @@ import { Landmark, Scale, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
+import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { AccountSelect } from '../components/ui/AccountSelect';
 import { ErrorCard, SkeletonTable } from './CashLedger';
 import { useData } from '../contexts/DataContext';
@@ -10,7 +11,9 @@ import {
   computeCheck, estimatedPileTax, formatQuarterLabel, quarterOf, quartersEnded,
   reservedByAccount, roundCents, taxYearOf,
 } from '../lib/engine';
-import { cn, formatCurrency, inputCls, labelCls, primaryBtnCls, secondaryBtnCls, todayISO } from '../lib/utils';
+import {
+  cn, errorMessage, formatCurrency, inputCls, labelCls, primaryBtnCls, secondaryBtnCls, todayISO,
+} from '../lib/utils';
 
 export function TaxReserve() {
   const {
@@ -207,6 +210,7 @@ function CarryforwardModal({ onClose }: { onClose: () => void }) {
   const [amount, setAmount] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [removing, setRemoving] = useState<{ taxYear: number; amount: number } | null>(null);
   const rows = [...carryforwards].sort((a, b) => b.taxYear - a.taxYear);
 
   const save = async (e: React.FormEvent) => {
@@ -225,19 +229,7 @@ function CarryforwardModal({ onClose }: { onClose: () => void }) {
       await setCarryforward(y, amt);
       setAmount('');
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const remove = async (y: number) => {
-    setFormError(null);
-    setBusy(true);
-    try {
-      await setCarryforward(y, null);
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err));
+      setFormError(errorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -255,7 +247,7 @@ function CarryforwardModal({ onClose }: { onClose: () => void }) {
                   <span className="tabular-nums">{formatCurrency(c.amount)}</span>
                 </span>
                 <button
-                  onClick={() => remove(c.taxYear)}
+                  onClick={() => setRemoving(c)}
                   disabled={busy}
                   className="text-gray-400 hover:text-red-600"
                   title="Remove this carryforward"
@@ -295,6 +287,15 @@ function CarryforwardModal({ onClose }: { onClose: () => void }) {
           </div>
         </form>
       </div>
+      {removing && (
+        <ConfirmModal
+          title={`Remove the ${removing.taxYear} carryforward`}
+          message={`Remove the ${formatCurrency(removing.amount)} loss carried into ${removing.taxYear}? The 30% skim base for that year rises immediately — you'd need the 1099 to restore the figure.`}
+          confirmLabel="Remove"
+          onConfirm={() => setCarryforward(removing.taxYear, null)}
+          onClose={() => setRemoving(null)}
+        />
+      )}
     </Modal>
   );
 }
@@ -382,7 +383,14 @@ function RecordSkimModal({ label, amount, onClose, onError }: RecordSkimProps) {
   const [date, setDate] = useState(todayISO());
   const [busy, setBusy] = useState(false);
 
-  const confirm = async () => {
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const confirm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    // The skim buckets by tax year of its date — an empty or wrong-year date
+    // either bounces off Postgres or miscredits a different year's quarters.
+    if (!date) return setFormError('Enter the date the money moved.');
     setBusy(true);
     try {
       await addCashEvent({
@@ -395,7 +403,7 @@ function RecordSkimModal({ label, amount, onClose, onError }: RecordSkimProps) {
       });
       onClose();
     } catch (e) {
-      onError(e instanceof Error ? e.message : String(e));
+      onError(errorMessage(e));
       onClose();
     } finally {
       setBusy(false);
@@ -404,11 +412,16 @@ function RecordSkimModal({ label, amount, onClose, onError }: RecordSkimProps) {
 
   return (
     <Modal isOpen onClose={onClose} title={`Move ${formatCurrency(amount)} out of play`}>
-      <div className="space-y-3">
+      <form onSubmit={confirm} className="space-y-3">
         <div>
           <label className={labelCls}>Date moved</label>
           <input type="date" required value={date} onChange={(e) => setDate(e.target.value)}
             className={inputCls} />
+          {date && taxYearOf(date) !== taxYearOf(todayISO()) && (
+            <p className="mt-0.5 text-xs text-amber-700">
+              {taxYearOf(date)} date — this skim counts toward that tax year's quarters, not this one's.
+            </p>
+          )}
         </div>
         <AccountSelect accounts={accounts} value={destination} onChange={setDestination}
           label="Where is the reserve parked?" kinds={['bank']} />
@@ -416,12 +429,13 @@ function RecordSkimModal({ label, amount, onClose, onError }: RecordSkimProps) {
           {label} skim. The destination is bookkeeping only — the reserved amount counts toward
           Total Score either way.
         </p>
+        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
         <div className="flex justify-end">
-          <button onClick={confirm} disabled={busy} className={primaryBtnCls}>
+          <button type="submit" disabled={busy} className={primaryBtnCls}>
             {busy ? 'Recording…' : 'Mark moved'}
           </button>
         </div>
-      </div>
+      </form>
     </Modal>
   );
 }

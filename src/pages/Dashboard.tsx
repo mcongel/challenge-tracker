@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Area, AreaChart, CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer,
@@ -6,9 +7,9 @@ import {
 import { useData } from '../contexts/DataContext';
 import { activeAlerts, priceMapFor } from '../lib/alerts';
 import {
-  accountTotal, cumulativeFloor, isArchivedPosition, lead, netContributed, netRealizedYTD,
-  nextMilestone, pileTotal, reservedTotal, roundCents, shadowValue, taxYearOf, totalScore,
-  unlockSummary,
+  accountTotal, cumulativeFloor, isArchivedPosition, isNeverTrimFuel, lead, netContributed,
+  netRealizedYTD, nextMilestone, pileTotal, reservedTotal, roundCents, shadowValue, taxYearOf,
+  totalScore, unlockSummary,
 } from '../lib/engine';
 import { ErrorCard } from './CashLedger';
 import { ContributionCapBadge } from '../components/ui/ContributionCapBadge';
@@ -54,21 +55,34 @@ export function Dashboard() {
     concentrationCap, today,
   });
 
-  // Soonest unlock across the pile — the trim calendar at a glance.
-  const nextUnlock = parked
-    .filter((p) => !isArchivedPosition(p))
-    .map((p) => ({
-      ticker: p.ticker,
-      next: unlockSummary(parkedLots.filter((l) => l.parkedPositionId === p.id), today).nextUnlock,
-    }))
-    .filter((x): x is { ticker: string; next: NonNullable<typeof x.next> } => x.next != null)
-    .sort((a, b) => a.next.date.localeCompare(b.next.date))[0] ?? null;
+  // Soonest unlock across the pile — the trim calendar at a glance. Rule 5's
+  // never-trim holds are excluded: their unlocks are not trim fuel.
+  const nextUnlock = useMemo(() => {
+    const lotsByPosition = new Map<string, typeof parkedLots>();
+    for (const l of parkedLots) {
+      const list = lotsByPosition.get(l.parkedPositionId);
+      if (list) list.push(l);
+      else lotsByPosition.set(l.parkedPositionId, [l]);
+    }
+    return parked
+      .filter((p) => !isArchivedPosition(p) && !isNeverTrimFuel(p))
+      .map((p) => ({
+        ticker: p.ticker,
+        next: unlockSummary(lotsByPosition.get(p.id) ?? [], today).nextUnlock,
+      }))
+      .filter((x): x is { ticker: string; next: NonNullable<typeof x.next> } => x.next != null)
+      .sort((a, b) => a.next.date.localeCompare(b.next.date))[0] ?? null;
+  }, [parked, parkedLots, today]);
 
   const chartData = snapshots.map((s) => ({
     date: s.date.slice(5),
     'Total Score': roundCents(s.totalScore),
     'Shadow VOO': roundCents(s.shadowVooValue),
     Floor: roundCents(s.bankedTotal),
+  }));
+  // Its own series — a percent doesn't belong in the dollar charts' rows.
+  const concentrationData = snapshots.map((s) => ({
+    date: s.date.slice(5),
     'Semi/AI %': Math.round(s.semiAiPct * 1000) / 10,
   }));
   const youColor = isDark ? SERIES.you.dark : SERIES.you.light;
@@ -222,12 +236,12 @@ export function Dashboard() {
       </div>
 
       {/* Concentration trend — is the Semi/AI share of the pile drifting toward the cap? */}
-      {chartData.length >= 2 && (
+      {concentrationData.length >= 2 && (
         <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6">
           <p className="text-sm font-medium text-gray-700 mb-1">Pile concentration — Semi/AI share</p>
           <div className="h-40">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData} margin={{ top: 8, right: 12, bottom: 0, left: 4 }}>
+              <LineChart data={concentrationData} margin={{ top: 8, right: 12, bottom: 0, left: 4 }}>
                 <CartesianGrid stroke={gridColor} vertical={false} />
                 <XAxis dataKey="date" stroke={axisColor} tickLine={false} axisLine={false}
                   tick={{ fontSize: 11 }} minTickGap={32} />

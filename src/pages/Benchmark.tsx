@@ -9,7 +9,9 @@ import { priceMapFor } from '../lib/alerts';
 import {
   lead, leadPct, roundCents, rollingLeadDelta, shadowShares, shadowValue, totalScore,
 } from '../lib/engine';
-import { cn, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls, todayISO } from '../lib/utils';
+import {
+  cn, errorMessage, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls, todayISO,
+} from '../lib/utils';
 
 export function Benchmark() {
   const {
@@ -168,7 +170,7 @@ function VooPriceModal({
       await onSet('VOO', p);
       onClose();
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err));
+      setFormError(errorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -199,7 +201,7 @@ function VooPriceModal({
                   await onClear();
                   onClose();
                 } catch (err) {
-                  setFormError(err instanceof Error ? err.message : String(err));
+                  setFormError(errorMessage(err));
                   setBusy(false);
                 }
               }}
