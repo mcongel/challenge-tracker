@@ -114,7 +114,7 @@ export function ParkedPile() {
   const {
     parked: allParked, parkedLots, parkedSales, accounts, tickerNames, deleteParkedSale,
     undoParkedSale, concentrationCap, updateSetting, accountCash, dayChange, ltTaxRate, stTaxRate,
-    loading, error,
+    overrides, overrideSetAt, loading, error,
   } = useData();
   // Archived (zero-share) rows keep dividend history alive on the Income
   // screen; this table shows live holdings only.
@@ -512,7 +512,17 @@ export function ParkedPile() {
                       )}
                       <td className="px-4 py-3 text-right tabular-nums">{fmtSh(p.shares)}</td>
                       <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(p.avgCost)}</td>
-                      <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(p.currentPrice)}</td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {formatCurrency(p.currentPrice)}
+                        {overrides[p.ticker] !== undefined && (
+                          <span
+                            className="ml-1 text-[10px] uppercase text-amber-800 font-bold"
+                            title={`Pinned manual price — beats quotes${overrideSetAt[p.ticker] ? `, set ${overrideSetAt[p.ticker].slice(0, 10)}` : ''}. Clear it from Edit.`}
+                          >
+                            pin
+                          </span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-right">
                         <DayChangeCell move={dayChange[p.ticker]} />
                       </td>
@@ -1911,7 +1921,9 @@ function AccountCashModal({ account, onClose }: { account: Account; onClose: () 
 }
 
 function EditParkedModal({ position: p, onClose }: { position: ParkedPosition; onClose: () => void }) {
-  const { updateParked, accounts } = useData();
+  const { updateParked, accounts, overrides, overrideSetAt, setOverride, clearOverride } = useData();
+  const pinned = overrides[p.ticker];
+  const pinnedAt = overrideSetAt[p.ticker];
   const [price, setPrice] = useState(String(p.currentPrice || ''));
   const [trimRank, setTrimRank] = useState(p.trimRank != null ? String(p.trimRank) : '');
   const [accountId, setAccountId] = useState(p.accountId);
@@ -1952,6 +1964,43 @@ function EditParkedModal({ position: p, onClose }: { position: ParkedPosition; o
             <input type="number" min="1" step="1" value={trimRank}
               onChange={(e) => setTrimRank(e.target.value)} className={inputCls} placeholder="1 = trim first" />
           </div>
+        </div>
+        <div className="flex items-center justify-between gap-2 text-xs text-gray-400">
+          <span>
+            {pinned != null
+              ? `Pinned at ${formatCurrency(pinned)}${pinnedAt ? ` since ${pinnedAt.slice(0, 10)}` : ''} — beats quotes until cleared.`
+              : 'Pinning beats API quotes until cleared — for tickers the feed misprices.'}
+          </span>
+          <span className="flex gap-2 whitespace-nowrap">
+            {pinned != null && (
+              <button
+                type="button"
+                disabled={busy}
+                className="font-medium text-red-600 hover:text-red-800"
+                onClick={async () => {
+                  setBusy(true);
+                  try { await clearOverride(p.ticker); } catch (err) {
+                    setFormError(err instanceof Error ? err.message : String(err));
+                  } finally { setBusy(false); }
+                }}
+              >
+                Clear pin
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={busy || !Number(price)}
+              className="font-medium text-indigo-600 hover:text-indigo-800 disabled:opacity-50"
+              onClick={async () => {
+                setBusy(true);
+                try { await setOverride(p.ticker, Number(price)); } catch (err) {
+                  setFormError(err instanceof Error ? err.message : String(err));
+                } finally { setBusy(false); }
+              }}
+            >
+              Pin this price
+            </button>
+          </span>
         </div>
         <AccountSelect accounts={accounts} value={accountId} onChange={setAccountId}
           label="Account (e.g. after an ACATS transfer)" kinds={['outside', 'challenge']} allowNone={false} />

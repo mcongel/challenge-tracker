@@ -68,6 +68,8 @@ interface DataState {
   carryforwards: LossCarryforward[];
   /** Pinned manual prices — beat API quotes until cleared. */
   overrides: Record<string, number>;
+  /** When each pin was set (ISO), for staleness cues. */
+  overrideSetAt: Record<string, string>;
   /** challenge.app_settings rows, key → jsonb value. */
   settings: Record<string, unknown>;
   /** Where money lives. Labels and context only — never score math. */
@@ -96,6 +98,7 @@ const EMPTY: DataState = {
   snapshots: [],
   carryforwards: [],
   overrides: {},
+  overrideSetAt: {},
   settings: {},
   accounts: [],
   outsideSales: [],
@@ -312,6 +315,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         carryforwards: (carry.data ?? []).map(mapCarryforward),
         overrides: Object.fromEntries(
           (overrides.data ?? []).map((r) => [r.ticker, Number(r.price)]),
+        ),
+        overrideSetAt: Object.fromEntries(
+          (overrides.data ?? []).filter((r) => r.set_at).map((r) => [r.ticker, r.set_at as string]),
         ),
         settings: Object.fromEntries((settings.data ?? []).map((r) => [r.key, r.value])),
         accounts: (accounts.data ?? []).map(mapAccount),

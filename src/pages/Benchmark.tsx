@@ -13,12 +13,13 @@ import { cn, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls, t
 
 export function Benchmark() {
   const {
-    benchmarkDeposits, lots, cashEvents, milestones, snapshots, overrides, quotes,
-    setOverride, loading, error,
+    benchmarkDeposits, lots, cashEvents, milestones, snapshots, overrides, overrideSetAt, quotes,
+    setOverride, clearOverride, loading, error,
   } = useData();
   const [priceOpen, setPriceOpen] = useState(false);
 
-  const vooToday = overrides['VOO'] ?? quotes['VOO'];
+  const vooPinned = overrides['VOO'];
+  const vooToday = vooPinned ?? quotes['VOO'];
   const score = totalScore(lots, priceMapFor(lots, overrides, quotes), cashEvents, milestones);
   const shadow = vooToday ? shadowValue(benchmarkDeposits, vooToday) : null;
   const delta = rollingLeadDelta(snapshots, todayISO());
@@ -29,9 +30,18 @@ export function Benchmark() {
         title="Benchmark"
         subtitle="The honest test: every deposit buys shadow VOO the same day. Beat the shadow over rolling 12 months and the edge is real."
         actions={
-          <button onClick={() => setPriceOpen(true)} className={cn(primaryBtnCls, 'flex items-center gap-1.5')}>
+          <button
+            onClick={() => setPriceOpen(true)}
+            className={cn(primaryBtnCls, 'flex items-center gap-1.5')}
+            title={vooPinned !== undefined
+              ? `Pinned manual price — beats the live quote${overrideSetAt['VOO'] ? `, set ${overrideSetAt['VOO'].slice(0, 10)}` : ''}`
+              : 'Live quote — click to pin a manual price'}
+          >
             <Pencil className="h-4 w-4" />
             {vooToday ? `VOO ${formatCurrency(vooToday)}` : 'Set VOO price'}
+            {vooPinned !== undefined && (
+              <span className="text-[10px] uppercase font-bold opacity-80">pin</span>
+            )}
           </button>
         }
       />
@@ -123,17 +133,27 @@ export function Benchmark() {
         </div>
       )}
 
-      {priceOpen && <VooPriceModal current={vooToday} onClose={() => setPriceOpen(false)} onSet={setOverride} />}
+      {priceOpen && (
+        <VooPriceModal
+          current={vooToday}
+          pinned={vooPinned !== undefined}
+          onClose={() => setPriceOpen(false)}
+          onSet={setOverride}
+          onClear={() => clearOverride('VOO')}
+        />
+      )}
     </div>
   );
 }
 
 function VooPriceModal({
-  current, onClose, onSet,
+  current, pinned, onClose, onSet, onClear,
 }: {
   current?: number;
+  pinned: boolean;
   onClose: () => void;
   onSet: (ticker: string, price: number) => Promise<void>;
+  onClear: () => Promise<void>;
 }) {
   const [price, setPrice] = useState(current ? String(current) : '');
   const [formError, setFormError] = useState<string | null>(null);
@@ -163,11 +183,31 @@ function VooPriceModal({
             onChange={(e) => setPrice(e.target.value)} className={inputCls} />
         </div>
         <p className="text-xs text-gray-400">
-          Pinned until cleared or updated — auto-quotes take over once the price feed is wired up.
+          Setting a price pins it — it beats the live quote until cleared. With no pin, the delayed
+          quote feed prices the shadow automatically.
         </p>
         {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
-        <div className="flex justify-end">
-          <button type="submit" disabled={busy} className={primaryBtnCls}>{busy ? 'Saving…' : 'Set price'}</button>
+        <div className={cn('flex', pinned ? 'justify-between' : 'justify-end')}>
+          {pinned && (
+            <button
+              type="button"
+              disabled={busy}
+              className="text-sm font-medium text-red-600 hover:text-red-800"
+              onClick={async () => {
+                setBusy(true);
+                try {
+                  await onClear();
+                  onClose();
+                } catch (err) {
+                  setFormError(err instanceof Error ? err.message : String(err));
+                  setBusy(false);
+                }
+              }}
+            >
+              Clear pin — use live quote
+            </button>
+          )}
+          <button type="submit" disabled={busy} className={primaryBtnCls}>{busy ? 'Saving…' : 'Pin price'}</button>
         </div>
       </form>
     </Modal>

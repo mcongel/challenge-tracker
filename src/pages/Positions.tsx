@@ -20,7 +20,7 @@ import { TotalField } from '../components/ui/TotalField';
 
 export function Positions() {
   const data = useData();
-  const { lots, overrides, quotes, loading, error } = data;
+  const { lots, overrides, overrideSetAt, quotes, loading, error } = data;
   const priceMap = priceMapFor(lots, overrides, quotes);
   const [addOpen, setAddOpen] = useState(false);
   const [closeTicker, setCloseTicker] = useState<string | null>(null);
@@ -110,7 +110,9 @@ export function Positions() {
                     <td className="px-4 py-2 text-right">
                       <button onClick={() => setPriceTicker(ticker)}
                         className="inline-flex items-center gap-1 text-xs font-medium tabular-nums text-gray-600 hover:text-indigo-600"
-                        title={hasOverride ? 'Manual price (pinned — beats quotes)' : hasPrice ? 'Delayed quote — click to pin a manual price' : 'Set price'}>
+                        title={hasOverride
+                          ? `Manual price (pinned — beats quotes${overrideSetAt[ticker] ? `, set ${overrideSetAt[ticker].slice(0, 10)}` : ''})`
+                          : hasPrice ? 'Delayed quote — click to pin a manual price' : 'Set price'}>
                         {hasPrice ? formatCurrency(priceMap[ticker]) : 'set price'}
                         {hasOverride && <span className="text-[10px] uppercase text-amber-800">pin</span>}
                         <Pencil className="h-3 w-3" />
