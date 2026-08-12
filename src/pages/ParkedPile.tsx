@@ -159,8 +159,8 @@ export function SortHeader<K extends string = SortKey>({
 export function ParkedPile() {
   const {
     parked: allParked, parkedLots, parkedLotAdjustments, parkedSales, snapshots, accounts,
-    tickerNames, concentrationCap, updateSetting, accountCash, dayChange,
-    overrides, overrideSetAt, loading, error,
+    tickerNames, concentrationCap, updateSetting, accountCash, dayChange, cashEvents,
+    contributionCap, ltTaxRate, stTaxRate, overrides, overrideSetAt, loading, error,
   } = useData();
   // Archived (zero-share) rows keep dividend history alive on the Income
   // screen; this table shows live holdings only.
@@ -169,6 +169,8 @@ export function ParkedPile() {
   const [splitTicker, setSplitTicker] = useState<string | null>(null);
   const [editing, setEditing] = useState<ParkedPosition | null>(null);
   const [trimming, setTrimming] = useState<ParkedPosition | null>(null);
+  /** Trim-fuel shortcut: prefill the Sell form with the unlocked shares. */
+  const [trimPresetShares, setTrimPresetShares] = useState<number | null>(null);
   const [transferring, setTransferring] = useState<ParkedPosition | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [accountsOpen, setAccountsOpen] = useState(false);
@@ -204,6 +206,64 @@ export function ParkedPile() {
   const today = todayISO();
   const c = concentration(parked, concentrationCap);
   const totalBasis = parked.reduce((s, p) => s + parkedCostBasis(p), 0);
+
+  // The funding answer, computed instead of tooltipped: which holdings have
+  // long-term (Rule 5) shares ready NOW, worth how much, at what est. tax —
+  // ordered by the plan (trim rank), then double-duty semis when over cap,
+  // then size. Never-trim holds are excluded by definition.
+  const trimFuel = useMemo(() => {
+    const rows = parked
+      .filter((p) => !isNeverTrimFuel(p))
+      .map((p) => {
+        const lots = lotsByPosition.get(p.id) ?? [];
+        const summ = unlockSummary(lots, today);
+        if (summ.unlockedShares <= 1e-9) return null;
+        const readyValue = summ.unlockedShares * p.currentPrice;
+        let gain: number | null = null;
+        let estTax: number | null = null;
+        if (lots.length > 0) {
+          try {
+            const prev = trimPreview(
+              lots, summ.unlockedShares, p.currentPrice, today,
+              adjustmentsForLots(lots, parkedLotAdjustments),
+            );
+            gain = prev.gain;
+            estTax = estimatedPileTax(
+              prev.gain, summ.unlockedShares, prev.ltShares + prev.unknownShares,
+              ltTaxRate, stTaxRate,
+            );
+          } catch { /* preview is best-effort */ }
+        }
+        return { p, unlockedShares: summ.unlockedShares, readyValue, gain, estTax };
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null)
+      .sort((a, b) => {
+        if (a.p.trimRank != null && b.p.trimRank != null) return a.p.trimRank - b.p.trimRank;
+        if (a.p.trimRank != null) return -1;
+        if (b.p.trimRank != null) return 1;
+        if (c.overCap) {
+          const aSemi = a.p.category === 'Semi/AI' ? 0 : 1;
+          const bSemi = b.p.category === 'Semi/AI' ? 0 : 1;
+          if (aSemi !== bSemi) return aSemi - bSemi;
+        }
+        return b.readyValue - a.readyValue;
+      });
+    return rows;
+  }, [parked, lotsByPosition, parkedLotAdjustments, today, ltTaxRate, stTaxRate, c.overCap]);
+  // What unlocks next among the still-locked (and not never-trim) holdings.
+  const nextUnlocks = useMemo(
+    () =>
+      parked
+        .filter((p) => !isNeverTrimFuel(p))
+        .map((p) => ({ p, next: unlockSummary(lotsByPosition.get(p.id) ?? [], today).nextUnlock }))
+        .filter((x): x is { p: ParkedPosition; next: NonNullable<typeof x.next> } => x.next != null)
+        .sort((a, b) => a.next.date.localeCompare(b.next.date))
+        .slice(0, 3),
+    [parked, lotsByPosition, today],
+  );
+  const capRoom = contributionCap !== null
+    ? contributionStatus(netContributed(cashEvents), contributionCap).remaining
+    : null;
 
   // Three lenses: by account (where things live — the default, matching
   // SpokenFor's grouped accounts), by ticker (across accounts), or flat so a
@@ -396,6 +456,78 @@ export function ParkedPile() {
         <div className="mb-4 bg-red-50 text-red-700 rounded-lg px-4 py-3 text-sm font-medium">
           OVER CAP — trim semis first. When a lot goes long-term, trimming Semi/AI does double duty:
           funds the challenge account AND reduces concentration.
+        </div>
+      )}
+
+      {/* The funding answer: what's ready to move into the challenge, in plan
+          order, with the tax cost attached. Supersedes squinting at locks. */}
+      {(trimFuel.length > 0 || nextUnlocks.length > 0) && (
+        <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6 mb-4 density-aware-card">
+          <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+              Trim fuel — long-term shares ready to fund the challenge (Rule 5)
+            </p>
+            {capRoom !== null && (
+              <p className={cn('text-xs tabular-nums', capRoom <= 0 ? 'text-red-600 font-medium' : 'text-gray-400')}>
+                {capRoom <= 0
+                  ? 'contribution cap reached — proceeds stay in the pile'
+                  : `${formatCurrency(roundCents(capRoom))} of contribution-cap room`}
+              </p>
+            )}
+          </div>
+          {trimFuel.length > 0 ? (
+            <ul className="divide-y divide-gray-100">
+              {trimFuel.map(({ p, unlockedShares, readyValue, gain, estTax }) => (
+                <li key={p.id} className="py-2 flex flex-wrap items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    {p.trimRank != null && (
+                      <span className="inline-block rounded-full bg-green-50 text-green-700 px-1.5 py-0.5 text-[10px] font-bold"
+                        title={`Trim rank ${p.trimRank} — your planned order`}>
+                        #{p.trimRank}
+                      </span>
+                    )}
+                    <span className="font-medium">{p.ticker}</span>
+                    <span className="text-xs text-gray-400 truncate">{p.account}</span>
+                    {c.overCap && p.category === 'Semi/AI' && (
+                      <span className="inline-block rounded-full bg-red-50 text-red-700 px-1.5 py-0.5 text-[10px] font-medium"
+                        title="Over the Semi/AI cap — trimming this funds the challenge AND fixes concentration.">
+                        double duty
+                      </span>
+                    )}
+                  </span>
+                  <span className="flex items-center gap-3 text-sm tabular-nums">
+                    <span>
+                      <span className="font-bold">{formatCurrency(roundCents(readyValue))}</span>
+                      <span className="ml-1 text-xs text-gray-400">{fmtSh(unlockedShares)} sh</span>
+                    </span>
+                    {gain != null && (
+                      <span className={cn('text-xs', gain >= 0 ? 'text-green-600' : 'text-red-600')}>
+                        {gain >= 0 ? '+' : '−'}{formatCurrency(Math.abs(roundCents(gain)))} gain
+                        {estTax != null && estTax > 0 && (
+                          <span className="text-gray-400"> · est. tax {formatCurrency(roundCents(estTax))}</span>
+                        )}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => { setTrimPresetShares(Math.round(unlockedShares * 1e6) / 1e6); setTrimming(p); }}
+                      className={cn(secondaryBtnCls, 'py-1 px-2.5 text-xs')}
+                      title="Opens the Sell form with the unlocked shares prefilled — adjust freely."
+                    >
+                      Sell {fmtSh(unlockedShares)} sh
+                    </button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-gray-400">Nothing is long-term yet.</p>
+          )}
+          {nextUnlocks.length > 0 && (
+            <p className="mt-2 text-xs text-gray-400 tabular-nums">
+              Unlocking next: {nextUnlocks.map(({ p, next }) =>
+                `${fmtSh(next.shares)} sh ${p.ticker} on ${next.date}`).join(' · ')}
+            </p>
+          )}
         </div>
       )}
 
@@ -601,7 +733,7 @@ export function ParkedPile() {
                         })()}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
-                        <UnlockCell summary={summ} />
+                        <UnlockCell summary={summ} price={p.currentPrice} />
                       </td>
                       <td className="px-2 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <button onClick={() => setTrimming(p)} className="p-1 rounded hover:bg-green-50" aria-label={`Sell ${p.ticker}`} title="Sell shares (Rule 5 trim)">
@@ -637,7 +769,13 @@ export function ParkedPile() {
       )}
 
       {editing && <EditParkedModal position={editing} onClose={() => setEditing(null)} />}
-      {trimming && <TrimModal position={trimming} onClose={() => setTrimming(null)} />}
+      {trimming && (
+        <TrimModal
+          position={trimming}
+          initialShares={trimPresetShares ?? undefined}
+          onClose={() => { setTrimming(null); setTrimPresetShares(null); }}
+        />
+      )}
       {transferring && <TransferModal position={transferring} onClose={() => setTransferring(null)} />}
       {splitTicker && <SplitModal ticker={splitTicker} onClose={() => setSplitTicker(null)} />}
       {accountsOpen && <AccountsModal onClose={() => setAccountsOpen(false)} />}
@@ -986,24 +1124,35 @@ function AddHoldingModal({ onClose }: { onClose: () => void }) {
 
 /** A flag, not a sentence — hover for the summary, expand the row for the
  * lot-by-lot schedule. "Unlocked" = held >1 year = Rule 5 trim fuel. */
-function UnlockCell({ summary: s }: { summary: UnlockSummary }) {
+/** Icon + the number that matters: dollars ready now, or the next unlock
+ * date. The sentence stays in the tooltip for detail, but reading it is no
+ * longer required — the Trim fuel card above the table has the full answer. */
+function UnlockCell({ summary: s, price }: { summary: UnlockSummary; price: number }) {
   if (s.totalShares <= 0) return <span className="text-xs text-gray-400">—</span>;
-  const flag = (icon: React.ReactNode, cls: string) => (
-    <span className={cn('inline-flex items-center', cls)} title={unlockSentence(s)}>
+  const flag = (icon: React.ReactNode, cls: string, text?: React.ReactNode) => (
+    <span className={cn('inline-flex items-center gap-1', cls)} title={unlockSentence(s)}>
       {icon}
+      {text && <span className="text-xs tabular-nums">{text}</span>}
     </span>
   );
   if (s.unknownShares >= s.totalShares - 1e-9) {
-    return flag(<AlertTriangle className="h-4 w-4" />, 'text-amber-600');
-  }
-  if (s.unlockedShares >= s.totalShares - 1e-9) {
-    return flag(<Unlock className="h-4 w-4" />, 'text-green-600');
+    return flag(<AlertTriangle className="h-4 w-4" />, 'text-amber-600', 'needs dates');
   }
   if (s.unlockedShares > 0) {
-    // Partially unlocked: open lock, amber — some fuel, not all.
-    return flag(<Unlock className="h-4 w-4" />, 'text-amber-600');
+    const ready = formatCurrency(roundCents(s.unlockedShares * price));
+    const partial = s.unlockedShares < s.totalShares - 1e-9;
+    // Fully unlocked = green; partial = amber open lock — some fuel, not all.
+    return flag(
+      <Unlock className="h-4 w-4" />,
+      partial ? 'text-amber-600' : 'text-green-600',
+      <>{ready} ready</>,
+    );
   }
-  return flag(<Lock className="h-4 w-4" />, 'text-gray-300');
+  return flag(
+    <Lock className="h-4 w-4" />,
+    'text-gray-400',
+    s.nextUnlock ? `${s.nextUnlock.date.slice(5)}` : undefined,
+  );
 }
 
 /** Unrealized gain: the dollar figure leads, the percent rides in a tinted
@@ -1443,13 +1592,21 @@ function TransferModal({ position: p, onClose }: { position: ParkedPosition; onC
   );
 }
 
-function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose: () => void }) {
+function TrimModal({
+  position: p, initialShares, onClose,
+}: {
+  position: ParkedPosition;
+  /** Prefill (e.g. the trim-fuel card's unlocked count) — freely editable. */
+  initialShares?: number;
+  onClose: () => void;
+}) {
   const {
     recordTrim, cashEvents, contributionCap, parkedLots, parkedLotAdjustments, ltTaxRate, stTaxRate,
     overrides, quotes,
   } = useData();
   const { shares, price, total, setShares, setPrice, setTotal } = useNotional({
     price: p.currentPrice ? String(p.currentPrice) : '',
+    shares: initialShares != null ? String(initialShares) : undefined,
   });
   const [date, setDate] = useState(todayISO());
   // The pile stands on its own: selling does NOT presume funding the challenge.
