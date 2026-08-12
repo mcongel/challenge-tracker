@@ -1505,6 +1505,8 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
     setDate(d);
     if (d !== todayISO() && vooQuote && vooPrice === String(vooQuote)) setVooPrice('');
   };
+  const [fees, setFees] = useState('');
+  const feeNum = Number(fees) || 0;
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -1527,12 +1529,13 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
       preview = null;
     }
   }
-  const isLoss = preview ? preview.gain < 0 : numPrice > 0 && numPrice < p.avgCost;
+  const isLoss = preview ? preview.gain - feeNum < 0 : numPrice > 0 && numPrice < p.avgCost;
 
+  const netProceeds = Math.max(0, roundCents(proceeds - feeNum));
   const contributed = netContributed(cashEvents);
   const overCap =
-    fund && proceeds > 0 && contributionCap !== null &&
-    depositExceedsCap(contributed, proceeds, contributionCap);
+    fund && netProceeds > 0 && contributionCap !== null &&
+    depositExceedsCap(contributed, netProceeds, contributionCap);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1540,13 +1543,16 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
     if (!numShares || numShares <= 0) return setFormError('Enter shares to trim.');
     if (numShares > p.shares + 1e-9) return setFormError(`Only ${p.shares} shares parked.`);
     if (!numPrice || numPrice <= 0) return setFormError('Enter the sale price.');
+    if (feeNum < 0 || (proceeds > 0 && feeNum >= proceeds)) {
+      return setFormError('Fees must be smaller than the gross proceeds.');
+    }
     if (fund && (!Number(vooPrice) || Number(vooPrice) <= 0)) {
       return setFormError("Funding the challenge account needs that day's VOO price for the shadow purchase.");
     }
     if (overCap && contributionCap !== null) {
       const room = contributionStatus(contributed, contributionCap).remaining;
       return setFormError(
-        `Rule 12: depositing ${formatCurrency(proceeds)} would exceed the contribution cap — only ${formatCurrency(roundCents(room))} of room remains. Uncheck funding or trim less.`,
+        `Rule 12: depositing ${formatCurrency(netProceeds)} would exceed the contribution cap — only ${formatCurrency(roundCents(room))} of room remains. Uncheck funding or trim less.`,
       );
     }
     setBusy(true);
@@ -1557,6 +1563,7 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
         pricePerShare: numPrice,
         date,
         depositVooPrice: fund ? Number(vooPrice) : undefined,
+        fees: feeNum > 0 ? feeNum : undefined,
       });
       onClose();
     } catch (err) {
@@ -1608,6 +1615,16 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
             <input type="date" required value={date} onChange={(e) => changeDate(e.target.value)} className={inputCls} />
           </div>
           <TotalField value={total} onChange={setTotal} label="Total proceeds ($)" />
+          <div>
+            <label className={labelCls}>Fees ($, optional)</label>
+            <input type="number" step="0.01" min="0" value={fees} placeholder="SEC/FINRA fees"
+              onChange={(e) => setFees(e.target.value)} className={inputCls} />
+          </div>
+          {feeNum > 0 && proceeds > 0 && (
+            <p className="self-end pb-2 text-xs text-gray-500 tabular-nums">
+              net proceeds {formatCurrency(netProceeds)}
+            </p>
+          )}
         </div>
 
         <label className="flex items-center gap-2 text-sm text-gray-700">
@@ -1632,12 +1649,13 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
         {proceeds > 0 && (
           <div className="bg-gray-50 rounded-md px-3 py-2 text-sm space-y-1">
             <p className="text-gray-600">
-              Proceeds <span className="font-medium tabular-nums">{formatCurrency(proceeds)}</span>
+              Proceeds <span className="font-medium tabular-nums">{formatCurrency(netProceeds)}</span>
+              {feeNum > 0 && <span className="text-gray-400"> (net of {formatCurrency(feeNum)} fees)</span>}
               {preview && (
                 <>
                   {' '}· gain{' '}
-                  <span className={cn('font-medium tabular-nums', preview.gain >= 0 ? 'text-green-600' : 'text-red-600')}>
-                    {formatCurrency(roundCents(preview.gain))}
+                  <span className={cn('font-medium tabular-nums', preview.gain - feeNum >= 0 ? 'text-green-600' : 'text-red-600')}>
+                    {formatCurrency(roundCents(preview.gain - feeNum))}
                   </span>
                   <span className="text-gray-400">
                     {preview.adjustedCostBasis < preview.costBasis - 0.005
@@ -1653,9 +1671,9 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
                 {fmtSh(preview.ltShares)} sh long-term
                 {preview.stShares > 0 && ` · ${fmtSh(preview.stShares)} sh short-term`}
                 {preview.unknownShares > 0 && ` · ${fmtSh(preview.unknownShares)} sh undated`}
-                {preview.gain > 0 && (
+                {preview.gain - feeNum > 0 && (
                   <span title={`Rough estimate (~${formatPercent(ltTaxRate, 0)} LT / ~${formatPercent(stTaxRate, 0)} ST — editable on Tax Reserve). The quarterly skim never covers pile sales — set this aside yourself.`}>
-                    {' '}· est. tax {formatCurrency(roundCents(estimatedPileTax(preview.gain, numShares, preview.ltShares + preview.unknownShares, ltTaxRate, stTaxRate)))}
+                    {' '}· est. tax {formatCurrency(roundCents(estimatedPileTax(preview.gain - feeNum, numShares, preview.ltShares + preview.unknownShares, ltTaxRate, stTaxRate)))}
                   </span>
                 )}
                 {isLoss && <span className="text-red-600 font-medium"> · loss — arms the 31-day wash-sale window</span>}

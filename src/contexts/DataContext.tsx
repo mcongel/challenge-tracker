@@ -155,13 +155,15 @@ interface DataContextValue extends DataState {
   ) => Promise<void>;
   /** Removes the record only — MilestoneBank row and VOO lot stay. */
   deleteMilestone: (id: string) => Promise<void>;
-  /** FIFO (or per-lot allocated) close: trades + Sell cash event + lot updates. */
+  /** FIFO (or per-lot allocated) close: trades + Sell cash event + lot
+   * updates. Fees reduce recorded proceeds — realized gain lands net. */
   closePosition: (
     ticker: string,
     shares: number,
     pricePerShare: number,
     closeDate: string,
     allocations?: CloseAllocation[],
+    fees?: number,
   ) => Promise<void>;
   recordSplit: (ticker: string, ratio: number, date: string) => Promise<void>;
   setTradeWashSale: (id: string, washSale: boolean) => Promise<void>;
@@ -184,6 +186,8 @@ interface DataContextValue extends DataState {
     pricePerShare: number;
     date: string;
     depositVooPrice?: number;
+    /** Sell-side fees — sale proceeds and any funding deposit record net. */
+    fees?: number;
   }) => Promise<void>;
   addParkedLot: (lot: Omit<ParkedLot, 'id'>) => Promise<void>;
   deleteParkedLot: (id: string) => Promise<void>;
@@ -680,23 +684,37 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       pricePerShare: number,
       closeDate: string,
       allocations?: CloseAllocation[],
+      fees = 0,
     ) => {
       const client = db();
       const result = closeShares(state.lots, ticker, shares, pricePerShare, closeDate, allocations);
+
+      // Fees reduce proceeds (the tax treatment — realized gain drives the
+      // 30% skim, so this must be exact). Scale each trade proportionally;
+      // the last trade absorbs the rounding remainder so the sum is the net.
+      let tradeRows = result.trades.map((t) => ({
+        ...t,
+        costBasis: roundCents(t.costBasis),
+        proceeds: roundCents(t.proceeds),
+      }));
+      const gross = roundCents(tradeRows.reduce((s, t) => s + t.proceeds, 0));
+      const net = roundCents(gross - fees);
+      if (fees > 0 && gross > 0) {
+        let allocated = 0;
+        tradeRows = tradeRows.map((t, i) => {
+          if (i === tradeRows.length - 1) return { ...t, proceeds: roundCents(net - allocated) };
+          const p = roundCents((t.proceeds * net) / gross);
+          allocated = roundCents(allocated + p);
+          return { ...t, proceeds: p };
+        });
+      }
 
       let closed = false;
       try {
         // Trades are one batch insert (all-or-nothing at PostgREST), so a
         // failure below can't leave half the paper trail.
         const { error: tradeErr } = await client.from('trades').insert(
-          result.trades.map((t) =>
-            tradePayload({
-              ...t,
-              costBasis: roundCents(t.costBasis),
-              proceeds: roundCents(t.proceeds),
-              washSale: false,
-            }),
-          ),
+          tradeRows.map((t) => tradePayload({ ...t, washSale: false })),
         );
         if (tradeErr) throw tradeErr;
 
@@ -727,8 +745,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           cashEventPayload({
             date: closeDate,
             type: 'Sell',
-            amount: roundCents(result.totalProceeds),
+            amount: net,
             ticker,
+            notes: fees > 0 ? `net of $${fees.toFixed(2)} fees` : null,
           }),
         );
         if (cashErr) throw cashErr;
@@ -1458,6 +1477,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       pricePerShare: number;
       date: string;
       fundedChallenge: boolean;
+      /** Broker/regulatory fees — proceeds record NET (the tax treatment). */
+      fees?: number;
       notes?: string | null;
     }) => {
       const client = db();
@@ -1525,7 +1546,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             date: args.date,
             shares: args.shares,
             pricePerShare: args.pricePerShare,
-            proceeds: roundCents(args.shares * args.pricePerShare),
+            proceeds: roundCents(args.shares * args.pricePerShare - (args.fees ?? 0)),
             costBasis,
             ltShares,
             fundedChallenge: args.fundedChallenge,
@@ -1574,13 +1595,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const recordTrim = useCallback(
     async ({
-      parkedId, shares, pricePerShare, date, depositVooPrice,
+      parkedId, shares, pricePerShare, date, depositVooPrice, fees = 0,
     }: {
       parkedId: string;
       shares: number;
       pricePerShare: number;
       date: string;
       depositVooPrice?: number;
+      /** SEC/FINRA-style sell fees — the sale and any funding deposit record net. */
+      fees?: number;
     }) => {
       const client = db();
       const p = state.parked.find((x) => x.id === parkedId);
@@ -1604,6 +1627,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           pricePerShare,
           date,
           fundedChallenge: false,
+          fees,
+          notes: fees > 0 ? `net of $${fees.toFixed(2)} fees` : null,
         });
 
         if (depositVooPrice) {
@@ -1612,7 +1637,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
               {
                 date,
                 type: 'Deposit',
-                amount: roundCents(shares * pricePerShare),
+                // What actually moved: proceeds net of fees.
+                amount: roundCents(shares * pricePerShare - fees),
                 sourceDestination: `${p.ticker} trim (${p.account})`,
                 accountId: p.accountId,
               },
@@ -1899,6 +1925,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             if (adjErr) throw adjErr;
             adjustments = (adjRows ?? []).map(mapParkedLotAdjustment);
           }
+          // A fee-bearing sale stores proceeds below shares × price; carry
+          // that implied fee through the re-apply or the edit would silently
+          // regross the proceeds.
+          const impliedFees = Math.max(
+            0,
+            roundCents(roundCents(old.shares * old.pricePerShare) - old.proceeds),
+          );
           await trimCore({
             position,
             lots,
@@ -1908,6 +1941,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             pricePerShare: next.pricePerShare,
             date: next.date,
             fundedChallenge: next.fundedChallenge ?? old.fundedChallenge,
+            fees: impliedFees,
             notes: next.notes !== undefined ? next.notes : old.notes ?? null,
           });
         } catch (redoErr) {

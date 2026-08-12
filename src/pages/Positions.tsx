@@ -440,11 +440,13 @@ function ClosePositionModal({ ticker, onClose }: { ticker: string; onClose: () =
   const [closeDate, setCloseDate] = useState(todayISO());
   const [customize, setCustomize] = useState(false);
   const [allocs, setAllocs] = useState<Record<string, string>>({});
+  const [fees, setFees] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const numShares = Number(shares);
   const numPrice = Number(price);
+  const feeNum = Number(fees) || 0;
 
   const allocations: CloseAllocation[] | undefined = customize
     ? tickerLots
@@ -462,7 +464,7 @@ function ClosePositionModal({ ticker, onClose }: { ticker: string; onClose: () =
     }
   }
   const realizedTotal = preview
-    ? preview.trades.reduce((s, t) => s + (t.proceeds - t.costBasis), 0)
+    ? preview.trades.reduce((s, t) => s + (t.proceeds - t.costBasis), 0) - feeNum
     : 0;
 
   const enableCustomize = () => {
@@ -483,9 +485,12 @@ function ClosePositionModal({ ticker, onClose }: { ticker: string; onClose: () =
     setFormError(null);
     if (previewError) return setFormError(previewError);
     if (!preview) return setFormError('Enter shares and price.');
+    if (feeNum < 0 || feeNum >= preview.totalProceeds) {
+      return setFormError('Fees must be smaller than the gross proceeds.');
+    }
     setBusy(true);
     try {
-      await closePosition(ticker, numShares, numPrice, closeDate, allocations);
+      await closePosition(ticker, numShares, numPrice, closeDate, allocations, feeNum || undefined);
       onClose();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : String(err));
@@ -513,6 +518,11 @@ function ClosePositionModal({ ticker, onClose }: { ticker: string; onClose: () =
               onChange={(e) => setPrice(e.target.value)} className={inputCls} />
           </div>
           <TotalField value={total} onChange={setTotal} label="Total proceeds ($)" />
+          <div>
+            <label className={labelCls}>Fees ($, optional)</label>
+            <input type="number" step="0.01" min="0" value={fees} placeholder="SEC/FINRA fees"
+              onChange={(e) => setFees(e.target.value)} className={inputCls} />
+          </div>
         </div>
 
         {!customize ? (
@@ -546,7 +556,8 @@ function ClosePositionModal({ ticker, onClose }: { ticker: string; onClose: () =
           <div className="bg-gray-50 rounded-md px-3 py-2 text-sm space-y-1">
             <p className="text-gray-600">
               {preview.trades.length} trade{preview.trades.length > 1 ? 's' : ''} · proceeds{' '}
-              <span className="font-medium tabular-nums">{formatCurrency(roundCents(preview.totalProceeds))}</span>{' '}
+              <span className="font-medium tabular-nums">{formatCurrency(roundCents(preview.totalProceeds - feeNum))}</span>
+              {feeNum > 0 && <span className="text-gray-400"> (net of {formatCurrency(feeNum)} fees)</span>}{' '}
               · realized{' '}
               <span className={cn('font-medium tabular-nums', realizedTotal >= 0 ? 'text-green-600' : 'text-red-600')}>
                 {formatCurrency(roundCents(realizedTotal))}

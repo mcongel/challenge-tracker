@@ -114,8 +114,9 @@ export function Help() {
           </p>
           <p>
             <strong className="text-gray-900">Close</strong> (Close button on the ticker): shares —
-            partial is fine — price, date. Oldest lots go first (FIFO); "customize per lot"
-            overrides. Remaining shares keep their buy dates. The trades and the Sell event are
+            partial is fine — price, date, and the broker's SEC/FINRA fees in the optional Fees
+            field (proceeds and realized gain record net, keeping the skim exact). Oldest lots go
+            first (FIFO); "customize per lot" overrides. Remaining shares keep their buy dates. The trades and the Sell event are
             written for you; after any close beyond ±25%, a quiet link appears:{' '}
             <em>read the rules</em>. Especially after the wins.
           </p>
@@ -225,7 +226,8 @@ export function Help() {
           <li>
             <strong className="text-gray-900">Sell</strong> (scissors icon on a row) does the whole
             thing in one form: shrinks the position, logs the sale in the wash-sale radar, and —
-            if you check "deposit the proceeds" — writes the Deposit and its shadow VOO twin. It
+            if you check "deposit the proceeds" — writes the Deposit and its shadow VOO twin. The
+            optional Fees field records proceeds (and the deposit) net of regulatory fees. It
             warns before unlock and refuses to blow the contribution cap. A full sale (or transfer
             away) closes the position but keeps its dividend history on the Income screen.
           </li>
