@@ -97,6 +97,8 @@ export interface BenchmarkDeposit {
   date: string;
   amount: number;
   vooPriceThatDay: number;
+  /** Links the twin to its Deposit; null = legacy row (date+amount match). */
+  cashEventId?: string | null;
 }
 
 export type ParkedCategory = 'Semi/AI' | 'AI-adjacent' | 'BTC' | 'Other';

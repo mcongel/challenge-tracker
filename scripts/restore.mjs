@@ -94,6 +94,7 @@ const TABLES = [
   })), 'id'],
   ['benchmark_deposits', get('benchmark_deposits').map((b) => ({
     id: b.id, date: b.date, amount: b.amount, voo_price_that_day: b.vooPriceThatDay,
+    cash_event_id: b.cashEventId ?? null,
   })), 'id'],
   ['snapshots', get('snapshots').map((s) => ({
     date: s.date, account_value: s.accountValue, banked_total: s.bankedTotal,

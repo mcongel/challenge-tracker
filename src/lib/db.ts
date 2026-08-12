@@ -139,6 +139,7 @@ export const mapBenchmarkDeposit = (r: any): BenchmarkDeposit => ({
   date: r.date,
   amount: Number(r.amount),
   vooPriceThatDay: Number(r.voo_price_that_day),
+  cashEventId: r.cash_event_id ?? null,
 });
 
 /** Expects rows selected with `*, account:accounts(name)`. */

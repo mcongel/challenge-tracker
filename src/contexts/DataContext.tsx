@@ -491,13 +491,25 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const addCashEvent = useCallback(
     async (e: Omit<CashEvent, 'id'>, vooPriceThatDay?: number) => {
       const client = db();
-      const { error: err } = await client.from('cash_events').insert(cashEventPayload(e));
+      const { data: cashRow, error: err } = await client
+        .from('cash_events')
+        .insert(cashEventPayload(e))
+        .select('id')
+        .single();
       if (err) throw err;
       if (e.type === 'Deposit' && vooPriceThatDay) {
-        const { error: benchErr } = await client
-          .from('benchmark_deposits')
-          .insert({ date: e.date, amount: e.amount, voo_price_that_day: vooPriceThatDay });
-        if (benchErr) throw benchErr;
+        const { error: benchErr } = await client.from('benchmark_deposits').insert({
+          date: e.date,
+          amount: e.amount,
+          voo_price_that_day: vooPriceThatDay,
+          cash_event_id: cashRow.id,
+        });
+        if (benchErr) {
+          // Never leave a deposit without its shadow twin — the benchmark
+          // would silently understate forever. Compensate and rethrow.
+          await client.from('cash_events').delete().eq('id', cashRow.id);
+          throw benchErr;
+        }
       }
       await refresh();
     },
@@ -508,14 +520,25 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     async (id: string) => {
       const client = db();
       const event = state.cashEvents.find((e) => e.id === id);
+      // Linked twins die via the FK cascade; legacy (unlinked) twins fall
+      // back to date+amount matching — and that delete is CHECKED, because a
+      // silently orphaned twin inflates shadow VOO forever.
+      const legacyTwin =
+        event?.type === 'Deposit'
+          ? state.benchmarkDeposits.find(
+              (b) => b.cashEventId == null && b.date === event.date && b.amount === event.amount,
+            )
+          : undefined;
       const { error: err } = await client.from('cash_events').delete().eq('id', id);
       if (err) throw err;
-      // A deposit's shadow twin goes with it (matched on date + amount).
-      if (event?.type === 'Deposit') {
-        const twin = state.benchmarkDeposits.find(
-          (b) => b.date === event.date && b.amount === event.amount,
-        );
-        if (twin) await client.from('benchmark_deposits').delete().eq('id', twin.id);
+      if (legacyTwin) {
+        const { error: twinErr } = await client
+          .from('benchmark_deposits').delete().eq('id', legacyTwin.id);
+        if (twinErr) {
+          throw new Error(
+            `Deposit deleted, but its shadow VOO twin (${legacyTwin.date}) failed to delete — remove it or the benchmark overstates. (${twinErr.message})`,
+          );
+        }
       }
       await refresh();
     },
@@ -1105,6 +1128,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (deletes.length > 0) {
         const { error: err } = await client.from('parked_lots').delete().in('id', deletes);
         if (err) throw err;
+      }
+      // A full transfer moves the holding, not just shares — transition
+      // rotations that sell it must follow to the destination, or the
+      // source-position delete/archive silently kills the what-if.
+      if (shares >= p.shares - 1e-9 && destId !== parkedId) {
+        const { error: rotErr } = await client
+          .from('scenario_rotations')
+          .update({ sell_holding_id: destId })
+          .eq('sell_holding_id', parkedId);
+        if (rotErr) throw rotErr;
       }
       await recomputeParkedAggregate(destId);
       await recomputeParkedAggregate(parkedId);
