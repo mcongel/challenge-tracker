@@ -58,8 +58,10 @@ export function Help() {
           </li>
           <li>
             The first open of each day writes a <strong className="text-gray-900">snapshot</strong>{' '}
-            — the history behind the race chart and, after a year, the rolling verdict. Snapshots
-            need a VOO price; if the feed is down, set one on <Screen to="/benchmark">Benchmark</Screen>.
+            — the history behind the race chart and, after a year, the rolling verdict. A scheduled
+            GitHub Action also writes it after market close, so history holds even on days you
+            never open the app. Snapshots need a VOO price; if the feed is down, set one on{' '}
+            <Screen to="/benchmark">Benchmark</Screen>.
           </li>
         </ol>
       </Card>
@@ -149,6 +151,29 @@ export function Help() {
       </Card>
 
       <Card>
+        <Eyebrow>Once a year — January</Eyebrow>
+        <h2 className="text-lg font-bold text-gray-900 mb-2">The 1099 ritual</h2>
+        <ul className="list-disc pl-5 space-y-2 text-sm text-gray-600 leading-relaxed">
+          <li>
+            <strong className="text-gray-900">Confirm dividend classifications</strong> against the
+            1099-DIV: on <Screen to="/income">Income</Screen>, filter the year, compare the
+            per-class subtotal line to the form's boxes, and use the bulk reclassify for anything
+            the broker re-characterized. Reclassified rows get a small history flag.
+          </li>
+          <li>
+            <strong className="text-gray-900">Record any loss carryforward</strong>:{' '}
+            <Screen to="/tax">Tax Reserve</Screen> → Carryforwards — the loss carried into the new
+            year offsets gains before the 30% applies.
+          </li>
+          <li>
+            <strong className="text-gray-900">Check wash flags</strong> on the{' '}
+            <Screen to="/trades">Trade Log</Screen> against the 1099-B — a disallowed loss ticked
+            as washed drops out of YTD realized (and the skim math).
+          </li>
+        </ul>
+      </Card>
+
+      <Card>
         <Eyebrow>At a milestone</Eyebrow>
         <h2 className="text-lg font-bold text-gray-900 mb-2">
           The championship moment — <Screen to="/milestones">Milestones</Screen>
@@ -218,9 +243,34 @@ export function Help() {
           </li>
           <li>
             <strong className="text-gray-900">Accounts</strong> button: brokerages and bank
-            accounts live here. Bank accounts show <em>tracked strategy cash</em> — what the ledger
-            has routed there, deliberately not your real balance. ACATS landed? Edit the position,
-            change its account.
+            accounts live here, each showing <em>tracked strategy cash</em> — what the app has
+            routed there, deliberately not your real balance.{' '}
+            <strong className="text-gray-900">Reconcile monthly</strong>: type the brokerage's
+            actual figure and an adjustment keeps the number true; each card shows how long since
+            the last reconcile. ACATS landed? Edit the position, change its account.
+          </li>
+        </ul>
+      </Card>
+
+      <Card>
+        <Eyebrow>What the pile pays</Eyebrow>
+        <h2 className="text-lg font-bold text-gray-900 mb-2">
+          <Screen to="/income">Income</Screen> — dividends, ROC, and the 1099 view
+        </h2>
+        <ul className="list-disc pl-5 space-y-2 text-sm text-gray-600 leading-relaxed">
+          <li>
+            Trailing and projected 12-month income, per-holding yield on cost, and the est.
+            dividend tax YTD — all informational, never the 30% skim.
+          </li>
+          <li>
+            The distribution history is the audit trail: filter by year and ticker, reclassify
+            single rows or the whole filtered set, and the year view totals by class to match the
+            1099-DIV boxes.
+          </li>
+          <li>
+            <strong className="text-gray-900">Return of capital</strong> reduces lot cost basis
+            automatically; an amber "unallocated" badge offers one-click allocation for older ROC,
+            and sales are taxed against the adjusted basis.
           </li>
         </ul>
       </Card>
@@ -275,7 +325,8 @@ export function Help() {
           </li>
           <li>
             <strong className="text-gray-900">Export</strong> (download icon): full JSON or CSV per
-            table, anytime. It doubles as your backup.
+            table, anytime. A nightly GitHub Action also snapshots every table to a 90-day backup
+            artifact — recovery is download + restore script.
           </li>
           <li>
             <strong className="text-gray-900">Phone</strong>: the site installs as an app — browser

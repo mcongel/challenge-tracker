@@ -59,8 +59,10 @@ Reference implementation: `Challenge_Account_Tracker.xlsx` in this repo — the 
 ### Position (open)
 - id, ticker, buyDate, shares, avgCost — **each purchase is its own lot** (a row); a ticker may have multiple open lots, displayed grouped with a per-ticker subtotal.
 - exitTarget (required), bailPoint (optional, legacy pre-Xu), thesis (text)
+- buy_event_id (2026-08-16): exact link to the lot's Buy cash event — adding a lot creates both and links them; deleting a lot takes its exact ledger row; a buy-date edit moves both. Legacy lots (null) fall back to ticker+date+amount matching, only when unambiguous on both sides.
 - Derived per lot: costBasis = shares × avgCost; marketValue = shares × currentPrice; unrealized $ and %; daysHeld; longTermDate = buyDate + 366
 - **Partial close:** closing may take fewer shares than the lot holds — the closed portion becomes a Trade (proportional basis) and the lot's remaining shares stay open with original buyDate. Closing across multiple lots defaults to FIFO (oldest lot first), with per-lot override.
+- **Known limitation — no undo for closes:** unlike pile sales, closing records no snapshot; a mis-entered close is repaired by deleting its trades and Sell event and re-adding the lot. Pile-style reversibility for the challenge account is a possible future feature.
 - **Stock splits:** a manual "record split" action per ticker (ratio input) multiplies shares and divides avgCost across all open lots (and ParkedPositions of that ticker), logging the event in notes. No auto-detection needed.
 
 ### Trade (closed)
@@ -83,9 +85,10 @@ Reference implementation: `Challenge_Account_Tracker.xlsx` in this repo — the 
 
 ### TaxReserveCheck
 - quarter, checkDate, netRealizedYTD (from Trades), reserveTarget = max(0, 30% × netRealizedYTD), alreadyReserved, moveOutNow = max(0, target − alreadyReserved), moved (bool)
+- **Computed, not stored:** there is no table — every quarter's row derives fresh from trades + cash events + carryforwards. "Moved" = a TaxSkim event exists covering the target; deleting that event makes the quarter show as due again.
 
 ### BenchmarkDeposit
-- date, amount, vooPriceThatDay
+- date, amount, vooPriceThatDay, cash_event_id (2026-08-15: FK to the Deposit, on-delete cascade — created and deleted as one converging unit with its deposit; legacy null rows fall back to date+amount matching)
 - Derived: shadowShares = amount / vooPriceThatDay
 - Global input: vooPriceToday → shadowValue = Σ shadowShares × vooPriceToday
 - Lead = TotalScore − shadowValue (also as %)
@@ -96,7 +99,12 @@ Reference implementation: `Challenge_Account_Tracker.xlsx` in this repo — the 
 - Derived: longTermDate = buyDate + 366; ltStatus = "FUNDING UNLOCKED" when today ≥ longTermDate, else countdown
 - Concentration: Semi/AI % of pile; Semi/AI + AI-adjacent %; target cap (default 50%, editable); status "OVER CAP — trim semis first" when exceeded
 - Seed data lives in the reference workbook's Parked Pile tab (MU, AMAT, AMKR, ASML, SOXX, NBIS, AMD, AVGO, GOOGL, GLW, MSTR, plus NVDA/TSLA arriving from a Stash ACATS transfer). MSTR is a conviction hold, category BTC, never trim fuel.
-- Manual income estimate for projections: dividendRate (annual $ per share) + dividendFrequency (monthly/quarterly/semiannual/annual), both nullable.
+- Manual income estimate for projections: dividendRate (annual $ per share) + dividendFrequency (daily/semimonthly/monthly/quarterly/semiannual/annual — daily for SATA-style payers, semimonthly for STRC), plus dividendGrowthPct (assumed annual growth, drives the Transition modeler). All nullable; clearing the rate retires its companions.
+
+### Account / OutsideSale / ParkedCashEvent (context tables)
+- **accounts**: id, name, broker, kind (bank / outside / challenge), notes. Labels for where money lives — never score math.
+- **outside_sales**: id, account_id, ticker, sale_date, loss (bool), notes. Radar-only records so Rule 9's cross-brokerage wash-sale window has teeth; never in score or YTD math. Pile sales feed the same radar (unknown-basis sales warn as possible losses).
+- **parked_cash_events**: id, account_id, date, type (deposit / interest / withdrawal / fee / adjustment), amount, notes. Manual cash movements in non-challenge accounts; reconcile writes an `adjustment` row (zero-amount when the balance already matches — it stamps the reconciled-ago cue).
 
 ### Dividend income (context only — the wall holds)
 Added 2026-08-11 as Phase 1 of the parked pile growing into a full tracking system (owner direction: dividends first; ROC basis machinery and a retirement-transition modeler come as later phases).
@@ -138,9 +146,9 @@ All formulas live in the reference workbook; port them 1:1. Key ones:
 - shadowValue = Σ (deposit/vooPriceAtDeposit) × vooPriceToday
 
 ## Price updates
-- No brokerage integration, but quotes should self-update. Delayed/EOD prices are fine — this is a scoreboard, not a trading terminal.
-- Architecture: a Cloudflare Pages Function (`/api/quotes?tickers=...`) fetches quotes server-side from a free market-data API (Finnhub or Twelve Data free tier — pick at build time; note Google Finance has no public API), with the API key in an environment variable, never in the browser.
-- Cache quotes (KV or in-function cache) with a TTL of ~15–60 minutes. App fetches on load; every screen showing prices gets a manual "refresh prices" button with a last-updated timestamp.
+- No brokerage integration, but quotes should self-update. Delayed prices are fine — this is a scoreboard, not a trading terminal.
+- Architecture (as built): a Cloudflare Pages Function (`/api/quotes?tickers=...`) fetches server-side — **Yahoo Finance chart endpoint primary** (no key; live price + previous close for a true day change, covers ETFs), **Finnhub fallback** via `FINNHUB_API_KEY` (env var, never in the browser). Finnhub's free tier lags a session and skips ETFs, which is why it's the fallback.
+- Edge-cached per ticker with a 15-minute TTL. App fetches on load; the header has a manual "refresh prices" button with a last-updated timestamp that turns amber when the last fetch failed.
 - Manual price override per ticker must still exist as a fallback (API outages, delisted tickers, the VOO-price-on-a-past-date entries for the Benchmark).
 - Tickers to cover: all open Positions, all ParkedPositions, and VOO.
 
@@ -155,7 +163,7 @@ All formulas live in the reference workbook; port them 1:1. Key ones:
 - No automated trading, alerts by UI badge only (no email/push in v1).
 
 ## Definition of done (v1)
-- All nine screens functional, persisting to the `challenge` schema in the existing Supabase project, behind the existing auth.
+- All twelve screens (the eleven above plus in-app Help) functional, persisting to the `challenge` schema in the existing Supabase project, behind the existing auth.
 - Enter the workbook's example data → app numbers match workbook numbers exactly (including a partial-close case).
 - Daily snapshot writes on first load; dashboard shows a Total Score trend once ≥2 snapshots exist.
 - Milestone-hit and tax-skim-due alerts fire correctly on test data.

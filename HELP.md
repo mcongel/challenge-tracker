@@ -7,7 +7,7 @@ The app is a scoreboard that enforces the rules. **Total Score = account value +
 1. **Dashboard** shows Total Score, its three parts, the next milestone, and your lead vs the VOO shadow.
 2. **Banners at the top mean act now**: MILESTONE HIT — BANK NOW, a tax skim due, or the parked pile over its concentration cap. Click one to go handle it.
 3. Hit **refresh prices** (circular arrow, header) if the "prices as of" stamp looks stale. Quotes are delayed ~30 minutes — it's a scoreboard, not a trading terminal.
-4. The first open of each day writes a **snapshot** — the history that draws the race chart and, after a year, the rolling verdict. Snapshots need a VOO price, so if the quote feed is down, set one on the Benchmark screen.
+4. The first open of each day writes a **snapshot** — the history that draws the race chart and, after a year, the rolling verdict. A scheduled GitHub Action also writes it after market close, so history holds even on days the app never opens. Snapshots need a VOO price, so if the quote feed is down, set one on the Benchmark screen.
 
 ## When money moves — Cash Ledger
 
@@ -69,6 +69,12 @@ The floor rises permanently, the staircase chart gets a step, and the banner is 
 - Rotation sale proceeds are haircut using the holding's REAL ROC-adjusted basis, and a rotation dated before shares unlock gets a **short-term flag** — warned, never blocked.
 - Enter total dollars on any trade form (**notional mode**): type the broker's filled total and the per-share price derives — no more penny drift on fractional shares.
 
+## Once a year — January, the 1099 ritual
+
+- **Confirm dividend classifications** against the 1099-DIV: on Income, filter the year, compare the per-class subtotal line to the form's boxes, and bulk-reclassify anything the broker re-characterized. Reclassified rows get a small history flag.
+- **Record any loss carryforward**: Tax Reserve → Carryforwards. The loss carried into the new year offsets gains before the 30% applies.
+- **Check wash flags** on the Trade Log against the 1099-B — a disallowed loss ticked as washed drops out of YTD realized (and the skim math).
+
 ## The honest test — Benchmark
 
 Every deposit bought shadow VOO the same day. The Benchmark screen shows the race: your Total Score vs what the same money in VOO would be worth now, and after a year of snapshots, the **rolling 12-month verdict**. Beating VOO after tax is what proves the edge — and it's the only thing that raises the contribution cap (Rules 10 and 12). Two honesty notes printed on the screen: the shadow ignores VOO dividends (flatters you) and taxes (also flatters you). The real hurdle is higher than the lead suggests.
@@ -76,7 +82,7 @@ Every deposit bought shadow VOO the same day. The Benchmark screen shows the rac
 ## Housekeeping
 
 - **Prices**: pinned manual prices (pencil icon) beat API quotes until cleared — for delisted tickers or corrections. Everything else auto-refreshes.
-- **Export** (download icon, header): full JSON or CSV per table, any time. It doubles as your backup.
+- **Export** (download icon, header): full JSON or CSV per table, any time. A nightly GitHub Action also backs up every table to a 90-day artifact — recovery is download + `scripts/restore.mjs`.
 - **Phone**: the site installs as an app — Share/menu → Add to Home Screen.
 - **Example data**: rows marked "EXAMPLE" came from the workbook seed. The Dashboard's getting-started checklist clears them all in one click when you're ready to start for real.
 - **Dark mode**: moon icon. **Sign out**: door icon.
@@ -93,4 +99,6 @@ Every deposit bought shadow VOO the same day. The Benchmark screen shows the rac
 | Tax Reserve | Quarterly 30% checklist |
 | Benchmark | You vs shadow VOO |
 | Parked Pile | The foundation — context only |
+| Income | What the pile pays; 1099 filters and ROC basis |
+| Transition | Retirement rotations, on paper only |
 | Rules | The law. Read after big wins especially |
