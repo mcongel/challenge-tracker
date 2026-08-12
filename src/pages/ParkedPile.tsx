@@ -578,7 +578,7 @@ export function ParkedPile() {
               </span>
               {estTaxTotal > 0 && (
                 <span className="text-xs text-gray-400" title={`Rough estimate (~${formatPercent(ltTaxRate, 0)} LT / ~${formatPercent(stTaxRate, 0)} ST — editable on Tax Reserve). The quarterly skim is challenge-account-only — set this aside yourself.`}>
-                  {' '}· est. tax ~{formatCurrency(roundCents(estTaxTotal))}
+                  {' '}· est. tax {formatCurrency(roundCents(estTaxTotal))}
                 </span>
               )}
               {unknownBasisCount > 0 && (
@@ -1649,7 +1649,7 @@ function TrimModal({ position: p, onClose }: { position: ParkedPosition; onClose
                 {preview.unknownShares > 0 && ` · ${fmtSh(preview.unknownShares)} sh undated`}
                 {preview.gain > 0 && (
                   <span title={`Rough estimate (~${formatPercent(ltTaxRate, 0)} LT / ~${formatPercent(stTaxRate, 0)} ST — editable on Tax Reserve). The quarterly skim never covers pile sales — set this aside yourself.`}>
-                    {' '}· est. tax ~{formatCurrency(roundCents(estimatedPileTax(preview.gain, numShares, preview.ltShares + preview.unknownShares, ltTaxRate, stTaxRate)))}
+                    {' '}· est. tax {formatCurrency(roundCents(estimatedPileTax(preview.gain, numShares, preview.ltShares + preview.unknownShares, ltTaxRate, stTaxRate)))}
                   </span>
                 )}
                 {isLoss && <span className="text-red-600 font-medium"> · loss — arms the 31-day wash-sale window</span>}

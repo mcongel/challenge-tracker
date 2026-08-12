@@ -167,7 +167,7 @@ export function TaxReserve() {
           </p>
           {pileEstTax > 0 && (
             <p className="px-4 pb-3 text-xs text-gray-400">
-              Separately: parked-pile sales carry est. tax of ~{formatCurrency(roundCents(pileEstTax))}{' '}
+              Separately: parked-pile sales carry est. tax of {formatCurrency(roundCents(pileEstTax))}{' '}
               — the skim never covers the pile; set that aside yourself.
             </p>
           )}

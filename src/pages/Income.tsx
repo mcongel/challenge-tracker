@@ -300,7 +300,7 @@ export function Income() {
               <p className="text-xs font-medium text-gray-500">Next 12 months</p>
               <p className="mt-0.5 text-xl font-bold tabular-nums">{formatCurrency(roundCents(projectedGross))}</p>
               <p className="text-xs text-gray-400 mt-0.5">
-                ~{formatCurrency(roundCents(projectedAfterTax))} after est. tax
+                {formatCurrency(roundCents(projectedAfterTax))} after est. tax
               </p>
             </div>
             <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
@@ -595,7 +595,7 @@ function HoldingRow({
       </td>
       <td className="px-4 py-2 text-right tabular-nums text-gray-600">
         {proj?.nextPayment
-          ? `${proj.nextPayment.date} · ~${formatCurrency(roundCents(proj.nextPayment.amount))}`
+          ? `${proj.nextPayment.date} · est. ${formatCurrency(roundCents(proj.nextPayment.amount))}`
           : '—'}
       </td>
       <td className="px-4 py-2">
