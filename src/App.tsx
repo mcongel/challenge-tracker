@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { DataProvider } from './contexts/DataContext';
 import { Layout } from './components/layout/Layout';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { CashLedger } from './pages/CashLedger';
@@ -40,6 +41,7 @@ function Gate() {
 function AppRoutes() {
   return (
     <Layout>
+      <ErrorBoundary>
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/ledger" element={<CashLedger />} />
@@ -55,6 +57,7 @@ function AppRoutes() {
         <Route path="/help" element={<Help />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </ErrorBoundary>
     </Layout>
   );
 }

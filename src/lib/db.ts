@@ -25,8 +25,6 @@ export function db() {
   return supabase;
 }
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 export const mapCashEvent = (r: any): CashEvent => ({
   id: r.id,
   date: r.date,

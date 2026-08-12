@@ -29,7 +29,6 @@ if (!url || !key) {
 const supabase = createClient(url, key, { db: { schema: 'challenge' } });
 const today = new Date().toISOString().slice(0, 10);
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 const num = (v: any) => Number(v);
 
 async function load(table: string) {
