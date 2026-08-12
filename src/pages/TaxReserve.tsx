@@ -379,13 +379,14 @@ function RecordSkimModal({ label, amount, onClose, onError }: RecordSkimProps) {
   const { accounts, addCashEvent } = useData();
   const banks = accounts.filter((a) => a.kind === 'bank');
   const [destination, setDestination] = useState(banks[0]?.id ?? '');
+  const [date, setDate] = useState(todayISO());
   const [busy, setBusy] = useState(false);
 
   const confirm = async () => {
     setBusy(true);
     try {
       await addCashEvent({
-        date: todayISO(),
+        date,
         type: 'TaxSkim',
         amount: roundCents(amount),
         sourceDestination: 'Tax reserve',
@@ -404,6 +405,11 @@ function RecordSkimModal({ label, amount, onClose, onError }: RecordSkimProps) {
   return (
     <Modal isOpen onClose={onClose} title={`Move ${formatCurrency(amount)} out of play`}>
       <div className="space-y-3">
+        <div>
+          <label className={labelCls}>Date moved</label>
+          <input type="date" required value={date} onChange={(e) => setDate(e.target.value)}
+            className={inputCls} />
+        </div>
         <AccountSelect accounts={accounts} value={destination} onChange={setDestination}
           label="Where is the reserve parked?" kinds={['bank']} />
         <p className="text-xs text-gray-400">

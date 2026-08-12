@@ -135,6 +135,9 @@ interface DataContextValue extends DataState {
   refresh: () => Promise<void>;
   /** For a Deposit, pass that day's VOO price to create the shadow twin. */
   addCashEvent: (e: Omit<CashEvent, 'id'>, vooPriceThatDay?: number) => Promise<void>;
+  /** Date/notes corrections only — amount and type are immutable (twins,
+   * balances, and reserve math key off them). A linked twin's date follows. */
+  updateCashEvent: (id: string, patch: { date?: string; notes?: string | null }) => Promise<void>;
   deleteCashEvent: (id: string) => Promise<void>;
   /** Creates the lot AND its Buy cash event. */
   addLot: (lot: Omit<PositionLot, 'id'>) => Promise<void>;
@@ -538,6 +541,36 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       await refresh();
     },
     [refresh, insertDepositWithTwin],
+  );
+
+  /** History corrections: date and notes only. Amount and type stay immutable
+   * — the shadow twin, running balance, and reserve math all key off them, so
+   * a money change is delete-and-re-add. A Deposit's linked twin follows a
+   * date change (the recorded VOO price stays — fix typos, don't re-date). */
+  const updateCashEvent = useCallback(
+    async (id: string, patch: { date?: string; notes?: string | null }) => {
+      const client = db();
+      const payload: Record<string, unknown> = {};
+      if (patch.date !== undefined) payload.date = patch.date;
+      if (patch.notes !== undefined) payload.notes = patch.notes;
+      if (Object.keys(payload).length === 0) return;
+      const { error: err } = await client.from('cash_events').update(payload).eq('id', id);
+      if (err) throw err;
+      if (patch.date !== undefined) {
+        const twin = state.benchmarkDeposits.find((b) => b.cashEventId === id);
+        if (twin) {
+          const { error: twinErr } = await client
+            .from('benchmark_deposits').update({ date: patch.date }).eq('id', twin.id);
+          if (twinErr) {
+            throw new Error(
+              `Event updated, but its shadow twin's date didn't follow (${twinErr.message}) — retry, or the benchmark shows the purchase on the wrong day.`,
+            );
+          }
+        }
+      }
+      await refresh();
+    },
+    [refresh, state.benchmarkDeposits],
   );
 
   const deleteCashEvent = useCallback(
@@ -2090,6 +2123,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       error,
       refresh,
       addCashEvent,
+      updateCashEvent,
       deleteCashEvent,
       addLot,
       closePosition,
@@ -2132,7 +2166,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       state, mergedParked, quotes, dayChange, quotesAsOf, refreshQuotes, tickerNames, contributionCap,
       concentrationCap, ltTaxRate, stTaxRate, dividendTaxRates, updateSetting, updateSettings,
       setCarryforward, loading, error,
-      refresh, addCashEvent, deleteCashEvent, addLot, closePosition, recordSplit,
+      refresh, addCashEvent, updateCashEvent, deleteCashEvent, addLot, closePosition, recordSplit,
       setTradeWashSale, deleteTrade, updateParked, recordMilestone, addAccount, addOutsideSale,
       deleteOutsideSale, recordTrim, addParkedLot, deleteParkedLot, reclassifyDividend,
       allocateRocDividends, addParkedPosition,

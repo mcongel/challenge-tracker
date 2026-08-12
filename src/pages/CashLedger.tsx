@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Trash2, Wallet } from 'lucide-react';
+import { Pencil, Plus, Trash2, Wallet } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
@@ -7,7 +7,7 @@ import { useData } from '../contexts/DataContext';
 import { AccountSelect } from '../components/ui/AccountSelect';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { ContributionCapBadge } from '../components/ui/ContributionCapBadge';
-import type { CashEventType } from '../lib/engine';
+import type { CashEvent, CashEventType } from '../lib/engine';
 import {
   cashSummary, contributionStatus, depositExceedsCap, netContributed, roundCents,
   withRunningBalance,
@@ -38,11 +38,31 @@ function accountName(accounts: { id: string; name: string }[], id?: string | nul
   return accounts.find((a) => a.id === id)?.name ?? null;
 }
 
+/** Deleting a ledger row never touches its companion records — say exactly
+ * what stays behind so a cleanup doesn't silently desync the books. */
+function deleteWarning(e: CashEvent | undefined): string {
+  switch (e?.type) {
+    case 'Deposit':
+      return 'Delete this deposit? Its shadow VOO twin goes with it, and net contributed drops.';
+    case 'Buy':
+      return 'Delete this Buy? The position lot keeps its shares — cash comes back while the stock stays, inflating the account. If the buy never happened, delete the lot too.';
+    case 'Sell':
+      return 'Delete this Sell? The Trade Log rows from the close remain — realized gains (and the 30% skim they drive) still count. If the sale never happened, delete those trades too.';
+    case 'MilestoneBank':
+      return 'Delete this bank transfer? The milestone record still counts its floor toward Total Score — the score and the ledger will disagree until the milestone is corrected too.';
+    case 'TaxSkim':
+      return 'Delete this skim? The reserved total drops and the quarter shows as due again on the Tax Reserve checklist.';
+    default:
+      return 'Delete this event? The running balance recomputes without it.';
+  }
+}
+
 export function CashLedger() {
   const { cashEvents, addCashEvent, deleteCashEvent, contributionCap, accounts, loading, error } =
     useData();
   const [modalOpen, setModalOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<CashEvent | null>(null);
 
   const rows = withRunningBalance(cashEvents);
   const summary = cashSummary(cashEvents);
@@ -130,7 +150,11 @@ export function CashLedger() {
                     balance < 0 ? 'text-red-600' : 'text-gray-900')}>
                     {formatCurrency(roundCents(balance))}
                   </td>
-                  <td className="px-2 py-3">
+                  <td className="px-2 py-3 whitespace-nowrap">
+                    <button onClick={() => setEditing(e)} className="p-1 rounded hover:bg-gray-100"
+                      aria-label="Edit event">
+                      <Pencil className="h-4 w-4 text-gray-300 hover:text-gray-600" />
+                    </button>
                     <button onClick={() => setDeletingId(e.id)} className="p-1 rounded hover:bg-red-50"
                       aria-label="Delete event">
                       <Trash2 className="h-4 w-4 text-gray-300 hover:text-red-600" />
@@ -144,15 +168,12 @@ export function CashLedger() {
       )}
 
       <AddEventModal isOpen={modalOpen} onClose={() => setModalOpen(false)} onAdd={addCashEvent} />
+      {editing && <EditEventModal event={editing} onClose={() => setEditing(null)} />}
 
       {deletingId && (
         <ConfirmModal
           title="Delete cash event"
-          message={
-            cashEvents.find((e) => e.id === deletingId)?.type === 'Deposit'
-              ? "Delete this deposit? Its shadow VOO twin goes with it, and net contributed drops."
-              : 'Delete this event? The running balance recomputes without it.'
-          }
+          message={deleteWarning(cashEvents.find((e) => e.id === deletingId))}
           onConfirm={() => deleteCashEvent(deletingId)}
           onClose={() => setDeletingId(null)}
         />
@@ -289,6 +310,55 @@ function AddEventModal({
         <div className="flex justify-end">
           <button type="submit" disabled={busy} className={primaryBtnCls}>
             {busy ? 'Saving…' : 'Add event'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function EditEventModal({ event, onClose }: { event: CashEvent; onClose: () => void }) {
+  const { updateCashEvent } = useData();
+  const [date, setDate] = useState(event.date);
+  const [notes, setNotes] = useState(event.notes ?? '');
+  const [formError, setFormError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    setBusy(true);
+    try {
+      await updateCashEvent(event.id, { date, notes: notes || null });
+      onClose();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal isOpen onClose={onClose} title={`Edit ${event.type} — ${formatCurrency(event.amount)}`}>
+      <form onSubmit={submit} className="space-y-3">
+        <div>
+          <label className={labelCls}>Date</label>
+          <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
+        </div>
+        <div>
+          <label className={labelCls}>Notes</label>
+          <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls} />
+        </div>
+        <p className="text-xs text-gray-400">
+          Amount and type can't change — the twin, running balance, and reserve math key off them.
+          Delete and re-add if the money is wrong.
+          {event.type === 'Deposit' &&
+            ' A date change moves the shadow twin’s date too, but keeps its recorded VOO price — fix typos, don’t re-date real deposits.'}
+        </p>
+        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
+        <div className="flex justify-end">
+          <button type="submit" disabled={busy} className={primaryBtnCls}>
+            {busy ? 'Saving…' : 'Save changes'}
           </button>
         </div>
       </form>
