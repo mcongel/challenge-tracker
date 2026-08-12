@@ -94,6 +94,7 @@ Every deposit bought shadow VOO the same day. The Benchmark screen shows the rac
 | Dashboard | The score, alerts, charts — start here |
 | Cash Ledger | Every dollar in and out, running balance |
 | Positions | Open lots; one name at a time, exit target enforced |
+| Watchlist | The bench — researched setups waiting for the rotation |
 | Trade Log | Closed trades, YTD realized, outside-sale radar |
 | Milestones | The ratchet: bank 25% at each level |
 | Tax Reserve | Quarterly 30% checklist |

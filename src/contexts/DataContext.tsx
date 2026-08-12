@@ -23,6 +23,7 @@ import {
 import type {
   AccountCashBreakdown, DividendClassification, DividendTaxRates, IncomeScenario, LotConsumption,
   ParkedCashEvent, ParkedLot, ParkedLotAdjustment, ParkedSale, ParkedSaleSnapshot, ScenarioRotation,
+  WatchlistItem,
 } from '../lib/engine';
 import { priceMapFor } from '../lib/alerts';
 import { errorMessage, todayISO } from '../lib/utils';
@@ -52,6 +53,8 @@ import {
   mapParked,
   mapSnapshot,
   mapTrade,
+  mapWatchlistItem,
+  watchlistItemPayload,
   milestonePayload,
   outsideSalePayload,
   tradePayload,
@@ -86,6 +89,8 @@ interface DataState {
   /** Transition modeler what-ifs — pure pile context, never score math. */
   incomeScenarios: IncomeScenario[];
   scenarioRotations: ScenarioRotation[];
+  /** The bench: researched candidates for the next rotation. Context only. */
+  watchlist: WatchlistItem[];
 }
 
 const EMPTY: DataState = {
@@ -108,6 +113,7 @@ const EMPTY: DataState = {
   parkedLotAdjustments: [],
   incomeScenarios: [],
   scenarioRotations: [],
+  watchlist: [],
 };
 
 interface DataContextValue extends DataState {
@@ -127,6 +133,10 @@ interface DataContextValue extends DataState {
   updateSettings: (entries: Record<string, unknown>) => Promise<void>;
   /** Upsert a loss carryforward for a tax year; null amount deletes the row. */
   setCarryforward: (taxYear: number, amount: number | null) => Promise<void>;
+  /** Bench CRUD — candidates for the next rotation. Context only. */
+  addWatchlistItem: (w: Omit<WatchlistItem, 'id' | 'createdAt'>) => Promise<void>;
+  updateWatchlistItem: (id: string, w: Omit<WatchlistItem, 'id' | 'createdAt'>) => Promise<void>;
+  deleteWatchlistItem: (id: string) => Promise<void>;
   /** Delayed API quotes (override-free). Merged view: overrides win. */
   quotes: Record<string, number>;
   /** The day's move per ticker, straight from the quote feed. */
@@ -289,7 +299,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const [
         cash, lots, trades, milestones, bench, parked, snaps, carry, overrides, settings,
         accounts, outsideSales, parkedLots, parkedSales, parkedCashEvents, parkedLotAdjustments,
-        incomeScenarios, scenarioRotations,
+        incomeScenarios, scenarioRotations, watchlist,
       ] = await Promise.all([
         client.from('cash_events').select('*').order('date').order('created_at'),
         client.from('position_lots').select('*').order('buy_date'),
@@ -309,13 +319,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         client.from('parked_lot_adjustments').select('*'),
         client.from('income_scenarios').select('*').order('created_at'),
         client.from('scenario_rotations').select('*').order('rotation_date'),
+        client.from('watchlist').select('*').order('catalyst_date', { nullsFirst: false }),
       ]);
       const firstError =
         cash.error ?? lots.error ?? trades.error ?? milestones.error ?? bench.error ??
         parked.error ?? snaps.error ?? carry.error ?? overrides.error ?? settings.error ??
         accounts.error ?? outsideSales.error ?? parkedLots.error ?? parkedSales.error ??
         parkedCashEvents.error ?? parkedLotAdjustments.error ?? incomeScenarios.error ??
-        scenarioRotations.error;
+        scenarioRotations.error ?? watchlist.error;
       if (firstError) throw firstError;
       setState({
         cashEvents: (cash.data ?? []).map(mapCashEvent),
@@ -341,6 +352,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         parkedLotAdjustments: (parkedLotAdjustments.data ?? []).map(mapParkedLotAdjustment),
         incomeScenarios: (incomeScenarios.data ?? []).map(mapIncomeScenario),
         scenarioRotations: (scenarioRotations.data ?? []).map(mapScenarioRotation),
+        watchlist: (watchlist.data ?? []).map(mapWatchlistItem),
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -2165,6 +2177,35 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [refresh],
   );
 
+  /** Bench management — plain CRUD, context only. */
+  const addWatchlistItem = useCallback(
+    async (w: Omit<WatchlistItem, 'id' | 'createdAt'>) => {
+      const { error: err } = await db().from('watchlist').insert(watchlistItemPayload(w));
+      if (err) throw err;
+      await refresh();
+    },
+    [refresh],
+  );
+
+  const updateWatchlistItem = useCallback(
+    async (id: string, w: Omit<WatchlistItem, 'id' | 'createdAt'>) => {
+      const { error: err } = await db()
+        .from('watchlist').update(watchlistItemPayload(w)).eq('id', id);
+      if (err) throw err;
+      await refresh();
+    },
+    [refresh],
+  );
+
+  const deleteWatchlistItem = useCallback(
+    async (id: string) => {
+      const { error: err } = await db().from('watchlist').delete().eq('id', id);
+      if (err) throw err;
+      await refresh();
+    },
+    [refresh],
+  );
+
   /** The January ritual: after the 1099 arrives, record (or correct) the
    * loss carried into a tax year. Null amount removes the row. */
   const setCarryforward = useCallback(
@@ -2351,6 +2392,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       updateSetting,
       updateSettings,
       setCarryforward,
+      addWatchlistItem,
+      updateWatchlistItem,
+      deleteWatchlistItem,
       loading,
       error,
       refresh,
@@ -2402,7 +2446,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       state, mergedParked, quotes, dayChange, quotesAsOf, quotesError, refreshQuotes, tickerNames,
       contributionCap,
       concentrationCap, ltTaxRate, stTaxRate, dividendTaxRates, updateSetting, updateSettings,
-      setCarryforward, loading, error,
+      setCarryforward, addWatchlistItem, updateWatchlistItem, deleteWatchlistItem, loading, error,
       refresh, addCashEvent, updateCashEvent, deleteCashEvent, addLot, deleteLot, updateLotDetails,
       closePosition, recordSplit,
       setTradeWashSale, deleteTrade, updateParked, recordMilestone, deleteMilestone,

@@ -9,6 +9,7 @@ import {
   Swords,
   Archive,
   History,
+  Telescope,
   HandCoins,
   Sunrise,
   BookOpen,
@@ -32,6 +33,7 @@ export const NAV_SECTIONS: {
     items: [
       { to: '/ledger', label: 'Cash Ledger', icon: Wallet },
       { to: '/positions', label: 'Positions', icon: TrendingUp },
+      { to: '/watchlist', label: 'Watchlist', icon: Telescope },
       { to: '/trades', label: 'Trade Log', icon: ScrollText },
       { to: '/milestones', label: 'Milestones', icon: Flag },
       { to: '/tax', label: 'Tax Reserve', icon: Landmark },

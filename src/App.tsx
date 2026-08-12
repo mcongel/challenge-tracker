@@ -7,6 +7,7 @@ import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { CashLedger } from './pages/CashLedger';
 import { Positions } from './pages/Positions';
+import { Watchlist } from './pages/Watchlist';
 import { TradeLog } from './pages/TradeLog';
 import { Milestones } from './pages/Milestones';
 import { TaxReserve } from './pages/TaxReserve';
@@ -50,6 +51,7 @@ function AppRoutes() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/ledger" element={<CashLedger />} />
         <Route path="/positions" element={<Positions />} />
+        <Route path="/watchlist" element={<Watchlist />} />
         <Route path="/trades" element={<TradeLog />} />
         <Route path="/milestones" element={<Milestones />} />
         <Route path="/tax" element={<TaxReserve />} />

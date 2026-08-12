@@ -23,6 +23,7 @@ export const TABLE_NAMES = [
   'loss_carryforwards',
   'price_overrides',
   'app_settings',
+  'watchlist',
 ];
 
 /** Wipe order for --wipe restores: children before parents; accounts last. */
@@ -31,7 +32,7 @@ export const WIPE_ORDER = [
   'parked_lot_adjustments', 'parked_lots', 'parked_sales', 'parked_cash_events',
   'outside_sales', 'cash_events', 'position_lots', 'trades',
   'milestones', 'benchmark_deposits', 'snapshots', 'loss_carryforwards', 'price_overrides',
-  'parked_positions', 'app_settings', 'accounts',
+  'watchlist', 'parked_positions', 'app_settings', 'accounts',
 ];
 
 /** Page size for full-table reads. PostgREST enforces max-rows (default

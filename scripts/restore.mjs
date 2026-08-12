@@ -115,6 +115,12 @@ const TABLES = [
   ['app_settings', get('app_settings').map((s) => ({
     key: s.key, value: s.value, updated_at: s.updatedAt ?? undefined,
   })), 'key'],
+  ['watchlist', get('watchlist').map((w) => ({
+    id: w.id, ticker: w.ticker, catalyst: w.catalyst ?? null,
+    catalyst_date: w.catalystDate ?? null, entry_note: w.entryNote ?? null,
+    planned_target: w.plannedTarget ?? null, notes: w.notes ?? null,
+    created_at: w.createdAt ?? undefined,
+  })), 'id'],
 ];
 
 // Drift guard: the shared roster and this file's mappers must agree — a

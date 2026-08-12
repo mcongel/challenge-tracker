@@ -209,6 +209,22 @@ export interface ParkedSale {
 }
 
 /** Net loss carried INTO taxYear from prior years, stored as a positive number. */
+/** A candidate on the bench — researched setups waiting for the rotation.
+ * Context only; nothing here touches positions or score math. */
+export interface WatchlistItem {
+  id: string;
+  ticker: string;
+  /** The thesis: what's supposed to move it. */
+  catalyst?: string | null;
+  catalystDate?: string | null;
+  /** Free text — an entry zone, not a false-precision number. */
+  entryNote?: string | null;
+  /** The Rule 8 target, drafted before the entry exists. */
+  plannedTarget?: number | null;
+  notes?: string | null;
+  createdAt?: string | null;
+}
+
 export interface LossCarryforward {
   taxYear: number;
   amount: number;

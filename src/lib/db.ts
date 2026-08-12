@@ -18,6 +18,7 @@ import type {
   ScenarioRotation,
   Snapshot,
   Trade,
+  WatchlistItem,
 } from './engine';
 
 export function db() {
@@ -335,4 +336,24 @@ export const mapSnapshot = (r: any): Snapshot => ({
 export const mapCarryforward = (r: any): LossCarryforward => ({
   taxYear: r.tax_year,
   amount: Number(r.amount),
+});
+
+export const mapWatchlistItem = (r: any): WatchlistItem => ({
+  id: r.id,
+  ticker: r.ticker,
+  catalyst: r.catalyst,
+  catalystDate: r.catalyst_date,
+  entryNote: r.entry_note,
+  plannedTarget: r.planned_target == null ? null : Number(r.planned_target),
+  notes: r.notes,
+  createdAt: r.created_at,
+});
+
+export const watchlistItemPayload = (w: Omit<WatchlistItem, 'id' | 'createdAt'>) => ({
+  ticker: w.ticker,
+  catalyst: w.catalyst ?? null,
+  catalyst_date: w.catalystDate ?? null,
+  entry_note: w.entryNote ?? null,
+  planned_target: w.plannedTarget ?? null,
+  notes: w.notes ?? null,
 });
