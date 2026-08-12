@@ -135,6 +135,7 @@ Added 2026-08-11 as Phase 1 of the parked pile growing into a full tracking syst
 9. **Rules.** Static page with the full rules text (copy from the workbook's Rules tab). Show a link to it after any milestone banking event and after any closed trade with |gain| > 25%.
 10. **Income** (added 2026-08-11). The pile's dividend engine: trailing-12M / projected-12M / est.-tax-YTD / yield-on-cost stat cards, a 24-month bar chart (12 actual + 12 projected), per-holding income table with rate-source badge and set-rate affordance, and the sortable distribution history with reclassify/delete actions. All figures parked-pile context — nothing here enters score math.
 11. **Transition** (added 2026-08-14). The retirement modeler: scenario list with after-tax target and per-scenario tax rates, planned-rotations table with short-term/clamped warnings and net-proceeds/est.-tax previews, stacked after-tax income projection (green = today's holdings, indigo = rotation buys) with the target line and target-reached year, and a two-scenario overlay comparison. Pure pile context.
+12. **Activity** (added 2026-08-12). Every pile event in one reverse-chronological stream — buys, sells (with gain/term/funded detail and undo/edit/delete), dividends (DRIP vs cash, classification), ACATS transfers, and account cash movements — with persisted account/ticker/type filters and the realized-total header. Pile only, never the score; the challenge account's history stays on the Cash Ledger and Trade Log.
 
 ## Calculations to port exactly
 
@@ -163,7 +164,7 @@ All formulas live in the reference workbook; port them 1:1. Key ones:
 - No automated trading, alerts by UI badge only (no email/push in v1).
 
 ## Definition of done (v1)
-- All twelve screens (the eleven above plus in-app Help) functional, persisting to the `challenge` schema in the existing Supabase project, behind the existing auth.
+- All screens above (plus in-app Help) functional, persisting to the `challenge` schema in the existing Supabase project, behind the existing auth.
 - Enter the workbook's example data → app numbers match workbook numbers exactly (including a partial-close case).
 - Daily snapshot writes on first load; dashboard shows a Total Score trend once ≥2 snapshots exist.
 - Milestone-hit and tax-skim-due alerts fire correctly on test data.

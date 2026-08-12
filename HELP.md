@@ -99,6 +99,7 @@ Every deposit bought shadow VOO the same day. The Benchmark screen shows the rac
 | Tax Reserve | Quarterly 30% checklist |
 | Benchmark | You vs shadow VOO |
 | Parked Pile | The foundation — context only |
+| Activity | Every pile event, filterable by account/ticker/type |
 | Income | What the pile pays; 1099 filters and ROC basis |
 | Transition | Retirement rotations, on paper only |
 | Rules | The law. Read after big wins especially |

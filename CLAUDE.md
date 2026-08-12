@@ -23,7 +23,7 @@ A personal trading scoreboard app for Mark's swing-trading "challenge account." 
 ## Conventions
 - Money as decimals, positive amounts + typed direction (see CashEvent in spec).
 - Dates ISO strings. Long-term threshold: holding > 365 days (longTermDate = buyDate + 366).
-- Keep components small; one screen per route matching the eleven screens in the spec.
+- Keep components small; one screen per route matching the screens listed in the spec.
 - Test the calculation layer against the workbook's example rows before building UI on top of it.
 
 ## Working style

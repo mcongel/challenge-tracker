@@ -12,6 +12,7 @@ import { Milestones } from './pages/Milestones';
 import { TaxReserve } from './pages/TaxReserve';
 import { Benchmark } from './pages/Benchmark';
 import { ParkedPile } from './pages/ParkedPile';
+import { Activity } from './pages/Activity';
 import { Income } from './pages/Income';
 import { Transition } from './pages/Transition';
 import { Rules } from './pages/Rules';
@@ -54,6 +55,7 @@ function AppRoutes() {
         <Route path="/tax" element={<TaxReserve />} />
         <Route path="/benchmark" element={<Benchmark />} />
         <Route path="/parked" element={<ParkedPile />} />
+        <Route path="/activity" element={<Activity />} />
         <Route path="/income" element={<Income />} />
         <Route path="/transition" element={<Transition />} />
         <Route path="/rules" element={<Rules />} />

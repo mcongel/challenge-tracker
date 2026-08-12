@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useMemo, useState } from 'react';
 import {
   AlertTriangle, Archive, ArrowDown, ArrowLeftRight, ArrowUp, ArrowUpDown, ChevronDown,
-  ChevronRight, Divide, Lock, Pencil, Plus, Scissors, Settings2, Trash2, Undo2, Unlock,
+  ChevronRight, Divide, Lock, Pencil, Plus, Scissors, Settings2, Trash2, Unlock,
 } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
@@ -52,66 +52,8 @@ const CATEGORY_STYLES: Record<ParkedPosition['category'], string> = {
   Other: 'bg-gray-100 text-gray-600',
 };
 
-/** The activity feed folds every pile event into one stream. */
-const ACTIVITY_PAGE = 50;
-const ACTIVITY_KIND_STYLES: Record<string, string> = {
-  buy: 'bg-indigo-50 text-indigo-700',
-  sell: 'bg-teal-50 text-teal-700',
-  dividend: 'bg-sky-50 text-sky-700',
-  transfer: 'bg-gray-100 text-gray-600',
-  cash: 'bg-green-50 text-green-700',
-};
 
-interface ActivityRow {
-  key: string;
-  date: string | null;
-  kind: 'buy' | 'sell' | 'dividend' | 'transfer' | 'cash';
-  kindLabel: string;
-  ticker: string | null;
-  accountId: string | null;
-  account: string;
-  shares: number | null;
-  price: number | null;
-  amount: number;
-  amountCls: string;
-  detail?: string;
-  classification?: DividendClassification | null;
-  sale?: ParkedSale;
-}
-
-function SaleDetail({ sale: s }: { sale: ParkedSale }) {
-  const gain = s.costBasis == null ? null : s.proceeds - s.costBasis;
-  const term =
-    s.ltShares == null ? null
-    : s.ltShares >= s.shares - 1e-9 ? 'LT'
-    : s.ltShares <= 1e-9 ? 'ST' : 'MIXED';
-  return (
-    <span className="text-xs">
-      <span className={cn('font-medium tabular-nums',
-        gain === null ? 'text-gray-400' : gain >= 0 ? 'text-green-600' : 'text-red-600')}>
-        {gain === null
-          ? 'unknown basis'
-          : `${gain >= 0 ? '+' : '−'}${formatCurrency(Math.abs(roundCents(gain)))}`}
-      </span>
-      {term && (
-        <span className={cn('ml-1 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium',
-          term === 'LT' ? 'bg-teal-50 text-teal-700'
-          : term === 'ST' ? 'bg-indigo-50 text-indigo-700'
-          : 'bg-amber-50 text-amber-800')}>
-          {term}
-        </span>
-      )}
-      {s.fundedChallenge && (
-        <span className="ml-1 inline-block rounded-full bg-green-50 text-green-700 px-1.5 py-0.5 text-[10px] font-medium">
-          → challenge
-        </span>
-      )}
-      {s.notes && <span className="ml-1 text-gray-400">{s.notes}</span>}
-    </span>
-  );
-}
-
-const fmtSh = (n: number) => String(Number(n.toFixed(4)));
+export const fmtSh = (n: number) => String(Number(n.toFixed(4)));
 
 type GroupBy = 'account' | 'ticker' | 'flat';
 type SortKey =
@@ -173,156 +115,15 @@ export function SortHeader<K extends string = SortKey>({
 
 export function ParkedPile() {
   const {
-    parked: allParked, parkedLots, parkedSales, parkedCashEvents, accounts, tickerNames,
-    deleteParkedSale, undoParkedSale, concentrationCap, updateSetting, accountCash, dayChange,
-    ltTaxRate, stTaxRate, overrides, overrideSetAt, loading, error,
+    parked: allParked, parkedLots, accounts, tickerNames,
+    concentrationCap, updateSetting, accountCash, dayChange,
+    overrides, overrideSetAt, loading, error,
   } = useData();
   // Archived (zero-share) rows keep dividend history alive on the Income
   // screen; this table shows live holdings only.
   const parked = useMemo(() => allParked.filter((p) => !isArchivedPosition(p)), [allParked]);
   const [capOpen, setCapOpen] = useState(false);
   const [splitTicker, setSplitTicker] = useState<string | null>(null);
-  const [deletingSale, setDeletingSale] = useState<ParkedSale | null>(null);
-
-  // Activity feed: every pile event in one filterable stream. Filters
-  // persist (1099 season and audits revisit the same slices); stale values
-  // fall back to "all" so a vanished ticker can't invisibly empty the table.
-  const [showAllActivity, setShowAllActivity] = useState(false);
-  const [actFilters, setActFiltersState] = useState<{ account: string; ticker: string; kind: string }>(() => {
-    try {
-      const stored = JSON.parse(localStorage.getItem('pileActivityFilters') ?? 'null');
-      if (stored && typeof stored.account === 'string' && typeof stored.ticker === 'string' && typeof stored.kind === 'string') return stored;
-    } catch { /* fall through to default */ }
-    return { account: '', ticker: '', kind: '' };
-  });
-  const setActFilters = (f: { account: string; ticker: string; kind: string }) => {
-    setActFiltersState(f);
-    localStorage.setItem('pileActivityFilters', JSON.stringify(f));
-  };
-
-  const activity = useMemo<ActivityRow[]>(() => {
-    const posById = new Map(allParked.map((p) => [p.id, p]));
-    const accName = (id: string | null) => accounts.find((a) => a.id === id)?.name ?? '—';
-    const rows: ActivityRow[] = [];
-    for (const l of parkedLots) {
-      const pos = posById.get(l.parkedPositionId);
-      if (!pos) continue;
-      if (l.source === 'purchase') {
-        const isTransfer = Boolean(l.notes?.startsWith('ACATS from'));
-        rows.push({
-          key: `lot-${l.id}`,
-          date: l.date,
-          kind: isTransfer ? 'transfer' : 'buy',
-          kindLabel: isTransfer ? 'transfer in' : 'buy',
-          ticker: pos.ticker,
-          accountId: pos.accountId,
-          account: pos.account,
-          shares: l.shares,
-          price: l.price ?? null,
-          amount: l.amount,
-          amountCls: 'text-gray-900',
-          detail: l.notes ?? undefined,
-        });
-      } else {
-        // DRIP vs cash keys off price (the house discriminator) — a sold
-        // DRIP relic at zero shares is still a DRIP income record.
-        const drip = l.price != null;
-        rows.push({
-          key: `lot-${l.id}`,
-          date: l.date,
-          kind: 'dividend',
-          kindLabel: drip ? 'DRIP' : 'dividend',
-          ticker: pos.ticker,
-          accountId: pos.accountId,
-          account: pos.account,
-          shares: l.shares,
-          price: l.price ?? null,
-          amount: l.amount,
-          amountCls: 'text-green-600',
-          classification: l.classification ?? 'unclassified',
-          detail: l.notes && l.notes !== 'reinvested' && l.notes !== 'cash' ? l.notes : undefined,
-        });
-      }
-    }
-    for (const s of parkedSales) {
-      rows.push({
-        key: `sale-${s.id}`,
-        date: s.date,
-        kind: 'sell',
-        kindLabel: 'sell',
-        ticker: s.ticker,
-        accountId: s.accountId,
-        account: accName(s.accountId),
-        shares: s.shares,
-        price: s.pricePerShare,
-        amount: s.proceeds,
-        amountCls: 'text-gray-900',
-        sale: s,
-      });
-    }
-    for (const e of parkedCashEvents) {
-      rows.push({
-        key: `cash-${e.id}`,
-        date: e.date,
-        kind: 'cash',
-        kindLabel: e.type,
-        ticker: null,
-        accountId: e.accountId,
-        account: accName(e.accountId),
-        shares: null,
-        price: null,
-        amount: e.amount,
-        amountCls: e.type === 'withdrawal' || e.type === 'fee' || e.amount < 0 ? 'text-red-600' : 'text-green-600',
-        detail: e.notes ?? undefined,
-      });
-    }
-    // Newest first; undated rows sink to the bottom.
-    return rows.sort((a, b) => (b.date ?? '0000').localeCompare(a.date ?? '0000'));
-  }, [allParked, parkedLots, parkedSales, parkedCashEvents, accounts]);
-
-  const actAccounts = useMemo(
-    () => accounts.filter((a) => activity.some((r) => r.accountId === a.id)),
-    [accounts, activity],
-  );
-  const actTickers = useMemo(
-    () => [...new Set(activity.map((r) => r.ticker).filter(Boolean) as string[])].sort(),
-    [activity],
-  );
-  const actAccount = actAccounts.some((a) => a.id === actFilters.account) ? actFilters.account : '';
-  const actTicker = actTickers.includes(actFilters.ticker) ? actFilters.ticker : '';
-  const actKind = ['buy', 'sell', 'dividend', 'transfer', 'cash'].includes(actFilters.kind) ? actFilters.kind : '';
-  const filteredActivity = useMemo(
-    () => activity.filter((r) =>
-      (!actAccount || r.accountId === actAccount) &&
-      (!actTicker || r.ticker === actTicker) &&
-      (!actKind || r.kind === actKind)),
-    [activity, actAccount, actTicker, actKind],
-  );
-  const visibleActivity = showAllActivity ? filteredActivity : filteredActivity.slice(0, ACTIVITY_PAGE);
-  const [editingSale, setEditingSale] = useState<ParkedSale | null>(null);
-  const [undoingSale, setUndoingSale] = useState<ParkedSale | null>(null);
-
-  // Undo is LIFO per holding: only the newest snapshot sale for a
-  // ticker+account can be undone (older restores would fight newer state).
-  const newestSnapshotSaleIds = useMemo(() => {
-    const newest = new Map<string, ParkedSale>();
-    for (const s of parkedSales) {
-      if (!s.consumed) continue;
-      const key = `${s.ticker}|${s.accountId}`;
-      const cur = newest.get(key);
-      if (!cur || (s.createdAt ?? s.date) > (cur.createdAt ?? cur.date)) newest.set(key, s);
-    }
-    return new Set([...newest.values()].map((s) => s.id));
-  }, [parkedSales]);
-
-  const realized = parkedSales.filter((s) => s.costBasis != null);
-  const realizedTotal = realized.reduce((sum, s) => sum + (s.proceeds - (s.costBasis as number)), 0);
-  const estTaxTotal = realized.reduce(
-    (sum, s) =>
-      sum + estimatedPileTax(s.proceeds - (s.costBasis as number), s.shares, s.ltShares, ltTaxRate, stTaxRate),
-    0,
-  );
-  const unknownBasisCount = parkedSales.length - realized.length;
   const [editing, setEditing] = useState<ParkedPosition | null>(null);
   const [trimming, setTrimming] = useState<ParkedPosition | null>(null);
   const [transferring, setTransferring] = useState<ParkedPosition | null>(null);
@@ -744,164 +545,12 @@ export function ParkedPile() {
         </div>
       )}
 
-      {/* The pile's own activity feed — every buy, sell, dividend, transfer,
-          and cash movement in one stream. Pile only, never in the score. */}
-      {activity.length > 0 && (
-        <div className="mt-4 bg-white rounded-lg shadow-lg overflow-x-auto">
-          <div className="px-4 pt-3 pb-1 flex flex-wrap items-baseline justify-between gap-2">
-            <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-              Activity — pile only, never in the score
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <select value={actAccount} onChange={(e) => setActFilters({ account: e.target.value, ticker: actTicker, kind: actKind })}
-                className={cn(inputCls, 'w-auto py-1 text-xs')} aria-label="Filter by account">
-                <option value="">All accounts</option>
-                {actAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
-              <select value={actTicker} onChange={(e) => setActFilters({ account: actAccount, ticker: e.target.value, kind: actKind })}
-                className={cn(inputCls, 'w-auto py-1 text-xs')} aria-label="Filter by ticker">
-                <option value="">All tickers</option>
-                {actTickers.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
-              <select value={actKind} onChange={(e) => setActFilters({ account: actAccount, ticker: actTicker, kind: e.target.value })}
-                className={cn(inputCls, 'w-auto py-1 text-xs')} aria-label="Filter by type">
-                <option value="">All types</option>
-                <option value="buy">Buys</option>
-                <option value="sell">Sells</option>
-                <option value="dividend">Dividends</option>
-                <option value="transfer">Transfers</option>
-                <option value="cash">Cash</option>
-              </select>
-            </div>
-          </div>
-          <div className="px-4 pb-1">
-            <p className="text-sm tabular-nums">
-              <span className="text-gray-500">Realized: </span>
-              <span className={cn('font-bold', realizedTotal >= 0 ? 'text-green-600' : 'text-red-600')}>
-                {formatCurrency(roundCents(realizedTotal))}
-              </span>
-              {estTaxTotal > 0 && (
-                <span className="text-xs text-gray-400" title={`Rough estimate (~${formatPercent(ltTaxRate, 0)} LT / ~${formatPercent(stTaxRate, 0)} ST — editable on Tax Reserve). The quarterly skim is challenge-account-only — set this aside yourself.`}>
-                  {' '}· est. tax {formatCurrency(roundCents(estTaxTotal))}
-                </span>
-              )}
-              {unknownBasisCount > 0 && (
-                <span className="text-xs text-gray-400"> · {unknownBasisCount} sale{unknownBasisCount > 1 ? 's' : ''} with unknown basis excluded</span>
-              )}
-            </p>
-          </div>
-          <table className="w-full text-sm compact-table">
-            <thead>
-              <tr className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
-                <th className="px-4 py-2">Date</th>
-                <th className="px-4 py-2">Type</th>
-                <th className="px-4 py-2">Ticker</th>
-                <th className="px-4 py-2">Account</th>
-                <th className="px-4 py-2 text-right">Shares</th>
-                <th className="px-4 py-2 text-right">Price</th>
-                <th className="px-4 py-2 text-right">Amount</th>
-                <th className="px-4 py-2">Detail</th>
-                <th className="px-2 py-2" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {visibleActivity.map((r) => (
-                <tr key={r.key} className="hover:bg-gray-50">
-                  <td className={cn('px-4 py-2 tabular-nums', r.date ? 'text-gray-500' : 'text-amber-800')}>
-                    {r.date ?? 'no date'}
-                  </td>
-                  <td className="px-4 py-2">
-                    <span className={cn('inline-block rounded-full px-2 py-0.5 text-xs font-medium', ACTIVITY_KIND_STYLES[r.kind])}>
-                      {r.kindLabel}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2 font-medium">{r.ticker ?? <span className="text-gray-400">—</span>}</td>
-                  <td className="px-4 py-2 text-gray-500">{r.account}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">{r.shares != null && r.shares > 0 ? fmtSh(r.shares) : '—'}</td>
-                  <td className="px-4 py-2 text-right tabular-nums text-gray-500">{r.price != null ? formatCurrency(r.price) : '—'}</td>
-                  <td className={cn('px-4 py-2 text-right tabular-nums font-medium', r.amountCls)}>
-                    {formatCurrency(roundCents(r.amount))}
-                  </td>
-                  <td className="px-4 py-2">
-                    {r.sale ? <SaleDetail sale={r.sale} /> : (
-                      <span className="text-xs text-gray-500">
-                        {r.classification && (
-                          <span className={cn('mr-1 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium',
-                            classificationPillCls(r.classification))}>
-                            {CLASSIFICATION_LABELS[r.classification]}
-                          </span>
-                        )}
-                        {r.detail}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-2 py-2 whitespace-nowrap">
-                    {r.sale && (
-                      <>
-                        {r.sale.consumed && (
-                          <button
-                            onClick={() => setUndoingSale(r.sale!)}
-                            disabled={!newestSnapshotSaleIds.has(r.sale.id)}
-                            className="p-1 rounded hover:bg-gray-100 disabled:opacity-30"
-                            aria-label="Undo sale"
-                            title={newestSnapshotSaleIds.has(r.sale.id)
-                              ? 'Undo — lots and basis come back exactly'
-                              : 'Undo newer sales of this holding first'}
-                          >
-                            <Undo2 className="h-4 w-4 text-gray-300 hover:text-gray-600" />
-                          </button>
-                        )}
-                        <button onClick={() => setEditingSale(r.sale!)} className="p-1 rounded hover:bg-gray-100" aria-label="Edit sale record">
-                          <Pencil className="h-4 w-4 text-gray-300 hover:text-gray-600" />
-                        </button>
-                        <button onClick={() => setDeletingSale(r.sale!)} className="p-1 rounded hover:bg-red-50" aria-label="Delete sale record">
-                          <Trash2 className="h-4 w-4 text-gray-300 hover:text-red-600" />
-                        </button>
-                      </>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {visibleActivity.length === 0 && (
-                <tr><td colSpan={9} className="px-4 py-6 text-sm text-gray-400 text-center">Nothing matches the filters</td></tr>
-              )}
-            </tbody>
-          </table>
-          {filteredActivity.length > ACTIVITY_PAGE && (
-            <button
-              onClick={() => setShowAllActivity((v) => !v)}
-              className="w-full py-2 text-xs font-medium text-indigo-600 hover:text-indigo-800 border-t border-gray-100"
-            >
-              {showAllActivity ? 'Show recent only' : `Show all ${filteredActivity.length} events`}
-            </button>
-          )}
-        </div>
-      )}
-
       {editing && <EditParkedModal position={editing} onClose={() => setEditing(null)} />}
       {trimming && <TrimModal position={trimming} onClose={() => setTrimming(null)} />}
       {transferring && <TransferModal position={transferring} onClose={() => setTransferring(null)} />}
       {splitTicker && <SplitModal ticker={splitTicker} onClose={() => setSplitTicker(null)} />}
       {accountsOpen && <AccountsModal onClose={() => setAccountsOpen(false)} />}
       {addOpen && <AddHoldingModal onClose={() => setAddOpen(false)} />}
-      {deletingSale && (
-        <ConfirmModal
-          title="Delete sale record"
-          message={`Delete the ${deletingSale.ticker} sale from ${deletingSale.date} (${formatCurrency(deletingSale.proceeds)})? This removes only the history record — it does not restore shares or lots.${deletingSale.consumed ? ` If you want the shares back, use Undo instead. Deleting the record also lifts the check that stops OLDER ${deletingSale.ticker} sales from being undone out of order — their Undo could then restore lots this sale already consumed.` : ''}`}
-          onConfirm={() => deleteParkedSale(deletingSale.id)}
-          onClose={() => setDeletingSale(null)}
-        />
-      )}
-      {undoingSale && (
-        <ConfirmModal
-          title="Undo sale"
-          message={`Undo the ${undoingSale.ticker} sale from ${undoingSale.date} (${fmtSh(undoingSale.shares)} sh, ${formatCurrency(undoingSale.proceeds)})? Lots, basis, and ROC adjustments come back exactly; ROC recorded after this sale is recomputed over the restored lots.${undoingSale.fundedChallenge ? ' IMPORTANT: this sale funded the challenge — the ledger Deposit and its shadow VOO twin are NOT removed. Fix the Cash Ledger yourself.' : ''}`}
-          confirmLabel="Undo sale"
-          onConfirm={() => undoParkedSale(undoingSale.id)}
-          onClose={() => setUndoingSale(null)}
-        />
-      )}
-      {editingSale && <EditSaleModal sale={editingSale} onClose={() => setEditingSale(null)} />}
       {capOpen && (
         <CapModal
           current={concentrationCap}
@@ -959,7 +608,7 @@ function CapModal({
   );
 }
 
-function EditSaleModal({ sale: s, onClose }: { sale: ParkedSale; onClose: () => void }) {
+export function EditSaleModal({ sale: s, onClose }: { sale: ParkedSale; onClose: () => void }) {
   const { updateParkedSale, editParkedSaleAmounts } = useData();
   // Snapshot sales re-derive basis and term from the lots — their numbers are
   // truly editable. Legacy (pre-snapshot) sales can only correct the record.
