@@ -1192,6 +1192,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       let costBasis: number | null = null;
       let ltShares: number | null = null;
       let snapshot: ParkedSaleSnapshot | null = null;
+      let consumption: ReturnType<typeof consumeLotsFifo> | null = null;
+      let dripDeletes: string[] = [];
+      let hardDeletes: string[] = [];
       if (positionLots.length > 0) {
         // Consume lots oldest-first so remaining basis and unlock clocks stay
         // honest — and so the sale record carries the real basis and LT split.
@@ -1203,8 +1206,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         // Undated shares count as LT, matching estimatedPileTax's documented
         // assumption (and the TrimModal estimate).
         ltShares = preview.ltShares + preview.unknownShares;
-        const consumption = consumeLotsFifo(positionLots, args.shares, positionAdjustments);
-        const { updates, deletes, adjustmentUpdates } = consumption;
+        consumption = consumeLotsFifo(positionLots, args.shares, positionAdjustments);
         // DRIP dividend lots double as income records. Selling their
         // reinvested shares is right (the basis went into the sale), but the
         // dividend still happened — keep the lot at zero shares so trailing
@@ -1212,19 +1214,47 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         // (Account-cash math tells sold-DRIP relics from cash dividends by
         // price: cash dividends have none.)
         const lotSourceById = new Map(positionLots.map((l) => [l.id, l.source]));
-        const dripDeletes = deletes.filter((id) => lotSourceById.get(id) === 'dividend');
-        const hardDeletes = deletes.filter((id) => lotSourceById.get(id) !== 'dividend');
+        dripDeletes = consumption.deletes.filter((id) => lotSourceById.get(id) === 'dividend');
+        hardDeletes = consumption.deletes.filter((id) => lotSourceById.get(id) !== 'dividend');
         const stampLookup = new Map(args.allLots.map((l) => [l.id, l.rocAllocatedAt ?? null]));
         snapshot = buildSaleSnapshot(
           p, positionLots, positionAdjustments, consumption, dripDeletes,
           (id) => stampLookup.get(id),
         );
-        for (const u of updates) {
+      }
+
+      // The sale row (and its undo snapshot) is written FIRST: a mid-failure
+      // below leaves a recorded sale whose Undo converges — restoring only
+      // what actually applied — instead of eaten shares with no record.
+      const { data: saleRow, error: saleErr } = await client
+        .from('parked_sales')
+        .insert(
+          parkedSalePayload({
+            ticker: p.ticker,
+            accountId: p.accountId,
+            date: args.date,
+            shares: args.shares,
+            pricePerShare: args.pricePerShare,
+            proceeds: roundCents(args.shares * args.pricePerShare),
+            costBasis,
+            ltShares,
+            fundedChallenge: args.fundedChallenge,
+            consumed: snapshot,
+            notes: args.notes ?? null,
+          }),
+        )
+        .select('id')
+        .single();
+      if (saleErr) throw saleErr;
+      const saleId = saleRow.id as string;
+
+      if (consumption) {
+        for (const u of consumption.updates) {
           const { error: err } = await client
             .from('parked_lots').update({ shares: u.shares, amount: u.amount }).eq('id', u.id);
           if (err) throw err;
         }
-        for (const a of adjustmentUpdates) {
+        for (const a of consumption.adjustmentUpdates) {
           const { error: err } = await client
             .from('parked_lot_adjustments').update({ amount: a.amount }).eq('id', a.id);
           if (err) throw err;
@@ -1252,23 +1282,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           if (err) throw err;
         }
       }
-
-      const { error: saleErr } = await client.from('parked_sales').insert(
-        parkedSalePayload({
-          ticker: p.ticker,
-          accountId: p.accountId,
-          date: args.date,
-          shares: args.shares,
-          pricePerShare: args.pricePerShare,
-          proceeds: roundCents(args.shares * args.pricePerShare),
-          costBasis,
-          ltShares,
-          fundedChallenge: args.fundedChallenge,
-          consumed: snapshot,
-          notes: args.notes ?? null,
-        }),
-      );
-      if (saleErr) throw saleErr;
+      return saleId;
     },
     [recomputeParkedAggregate],
   );
@@ -1291,7 +1305,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         throw new Error(`Only ${p.shares} shares parked; cannot trim ${shares}`);
       }
       const positionLots = state.parkedLots.filter((l) => l.parkedPositionId === parkedId);
-      await trimCore({
+      try {
+      const saleId = await trimCore({
         position: p,
         lots: positionLots,
         adjustments: adjustmentsForLots(positionLots, state.parkedLotAdjustments),
@@ -1303,23 +1318,41 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (depositVooPrice) {
-        const amount = roundCents(shares * pricePerShare);
-        const { error: cashErr } = await client.from('cash_events').insert(
-          cashEventPayload({
-            date,
-            type: 'Deposit',
-            amount,
-            sourceDestination: `${p.ticker} trim (${p.account})`,
-            accountId: p.accountId,
-          }),
-        );
-        if (cashErr) throw cashErr;
-        const { error: benchErr } = await client
-          .from('benchmark_deposits')
-          .insert({ date, amount, voo_price_that_day: depositVooPrice });
-        if (benchErr) throw benchErr;
+        try {
+          const amount = roundCents(shares * pricePerShare);
+          const { data: cashRow, error: cashErr } = await client
+            .from('cash_events')
+            .insert(
+              cashEventPayload({
+                date,
+                type: 'Deposit',
+                amount,
+                sourceDestination: `${p.ticker} trim (${p.account})`,
+                accountId: p.accountId,
+              }),
+            )
+            .select('id')
+            .single();
+          if (cashErr) throw cashErr;
+          const { error: benchErr } = await client
+            .from('benchmark_deposits')
+            .insert({ date, amount, voo_price_that_day: depositVooPrice, cash_event_id: cashRow.id });
+          if (benchErr) throw benchErr;
+        } catch (fundErr) {
+          // The sale is real; only the funding failed. Un-mark it so the
+          // record doesn't claim a ledger deposit that doesn't exist.
+          await client.from('parked_sales').update({ funded_challenge: false }).eq('id', saleId);
+          const msg = fundErr instanceof Error ? fundErr.message : String(fundErr);
+          throw new Error(
+            `Sale recorded, but funding the challenge failed (${msg}). Add the Deposit manually on the Cash Ledger.`,
+          );
+        }
       }
-      await refresh();
+      } finally {
+        // Refresh even on failure — a mid-trim error leaves a recorded sale
+        // whose Undo affordance must be visible immediately.
+        await refresh();
+      }
     },
     [refresh, state.parked, state.parkedLots, state.parkedLotAdjustments, trimCore],
   );
@@ -1591,7 +1624,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         } catch (redoErr) {
           const msg = redoErr instanceof Error ? redoErr.message : String(redoErr);
           throw new Error(
-            `The sale was undone but re-applying failed (${msg}). Your shares are restored — record the sale again.`,
+            `The sale was undone but re-applying failed (${msg}). If a new sale row appeared, Undo it to converge; otherwise your shares are restored — record the sale again.`,
           );
         }
       } finally {
