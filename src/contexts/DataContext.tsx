@@ -552,46 +552,58 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const client = db();
       const result = closeShares(state.lots, ticker, shares, pricePerShare, closeDate, allocations);
 
-      const { error: tradeErr } = await client.from('trades').insert(
-        result.trades.map((t) =>
-          tradePayload({
-            ...t,
-            costBasis: roundCents(t.costBasis),
-            proceeds: roundCents(t.proceeds),
-            washSale: false,
-          }),
-        ),
-      );
-      if (tradeErr) throw tradeErr;
+      try {
+        // Trades are one batch insert (all-or-nothing at PostgREST), so a
+        // failure below can't leave half the paper trail.
+        const { error: tradeErr } = await client.from('trades').insert(
+          result.trades.map((t) =>
+            tradePayload({
+              ...t,
+              costBasis: roundCents(t.costBasis),
+              proceeds: roundCents(t.proceeds),
+              washSale: false,
+            }),
+          ),
+        );
+        if (tradeErr) throw tradeErr;
 
-      const before = state.lots.filter((l) => l.ticker === ticker);
-      const afterById = new Map(
-        result.remainingLots.filter((l) => l.ticker === ticker).map((l) => [l.id, l]),
-      );
-      for (const lot of before) {
-        const after = afterById.get(lot.id);
-        if (!after) {
-          const { error: err } = await client.from('position_lots').delete().eq('id', lot.id);
-          if (err) throw err;
-        } else if (after.shares !== lot.shares) {
-          const { error: err } = await client
-            .from('position_lots')
-            .update({ shares: after.shares })
-            .eq('id', lot.id);
-          if (err) throw err;
+        const before = state.lots.filter((l) => l.ticker === ticker);
+        const afterById = new Map(
+          result.remainingLots.filter((l) => l.ticker === ticker).map((l) => [l.id, l]),
+        );
+        for (const lot of before) {
+          const after = afterById.get(lot.id);
+          if (!after) {
+            const { error: err } = await client.from('position_lots').delete().eq('id', lot.id);
+            if (err) throw err;
+          } else if (after.shares !== lot.shares) {
+            const { error: err } = await client
+              .from('position_lots')
+              .update({ shares: after.shares })
+              .eq('id', lot.id);
+            if (err) throw err;
+          }
         }
-      }
 
-      const { error: cashErr } = await client.from('cash_events').insert(
-        cashEventPayload({
-          date: closeDate,
-          type: 'Sell',
-          amount: roundCents(result.totalProceeds),
-          ticker,
-        }),
-      );
-      if (cashErr) throw cashErr;
-      await refresh();
+        const { error: cashErr } = await client.from('cash_events').insert(
+          cashEventPayload({
+            date: closeDate,
+            type: 'Sell',
+            amount: roundCents(result.totalProceeds),
+            ticker,
+          }),
+        );
+        if (cashErr) throw cashErr;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(
+          `Close failed midway (${msg}). Check the Trade Log and lot list for partial records before retrying — retrying blindly can duplicate trades.`,
+        );
+      } finally {
+        // Refresh even on failure — a retry must never recompute the close
+        // from stale lots.
+        await refresh();
+      }
     },
     [refresh, state.lots],
   );
