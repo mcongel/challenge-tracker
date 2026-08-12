@@ -141,6 +141,15 @@ interface DataContextValue extends DataState {
   deleteCashEvent: (id: string) => Promise<void>;
   /** Creates the lot AND its Buy cash event. */
   addLot: (lot: Omit<PositionLot, 'id'>) => Promise<void>;
+  /** Deletes the lot; takes the Buy cash event too when exactly one matches. */
+  deleteLot: (id: string) => Promise<{ buyEventDeleted: boolean }>;
+  /** Non-monetary corrections: exit target, buy date, thesis. */
+  updateLotDetails: (
+    id: string,
+    patch: { exitTarget?: number; buyDate?: string; thesis?: string | null },
+  ) => Promise<void>;
+  /** Removes the record only — MilestoneBank row and VOO lot stay. */
+  deleteMilestone: (id: string) => Promise<void>;
   /** FIFO (or per-lot allocated) close: trades + Sell cash event + lot updates. */
   closePosition: (
     ticker: string,
@@ -1850,6 +1859,71 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     await refresh();
   }, [refresh, state.benchmarkDeposits, exampleData]);
 
+  /** Delete a lot; take its Buy cash event too when exactly one Buy row
+   * matches ticker+date+amount. Returns whether the twin went — an ambiguous
+   * or missing match leaves the ledger row for the owner to remove. */
+  const deleteLot = useCallback(
+    async (id: string): Promise<{ buyEventDeleted: boolean }> => {
+      const client = db();
+      const lot = state.lots.find((l) => l.id === id);
+      if (!lot) throw new Error('Lot not found');
+      const amount = roundCents(lot.shares * lot.avgCost);
+      const buyMatches = state.cashEvents.filter(
+        (e) =>
+          e.type === 'Buy' && e.ticker === lot.ticker && e.date === lot.buyDate &&
+          Math.abs(e.amount - amount) < 0.005,
+      );
+      const { error: err } = await client.from('position_lots').delete().eq('id', id);
+      if (err) throw err;
+      let buyEventDeleted = false;
+      if (buyMatches.length === 1) {
+        const { error: cashErr } = await client
+          .from('cash_events').delete().eq('id', buyMatches[0].id);
+        if (cashErr) {
+          await refresh();
+          throw new Error(
+            `Lot deleted, but its Buy cash event didn't delete (${cashErr.message}) — remove the ${lot.buyDate} ${lot.ticker} Buy on the Cash Ledger or account cash overstates.`,
+          );
+        }
+        buyEventDeleted = true;
+      }
+      await refresh();
+      return { buyEventDeleted };
+    },
+    [refresh, state.lots, state.cashEvents],
+  );
+
+  /** Non-monetary lot corrections — target, dates, thesis. Shares and cost
+   * are immutable (they anchor the Buy cash event and basis math). */
+  const updateLotDetails = useCallback(
+    async (
+      id: string,
+      patch: { exitTarget?: number; buyDate?: string; thesis?: string | null },
+    ) => {
+      const payload: Record<string, unknown> = {};
+      if (patch.exitTarget !== undefined) payload.exit_target = patch.exitTarget;
+      if (patch.buyDate !== undefined) payload.buy_date = patch.buyDate;
+      if (patch.thesis !== undefined) payload.thesis = patch.thesis;
+      if (Object.keys(payload).length === 0) return;
+      const { error: err } = await db().from('position_lots').update(payload).eq('id', id);
+      if (err) throw err;
+      await refresh();
+    },
+    [refresh],
+  );
+
+  /** Remove a mis-recorded milestone. Its companion artifacts — the
+   * MilestoneBank ledger row and the VOO pile lot — stay; the confirm copy
+   * lists them as manual follow-ups (deleting them here would guess). */
+  const deleteMilestone = useCallback(
+    async (id: string) => {
+      const { error: err } = await db().from('milestones').delete().eq('id', id);
+      if (err) throw err;
+      await refresh();
+    },
+    [refresh],
+  );
+
   const recordMilestone = useCallback(
     async (m: MilestoneRecord, voo?: { accountId: string; price: number }) => {
       const client = db();
@@ -2126,12 +2200,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       updateCashEvent,
       deleteCashEvent,
       addLot,
+      deleteLot,
+      updateLotDetails,
       closePosition,
       recordSplit,
       setTradeWashSale,
       deleteTrade,
       updateParked,
       recordMilestone,
+      deleteMilestone,
       addAccount,
       addOutsideSale,
       deleteOutsideSale,
@@ -2166,8 +2243,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       state, mergedParked, quotes, dayChange, quotesAsOf, refreshQuotes, tickerNames, contributionCap,
       concentrationCap, ltTaxRate, stTaxRate, dividendTaxRates, updateSetting, updateSettings,
       setCarryforward, loading, error,
-      refresh, addCashEvent, updateCashEvent, deleteCashEvent, addLot, closePosition, recordSplit,
-      setTradeWashSale, deleteTrade, updateParked, recordMilestone, addAccount, addOutsideSale,
+      refresh, addCashEvent, updateCashEvent, deleteCashEvent, addLot, deleteLot, updateLotDetails,
+      closePosition, recordSplit,
+      setTradeWashSale, deleteTrade, updateParked, recordMilestone, deleteMilestone,
+      addAccount, addOutsideSale,
       deleteOutsideSale, recordTrim, addParkedLot, deleteParkedLot, reclassifyDividend,
       allocateRocDividends, addParkedPosition,
       deleteParkedSale, updateParkedSale, undoParkedSale, editParkedSaleAmounts, transferParked,

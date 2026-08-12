@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Landmark } from 'lucide-react';
+import { Landmark, Trash2 } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Modal } from '../components/ui/Modal';
 import { AccountSelect } from '../components/ui/AccountSelect';
+import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { ErrorCard, SkeletonTable } from './CashLedger';
 import { useData } from '../contexts/DataContext';
 import { priceMapFor } from '../lib/alerts';
@@ -12,9 +13,10 @@ import { accountTotal, cumulativeFloor, milestoneTable, roundCents, skimDue } fr
 import { cn, formatCurrency, inputCls, labelCls, primaryBtnCls, todayISO } from '../lib/utils';
 
 export function Milestones() {
-  const { lots, cashEvents, milestones, overrides, quotes, loading, error } = useData();
+  const { lots, cashEvents, milestones, deleteMilestone, overrides, quotes, loading, error } = useData();
   const [banking, setBanking] = useState<MilestoneRow | null>(null);
   const [justBanked, setJustBanked] = useState(false);
+  const [deleting, setDeleting] = useState<{ id: string; level: number } | null>(null);
 
   const account = accountTotal(lots, priceMapFor(lots, overrides, quotes), cashEvents);
   const rows = milestoneTable(account, milestones);
@@ -104,7 +106,21 @@ export function Milestones() {
                   <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(row.cumulativeFloor)}</td>
                   <td className="px-4 py-3">
                     {row.status === 'BANKED' ? (
-                      <span className="inline-block rounded-full bg-green-50 text-green-700 px-2 py-0.5 text-xs font-medium">BANKED</span>
+                      <span className="inline-flex items-center gap-1">
+                        <span className="inline-block rounded-full bg-green-50 text-green-700 px-2 py-0.5 text-xs font-medium">BANKED</span>
+                        {(() => {
+                          const rec = milestones.find((m) => m.level === row.level);
+                          return rec ? (
+                            <button
+                              onClick={() => setDeleting({ id: rec.id, level: row.level })}
+                              className="p-1 rounded hover:bg-red-50"
+                              aria-label="Delete milestone record"
+                            >
+                              <Trash2 className="h-3.5 w-3.5 text-gray-300 hover:text-red-600" />
+                            </button>
+                          ) : null;
+                        })()}
+                      </span>
                     ) : row.status === 'HIT_BANK_NOW' ? (
                       <button onClick={() => setBanking(row)}
                         className="inline-block rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-xs font-bold hover:bg-emerald-200">
@@ -124,6 +140,14 @@ export function Milestones() {
         </div>
       )}
 
+      {deleting && (
+        <ConfirmModal
+          title={`Delete the ${formatCurrency(deleting.level)} milestone record`}
+          message={`Remove this milestone? The floor it banked stops counting toward Total Score immediately. Its two companion artifacts stay and need manual follow-up if the banking never happened: the MilestoneBank row on the Cash Ledger, and the VOO lot in the parked pile.`}
+          onConfirm={() => deleteMilestone(deleting.id)}
+          onClose={() => setDeleting(null)}
+        />
+      )}
       {banking && (
         <RecordBankingModal
           row={banking}

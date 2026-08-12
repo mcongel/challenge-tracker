@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle, Pencil, Plus, Scissors, TrendingUp, X } from 'lucide-react';
+import { AlertTriangle, Pencil, Plus, Scissors, Trash2, TrendingUp, X } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
+import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { ErrorCard, SkeletonTable } from './CashLedger';
 import { useData } from '../contexts/DataContext';
 import { priceMapFor } from '../lib/alerts';
@@ -25,6 +26,9 @@ export function Positions() {
   const [closeTicker, setCloseTicker] = useState<string | null>(null);
   const [splitTicker, setSplitTicker] = useState<string | null>(null);
   const [priceTicker, setPriceTicker] = useState<string | null>(null);
+  const [editingLot, setEditingLot] = useState<PositionLot | null>(null);
+  const [deletingLot, setDeletingLot] = useState<PositionLot | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const today = todayISO();
   const byTicker = useMemo(() => {
@@ -46,6 +50,9 @@ export function Positions() {
       />
 
       {error && <ErrorCard message={error} />}
+      {notice && (
+        <div className="mb-4 bg-amber-50 text-amber-800 rounded-lg px-4 py-3 text-sm">{notice}</div>
+      )}
 
       {loading ? (
         <SkeletonTable />
@@ -71,6 +78,7 @@ export function Positions() {
                 <th className="px-4 py-3 text-right">Days</th>
                 <th className="px-4 py-3">LT on</th>
                 <th className="px-4 py-3 text-right">Target</th>
+                <th className="px-2 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -117,7 +125,7 @@ export function Positions() {
                       gain >= 0 ? 'text-green-600' : 'text-red-600')}>
                       {subtotalBasis === 0 ? '—' : formatPercent(gain / subtotalBasis)}
                     </td>
-                    <td colSpan={3} />
+                    <td colSpan={4} />
                   </tr>,
                   ...tickerLots.map((lot) => {
                     const price = priceMap[ticker] ?? lot.avgCost;
@@ -149,6 +157,16 @@ export function Positions() {
                             <span className="block text-[10px] font-bold uppercase">target hit</span>
                           )}
                         </td>
+                        <td className="px-2 py-2 whitespace-nowrap">
+                          <button onClick={() => setEditingLot(lot)} className="p-1 rounded hover:bg-gray-100"
+                            aria-label="Edit lot">
+                            <Pencil className="h-4 w-4 text-gray-300 hover:text-gray-600" />
+                          </button>
+                          <button onClick={() => setDeletingLot(lot)} className="p-1 rounded hover:bg-red-50"
+                            aria-label="Delete lot">
+                            <Trash2 className="h-4 w-4 text-gray-300 hover:text-red-600" />
+                          </button>
+                        </td>
                       </tr>
                     );
                   }),
@@ -160,10 +178,106 @@ export function Positions() {
       )}
 
       <AddPositionModal isOpen={addOpen} onClose={() => setAddOpen(false)} />
+      {editingLot && <EditLotModal lot={editingLot} onClose={() => setEditingLot(null)} />}
+      {deletingLot && (
+        <DeleteLotConfirm
+          lot={deletingLot}
+          onClose={() => setDeletingLot(null)}
+          onNotice={setNotice}
+        />
+      )}
       {closeTicker && <ClosePositionModal ticker={closeTicker} onClose={() => setCloseTicker(null)} />}
       {splitTicker && <SplitModal ticker={splitTicker} onClose={() => setSplitTicker(null)} />}
       {priceTicker && <PriceModal ticker={priceTicker} onClose={() => setPriceTicker(null)} />}
     </div>
+  );
+}
+
+function EditLotModal({ lot, onClose }: { lot: PositionLot; onClose: () => void }) {
+  const { updateLotDetails } = useData();
+  const [exitTarget, setExitTarget] = useState(String(lot.exitTarget));
+  const [buyDate, setBuyDate] = useState(lot.buyDate);
+  const [thesis, setThesis] = useState(lot.thesis ?? '');
+  const [formError, setFormError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    if (!Number(exitTarget) || Number(exitTarget) <= 0) {
+      return setFormError('Exit target must be a positive price — Rule 8 keeps it written.');
+    }
+    setBusy(true);
+    try {
+      await updateLotDetails(lot.id, {
+        exitTarget: Number(exitTarget),
+        buyDate,
+        thesis: thesis || null,
+      });
+      onClose();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal isOpen onClose={onClose} title={`Edit ${lot.ticker} lot`}>
+      <form onSubmit={submit} className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={labelCls}>Exit target ($)</label>
+            <input type="number" step="any" min="0.01" required value={exitTarget}
+              onChange={(e) => setExitTarget(e.target.value)} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Buy date</label>
+            <input type="date" required value={buyDate}
+              onChange={(e) => setBuyDate(e.target.value)} className={inputCls} />
+          </div>
+        </div>
+        <div>
+          <label className={labelCls}>Thesis</label>
+          <input value={thesis} onChange={(e) => setThesis(e.target.value)} className={inputCls} />
+        </div>
+        <p className="text-xs text-gray-400">
+          Shares and cost can't change — they anchor the Buy on the Cash Ledger and the basis math.
+          A buy-date change moves the long-term clock but leaves the ledger row's date alone.
+        </p>
+        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
+        <div className="flex justify-end">
+          <button type="submit" disabled={busy} className={primaryBtnCls}>
+            {busy ? 'Saving…' : 'Save changes'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function DeleteLotConfirm({
+  lot, onClose, onNotice,
+}: {
+  lot: PositionLot;
+  onClose: () => void;
+  onNotice: (msg: string | null) => void;
+}) {
+  const { deleteLot } = useData();
+  return (
+    <ConfirmModal
+      title={`Delete ${lot.ticker} lot`}
+      message={`Delete the ${lot.buyDate} ${lot.ticker} lot (${lot.shares} sh @ ${formatCurrency(lot.avgCost)})? If exactly one matching Buy sits on the Cash Ledger it goes too; otherwise the ledger row stays and you'll be told to remove it yourself. This is for entry mistakes — a real exit goes through Close.`}
+      onConfirm={async () => {
+        const { buyEventDeleted } = await deleteLot(lot.id);
+        onNotice(
+          buyEventDeleted
+            ? null
+            : `Lot deleted. No unambiguous Buy match — remove the ${lot.buyDate} ${lot.ticker} Buy row on the Cash Ledger yourself, or account cash overstates.`,
+        );
+      }}
+      onClose={onClose}
+    />
   );
 }
 
