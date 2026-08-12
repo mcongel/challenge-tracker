@@ -99,8 +99,13 @@ async function main(): Promise<void> {
 
   const voo = overrides['VOO'] ?? quotes['VOO'];
   if (!voo) {
-    console.log('No VOO price available — skipping (a zero shadow would poison the verdict).');
-    return;
+    // Fail LOUDLY: a green run that silently skipped means a hole in the
+    // history nobody notices until the rolling verdict is wrong. A zero
+    // shadow would poison the verdict, so we can't write either — make the
+    // workflow red and say exactly what to do.
+    throw new Error(
+      'No VOO price available (quote fetch failed and no VOO override is pinned) — no snapshot written for a market day. Pin a VOO price on the Benchmark screen or re-run once quotes recover.',
+    );
   }
 
   const parked: ParkedPosition[] = parkedRows.map((r) => ({

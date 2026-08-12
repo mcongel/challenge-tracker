@@ -5,11 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "npm run typecheck && vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "seed": "node scripts/seed.mjs"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json",
+    "seed": "node scripts/seed.mjs",
+    "snapshot": "tsx scripts/daily-snapshot.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.0",
@@ -21,13 +23,14 @@
     "recharts": "^3.10.1"
   },
   "devDependencies": {
+    "@types/node": "^26.2.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.14",
-    "tsx": "^4.23.8",
+    "tsx": "^4.23.12",
     "typescript": "~5.6.3",
     "vite": "^5.4.10",
     "vitest": "^2.1.4"
