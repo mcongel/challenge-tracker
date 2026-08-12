@@ -10,6 +10,7 @@ import { ErrorCard, SkeletonTable } from './CashLedger';
 import { useData } from '../contexts/DataContext';
 import {
   netRealizedYTD, realizedGain, realizedPct, roundCents, stLt, taxYearOf, tradeDaysHeld,
+  tradeStats,
 } from '../lib/engine';
 import {
   cn, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls, secondaryBtnCls, todayISO,
@@ -28,6 +29,7 @@ export function TradeLog() {
   const currentYear = taxYearOf(todayISO());
   const ytd = netRealizedYTD(trades, currentYear);
   const ordered = [...trades].sort((a, b) => b.closeDate.localeCompare(a.closeDate));
+  const stats = tradeStats(trades);
 
   return (
     <div>
@@ -54,6 +56,62 @@ export function TradeLog() {
         </div>
         <p className="text-xs text-gray-400">{trades.length} closed trade{trades.length === 1 ? '' : 's'}</p>
       </div>
+
+      {/* Know thyself — the pattern behind the closes. The best picking input
+          there is: what YOUR trades actually do. */}
+      {stats.count >= 2 && (
+        <div className="bg-white rounded-lg shadow-lg p-4 mb-4 density-aware-card">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
+            Your pattern — all {stats.count} closes
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-2 text-sm">
+            <div>
+              <p className="text-xs text-gray-500">Win rate</p>
+              <p className="font-bold tabular-nums">
+                {stats.winRate != null ? formatPercent(stats.winRate, 0) : '—'}
+                <span className="ml-1 text-xs font-normal text-gray-400">{stats.wins}W · {stats.losses}L</span>
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Avg winner</p>
+              <p className="font-bold tabular-nums text-green-600">
+                {stats.avgWin != null ? formatCurrency(roundCents(stats.avgWin)) : '—'}
+                {stats.avgWinPct != null && (
+                  <span className="ml-1 text-xs font-normal">({formatPercent(stats.avgWinPct)})</span>
+                )}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Avg loser</p>
+              <p className="font-bold tabular-nums text-red-600">
+                {stats.avgLoss != null ? formatCurrency(roundCents(stats.avgLoss)) : '—'}
+                {stats.avgLossPct != null && (
+                  <span className="ml-1 text-xs font-normal">({formatPercent(stats.avgLossPct)})</span>
+                )}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500" title="Average winner ÷ average loser — how much a win pays for each loss. Above 1 means winners outpay losers.">
+                Payoff ratio
+              </p>
+              <p className="font-bold tabular-nums">
+                {stats.payoff != null ? `${(Math.round(stats.payoff * 100) / 100)}×` : '—'}
+                {stats.avgHoldDays != null && (
+                  <span className="ml-2 text-xs font-normal text-gray-400">
+                    ~{Math.round(stats.avgHoldDays)}d avg hold
+                  </span>
+                )}
+              </p>
+            </div>
+          </div>
+          {stats.best && stats.worst && stats.count >= 3 && (
+            <p className="mt-2 text-xs text-gray-400 tabular-nums">
+              Best: {stats.best.ticker} {formatCurrency(roundCents(realizedGain(stats.best)))} ·
+              Worst: {stats.worst.ticker} {formatCurrency(roundCents(realizedGain(stats.worst)))}
+            </p>
+          )}
+        </div>
+      )}
 
       {loading ? (
         <SkeletonTable />

@@ -1278,3 +1278,46 @@ describe('parkedReturns — total return counts every dollar exactly once', () =
     expect(r.invested).toBe(100);
   });
 });
+
+describe('tradeStats — the pattern behind the closed trades', () => {
+  const t = (id: string, costBasis: number, proceeds: number, open: string, close: string): Trade => ({
+    id, ticker: 'XYZ', openDate: open, closeDate: close, costBasis, proceeds, washSale: false,
+  });
+
+  it('empty log returns nulls, not NaNs', async () => {
+    const { tradeStats } = await import('../trades');
+    const s = tradeStats([]);
+    expect(s.count).toBe(0);
+    expect(s.winRate).toBeNull();
+    expect(s.payoff).toBeNull();
+  });
+
+  it('win rate, averages, payoff, and hold time', async () => {
+    const { tradeStats } = await import('../trades');
+    const s = tradeStats([
+      t('a', 100, 130, '2026-01-01', '2026-01-11'), // +30 (+30%), 10d
+      t('b', 100, 110, '2026-02-01', '2026-02-21'), // +10 (+10%), 20d
+      t('c', 100, 80, '2026-03-01', '2026-03-31'),  // −20 (−20%), 30d
+    ]);
+    expect(s.count).toBe(3);
+    expect(s.wins).toBe(2);
+    expect(s.losses).toBe(1);
+    expect(s.winRate).toBeCloseTo(2 / 3, 10);
+    expect(s.avgWin).toBe(20);
+    expect(s.avgLoss).toBe(-20);
+    expect(s.avgWinPct).toBeCloseTo(0.2, 10);
+    expect(s.avgLossPct).toBeCloseTo(-0.2, 10);
+    expect(s.payoff).toBeCloseTo(1, 10);
+    expect(s.avgHoldDays).toBe(20);
+    expect(s.best?.id).toBe('a');
+    expect(s.worst?.id).toBe('c');
+  });
+
+  it('wash-flagged losses still count — tax flag, not performance', async () => {
+    const { tradeStats } = await import('../trades');
+    const washed = { ...t('w', 100, 90, '2026-01-01', '2026-01-05'), washSale: true };
+    const s = tradeStats([washed]);
+    expect(s.losses).toBe(1);
+    expect(s.avgLoss).toBe(-10);
+  });
+});
