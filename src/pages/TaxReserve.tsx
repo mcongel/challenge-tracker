@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Landmark, SlidersHorizontal } from 'lucide-react';
+import { Landmark, Scale, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
@@ -27,6 +27,7 @@ export function TaxReserve() {
   const [rowError, setRowError] = useState<string | null>(null);
   const [pendingSkim, setPendingSkim] = useState<{ label: string; amount: number } | null>(null);
   const [ratesOpen, setRatesOpen] = useState(false);
+  const [carryOpen, setCarryOpen] = useState(false);
 
   const today = todayISO();
   const firstDate = [...trades.map((t) => t.closeDate), ...cashEvents.map((e) => e.date)].sort()[0];
@@ -47,13 +48,22 @@ export function TaxReserve() {
         title="Tax Reserve"
         subtitle="Every quarter: 30% of net realized gains YTD moves out of play. Non-negotiable — it's what makes a blown account a shrug instead of a debt."
         actions={
-          <button
-            onClick={() => setRatesOpen(true)}
-            className={cn(secondaryBtnCls, 'flex items-center gap-1.5')}
-            title="Rates used for informational estimates (pile gains, dividends) — never the 30% skim itself."
-          >
-            <SlidersHorizontal className="h-4 w-4" /> Estimate rates
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setCarryOpen(true)}
+              className={cn(secondaryBtnCls, 'flex items-center gap-1.5')}
+              title="Loss carried into a tax year — offsets gains before the 30% applies."
+            >
+              <Scale className="h-4 w-4" /> Carryforwards
+            </button>
+            <button
+              onClick={() => setRatesOpen(true)}
+              className={cn(secondaryBtnCls, 'flex items-center gap-1.5')}
+              title="Rates used for informational estimates (pile gains, dividends) — never the 30% skim itself."
+            >
+              <SlidersHorizontal className="h-4 w-4" /> Estimate rates
+            </button>
+          </div>
         }
       />
 
@@ -63,7 +73,10 @@ export function TaxReserve() {
       {carryThisYear && (
         <div className="mb-4 bg-sky-50 text-sky-800 rounded-lg px-4 py-3 text-sm">
           Loss carryforward into {carryThisYear.taxYear}: {formatCurrency(carryThisYear.amount)} —
-          offsets gains before the 30% applies.
+          offsets gains before the 30% applies.{' '}
+          <button onClick={() => setCarryOpen(true)} className="underline hover:no-underline">
+            Edit
+          </button>
         </div>
       )}
 
@@ -166,6 +179,7 @@ export function TaxReserve() {
           onError={setRowError}
         />
       )}
+      {carryOpen && <CarryforwardModal onClose={() => setCarryOpen(false)} />}
       {ratesOpen && (
         <RatesModal
           ltTaxRate={ltTaxRate}
@@ -184,6 +198,104 @@ export function TaxReserve() {
         />
       )}
     </div>
+  );
+}
+
+function CarryforwardModal({ onClose }: { onClose: () => void }) {
+  const { carryforwards, setCarryforward } = useData();
+  const [year, setYear] = useState(String(taxYearOf(todayISO())));
+  const [amount, setAmount] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const rows = [...carryforwards].sort((a, b) => b.taxYear - a.taxYear);
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    const y = Number(year);
+    const amt = Number(amount);
+    if (!Number.isInteger(y) || y < 2000 || y > 2100) {
+      return setFormError('Tax year looks wrong.');
+    }
+    if (Number.isNaN(amt) || amt <= 0) {
+      return setFormError('Amount must be a positive dollar figure (the loss you carried in).');
+    }
+    setBusy(true);
+    try {
+      await setCarryforward(y, amt);
+      setAmount('');
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (y: number) => {
+    setFormError(null);
+    setBusy(true);
+    try {
+      await setCarryforward(y, null);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal isOpen onClose={onClose} title="Loss carryforwards">
+      <div className="space-y-3">
+        {rows.length > 0 ? (
+          <ul className="divide-y divide-gray-100 rounded-md border border-gray-100">
+            {rows.map((c) => (
+              <li key={c.taxYear} className="flex items-center justify-between px-3 py-2 text-sm">
+                <span>
+                  Into <span className="font-medium">{c.taxYear}</span>:{' '}
+                  <span className="tabular-nums">{formatCurrency(c.amount)}</span>
+                </span>
+                <button
+                  onClick={() => remove(c.taxYear)}
+                  disabled={busy}
+                  className="text-gray-400 hover:text-red-600"
+                  title="Remove this carryforward"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-gray-400">
+            None recorded. After the 1099 arrives in January, enter any loss carried into the new
+            tax year — it offsets gains before the 30% skim applies.
+          </p>
+        )}
+        <form onSubmit={save} className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>Tax year</label>
+              <input type="number" min="2000" max="2100" step="1" required value={year}
+                onChange={(e) => setYear(e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Loss carried in ($)</label>
+              <input type="number" min="0" step="0.01" required value={amount}
+                onChange={(e) => setAmount(e.target.value)} className={inputCls} placeholder="4000" />
+            </div>
+          </div>
+          <p className="text-xs text-gray-400">
+            Enter the loss as a positive number. Saving a year that already has an entry replaces it.
+          </p>
+          {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
+          <div className="flex justify-end">
+            <button type="submit" disabled={busy} className={primaryBtnCls}>
+              {busy ? 'Saving…' : 'Save carryforward'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </Modal>
   );
 }
 

@@ -122,6 +122,8 @@ interface DataContextValue extends DataState {
   updateSetting: (key: string, value: unknown) => Promise<void>;
   /** Batch variant: one atomic upsert + one refresh for several keys. */
   updateSettings: (entries: Record<string, unknown>) => Promise<void>;
+  /** Upsert a loss carryforward for a tax year; null amount deletes the row. */
+  setCarryforward: (taxYear: number, amount: number | null) => Promise<void>;
   /** Delayed API quotes (override-free). Merged view: overrides win. */
   quotes: Record<string, number>;
   /** The day's move per ticker, straight from the quote feed. */
@@ -1899,6 +1901,26 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [refresh],
   );
 
+  /** The January ritual: after the 1099 arrives, record (or correct) the
+   * loss carried into a tax year. Null amount removes the row. */
+  const setCarryforward = useCallback(
+    async (taxYear: number, amount: number | null) => {
+      const client = db();
+      if (amount == null) {
+        const { error: err } = await client
+          .from('loss_carryforwards').delete().eq('tax_year', taxYear);
+        if (err) throw err;
+      } else {
+        const { error: err } = await client
+          .from('loss_carryforwards')
+          .upsert({ tax_year: taxYear, amount: roundCents(amount) }, { onConflict: 'tax_year' });
+        if (err) throw err;
+      }
+      await refresh();
+    },
+    [refresh],
+  );
+
   /** Scenario tables are pure what-ifs with zero cross-effects on the rest
    * of the app — their mutations refetch only these two tables instead of
    * the full refresh. */
@@ -2063,6 +2085,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       dividendTaxRates,
       updateSetting,
       updateSettings,
+      setCarryforward,
       loading,
       error,
       refresh,
@@ -2108,7 +2131,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [
       state, mergedParked, quotes, dayChange, quotesAsOf, refreshQuotes, tickerNames, contributionCap,
       concentrationCap, ltTaxRate, stTaxRate, dividendTaxRates, updateSetting, updateSettings,
-      loading, error,
+      setCarryforward, loading, error,
       refresh, addCashEvent, deleteCashEvent, addLot, closePosition, recordSplit,
       setTradeWashSale, deleteTrade, updateParked, recordMilestone, addAccount, addOutsideSale,
       deleteOutsideSale, recordTrim, addParkedLot, deleteParkedLot, reclassifyDividend,
