@@ -82,7 +82,7 @@ export function CashLedger() {
       {error && <ErrorCard message={error} />}
 
       {/* Summary block */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
         {[
           ['Deposits', summary.deposits],
           ['Withdrawals', summary.withdrawals],
@@ -101,6 +101,12 @@ export function CashLedger() {
           </div>
         ))}
       </div>
+      {/* The rest of cashSummary, compact — the spec's full breakdown. */}
+      <p className="mb-4 px-1 text-xs text-gray-500 tabular-nums">
+        Buys −{formatCurrency(roundCents(summary.buys))} · Sells +{formatCurrency(roundCents(summary.sells))} ·
+        Dividends +{formatCurrency(roundCents(summary.dividends))} · Tax skims −{formatCurrency(roundCents(summary.taxSkims))} ·
+        Milestone banks −{formatCurrency(roundCents(summary.milestoneBanks))} · Fees −{formatCurrency(roundCents(summary.fees))}
+      </p>
 
       {loading ? (
         <SkeletonTable />

@@ -179,8 +179,8 @@ export function Help() {
         <ul className="list-disc pl-5 space-y-2 text-sm text-gray-600 leading-relaxed">
           <li>Walled off from the score entirely; the Dashboard shows the total small, labeled "context only."</li>
           <li>
-            Each holding is a stack of dated <strong className="text-gray-900">lots</strong> (clock
-            icon on a row) — every purchase and DRIP reinvestment has its own 366-day unlock clock,
+            Each holding is a stack of dated <strong className="text-gray-900">lots</strong> (click
+            a row to open them) — every purchase and DRIP reinvestment has its own 366-day unlock clock,
             so the table shows "3.2/5.56 sh unlocked" honestly. Unlocked shares are the only
             legitimate trim fuel — on schedule, never in response to losses, and NVDA/TSLA/MSTR
             never <Rule n="4–5" />.

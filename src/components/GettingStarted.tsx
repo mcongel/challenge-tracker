@@ -45,8 +45,8 @@ export function GettingStarted() {
       label: (
         <span>
           Date the lots in the <Link to="/parked" className="font-medium text-green-700 hover:underline">parked pile</Link>
-          {missingDates > 0 && ` (${missingDates} positions undated)`} — clock icon on a row; dates
-          drive the funding-unlock countdowns.
+          {missingDates > 0 && ` (${missingDates} positions undated)`} — click a row to open its
+          lots; dates drive the funding-unlock countdowns.
         </span>
       ),
     },

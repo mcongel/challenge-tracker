@@ -23,11 +23,11 @@ export function washSaleWarnings(trades: Trade[], ticker: string, buyDate: strin
 export interface WashSaleConflicts {
   /** Challenge-account loss-sales inside the window. */
   trades: Trade[];
-  /** Recorded outside-account loss-sales inside the window (Rule 8 crosses brokerages). */
+  /** Recorded outside-account loss-sales inside the window (Rule 9 crosses brokerages). */
   outside: OutsideSale[];
 }
 
-/** The full Rule 8 check for a proposed buy: loss-sales of the ticker in the
+/** The full Rule 9 check for a proposed buy: loss-sales of the ticker in the
  * past 31 days from the challenge account AND any recorded outside account.
  * Generic over the sale shape so callers can carry extra fields (e.g. an
  * unknown-basis flag) through the filter. */

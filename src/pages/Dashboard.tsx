@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import {
-  Area, AreaChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer,
+  Area, AreaChart, CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer,
   Tooltip, XAxis, YAxis,
 } from 'recharts';
 import { useData } from '../contexts/DataContext';
@@ -69,6 +69,7 @@ export function Dashboard() {
     'Total Score': roundCents(s.totalScore),
     'Shadow VOO': roundCents(s.shadowVooValue),
     Floor: roundCents(s.bankedTotal),
+    'Semi/AI %': Math.round(s.semiAiPct * 1000) / 10,
   }));
   const youColor = isDark ? SERIES.you.dark : SERIES.you.light;
   const shadowColor = isDark ? SERIES.shadow.dark : SERIES.shadow.light;
@@ -219,6 +220,29 @@ export function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* Concentration trend — is the Semi/AI share of the pile drifting toward the cap? */}
+      {chartData.length >= 2 && (
+        <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6">
+          <p className="text-sm font-medium text-gray-700 mb-1">Pile concentration — Semi/AI share</p>
+          <div className="h-40">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ top: 8, right: 12, bottom: 0, left: 4 }}>
+                <CartesianGrid stroke={gridColor} vertical={false} />
+                <XAxis dataKey="date" stroke={axisColor} tickLine={false} axisLine={false}
+                  tick={{ fontSize: 11 }} minTickGap={32} />
+                <YAxis stroke={axisColor} tickLine={false} axisLine={false}
+                  tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}%`} domain={[0, 100]} width={40} />
+                <Tooltip formatter={(v) => `${v}%`} />
+                <ReferenceLine y={concentrationCap * 100} stroke="#d97706" strokeDasharray="4 4"
+                  label={{ value: `cap ${Math.round(concentrationCap * 100)}%`, position: 'insideTopRight', fontSize: 11, fill: '#d97706' }} />
+                <Line type="monotone" dataKey="Semi/AI %" stroke={shadowColor} strokeWidth={2}
+                  dot={false} activeDot={{ r: 4 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       {/* Banked floors staircase */}
       <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6">

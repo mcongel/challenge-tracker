@@ -354,8 +354,8 @@ export function ParkedPile() {
       ) : !anyPositions ? (
         <EmptyState
           icon={Archive}
-          title="Parked pile not seeded yet"
-          hint="Run the seed script (supabase/SETUP.md) to import the workbook's holdings."
+          title="Nothing parked yet"
+          hint="Hit Buy to add the first holding — every position starts as a dated purchase lot with its own 366-day unlock clock."
         />
       ) : (
         <div className="bg-white rounded-lg shadow-lg overflow-x-auto">
@@ -2063,7 +2063,7 @@ function EditParkedModal({ position: p, onClose }: { position: ParkedPosition; o
         <AccountSelect accounts={accounts} value={accountId} onChange={setAccountId}
           label="Account (e.g. after an ACATS transfer)" kinds={['outside', 'challenge']} allowNone={false} />
         <p className="text-xs text-gray-400">
-          Shares, cost, and dates live in the lots (clock icon on the row) — they recompute from there.
+          Shares, cost, and dates live in the lots (click the row to open them) — they recompute from there.
         </p>
         <div>
           <label className={labelCls}>Notes</label>

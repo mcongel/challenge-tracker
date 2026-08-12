@@ -138,7 +138,7 @@ export function TradeLog() {
         </div>
       )}
 
-      {/* Outside sales — the cross-brokerage wash-sale radar (Rule 8). */}
+      {/* Outside sales — the cross-brokerage wash-sale radar (Rule 9). */}
       {outsideSales.length > 0 && (
         <div className="mt-4 bg-white rounded-lg shadow-lg overflow-x-auto">
           <p className="px-4 pt-3 text-xs font-semibold uppercase tracking-wider text-gray-400">
@@ -253,7 +253,7 @@ function OutsideSaleModal({ onClose }: { onClose: () => void }) {
         <label className="flex items-center gap-2 text-sm text-gray-700">
           <input type="checkbox" checked={loss} onChange={(e) => setLoss(e.target.checked)}
             className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-600" />
-          Sold at a loss (starts the 31-day wash-sale window — Rule 8 crosses brokerages)
+          Sold at a loss (starts the 31-day wash-sale window — Rule 9 crosses brokerages)
         </label>
         <div>
           <label className={labelCls}>Notes</label>
