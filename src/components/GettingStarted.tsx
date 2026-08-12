@@ -8,7 +8,7 @@ import { cn } from '../lib/utils';
 /** First-run guidance. Renders only while setup steps remain; disappears for
  * good once the account is really running. */
 export function GettingStarted() {
-  const { exampleData, parkedLots, cashEvents, lots, clearExampleData, loading } = useData();
+  const { exampleData, parkedLots, cashEvents, lots, trades, clearExampleData, loading } = useData();
   const [confirmClear, setConfirmClear] = useState(false);
 
   if (loading) return null;
@@ -18,8 +18,13 @@ export function GettingStarted() {
   ).size;
   const exampleIds = new Set(exampleData.cashEvents.map((e) => e.id));
   const exampleLotIds = new Set(exampleData.lots.map((l) => l.id));
+  const exampleTradeIds = new Set(exampleData.trades.map((t) => t.id));
   const hasRealDeposit = cashEvents.some((e) => e.type === 'Deposit' && !exampleIds.has(e.id));
-  const hasRealPosition = lots.some((l) => !exampleLotIds.has(l.id));
+  // "Has ever opened one" — a closed position lives in the Trade Log, and
+  // being between positions must not resurrect the first-run checklist.
+  const hasRealPosition =
+    lots.some((l) => !exampleLotIds.has(l.id)) ||
+    trades.some((t) => !exampleTradeIds.has(t.id));
 
   const steps: { label: React.ReactNode; done: boolean }[] = [
     {
