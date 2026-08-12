@@ -61,7 +61,7 @@ interface HistRow {
 export function Income() {
   const {
     parked, parkedLots, parkedLotAdjustments, dividendTaxRates, deleteParkedLot,
-    allocateRocDividends, loading, error,
+    allocateRocDividends, reclassifyDividends, loading, error,
   } = useData();
   const today = todayISO();
 
@@ -221,6 +221,51 @@ export function Income() {
   const [deleting, setDeleting] = useState<HistRow | null>(null);
   const [editingRate, setEditingRate] = useState<ParkedPosition | null>(null);
 
+  // Year/ticker filters — persisted like the sort, because 1099 season means
+  // coming back to the same year's view repeatedly.
+  const [histFilters, setHistFiltersState] = useState<{ year: string; ticker: string }>(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('incomeHistFilters') ?? 'null');
+      if (stored && typeof stored.year === 'string' && typeof stored.ticker === 'string') return stored;
+    } catch { /* fall through to default */ }
+    return { year: '', ticker: '' };
+  });
+  const setHistFilters = (f: { year: string; ticker: string }) => {
+    setHistFiltersState(f);
+    localStorage.setItem('incomeHistFilters', JSON.stringify(f));
+  };
+  const histYears = useMemo(
+    () => [...new Set(histRows.map((r) => r.lot.date?.slice(0, 4)).filter(Boolean) as string[])]
+      .sort().reverse(),
+    [histRows],
+  );
+  const histTickers = useMemo(
+    () => [...new Set(histRows.map((r) => r.ticker))].sort(),
+    [histRows],
+  );
+  const filteredHist = useMemo(
+    () => sortedHist.filter(
+      (r) =>
+        (!histFilters.year || (r.lot.date ?? '').startsWith(histFilters.year)) &&
+        (!histFilters.ticker || r.ticker === histFilters.ticker),
+    ),
+    [sortedHist, histFilters],
+  );
+  // Per-classification subtotals for a filtered year — the 1099-DIV boxes.
+  const classTotals = useMemo(() => {
+    if (!histFilters.year) return null;
+    const m = new Map<DividendClassification, number>();
+    for (const r of filteredHist) {
+      const c = (r.lot.classification ?? 'unclassified') as DividendClassification;
+      m.set(c, (m.get(c) ?? 0) + r.lot.amount);
+    }
+    return m;
+  }, [filteredHist, histFilters.year]);
+
+  const [bulkClass, setBulkClass] = useState<DividendClassification | ''>('');
+  const [bulkConfirm, setBulkConfirm] = useState(false);
+  const filtersActive = Boolean(histFilters.year || histFilters.ticker);
+
   return (
     <div>
       <PageHeader
@@ -337,21 +382,66 @@ export function Income() {
           </div>
 
           <div className="bg-white rounded-lg shadow-lg overflow-x-auto">
-            <div className="px-4 pt-4 flex items-center justify-between gap-3">
+            <div className="px-4 pt-4 flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
                 Distribution history
               </p>
-              {unallocatedRoc.length > 0 && (
-                <button
-                  onClick={allocateAll}
-                  disabled={allocatingAll}
-                  className={cn(secondaryBtnCls, 'text-xs px-2.5 py-1')}
-                  title="Apply basis reductions for every ROC distribution that predates basis tracking, oldest first."
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={histFilters.year}
+                  onChange={(e) => setHistFilters({ ...histFilters, year: e.target.value })}
+                  className={cn(inputCls, 'w-auto py-1 text-xs')}
+                  aria-label="Filter by year"
                 >
-                  {allocatingAll ? 'Allocating…' : `Allocate ${unallocatedRoc.length} ROC to basis`}
-                </button>
-              )}
+                  <option value="">All years</option>
+                  {histYears.map((y) => <option key={y} value={y}>{y}</option>)}
+                </select>
+                <select
+                  value={histFilters.ticker}
+                  onChange={(e) => setHistFilters({ ...histFilters, ticker: e.target.value })}
+                  className={cn(inputCls, 'w-auto py-1 text-xs')}
+                  aria-label="Filter by ticker"
+                >
+                  <option value="">All tickers</option>
+                  {histTickers.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+                {unallocatedRoc.length > 0 && (
+                  <button
+                    onClick={allocateAll}
+                    disabled={allocatingAll}
+                    className={cn(secondaryBtnCls, 'text-xs px-2.5 py-1')}
+                    title="Apply basis reductions for every ROC distribution that predates basis tracking, oldest first."
+                  >
+                    {allocatingAll ? 'Allocating…' : `Allocate ${unallocatedRoc.length} ROC to basis`}
+                  </button>
+                )}
+              </div>
             </div>
+            {filtersActive && filteredHist.length > 0 && (
+              <div className="px-4 pt-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                <span>{filteredHist.length} filtered:</span>
+                <select
+                  value={bulkClass}
+                  onChange={(e) => setBulkClass(e.target.value as DividendClassification | '')}
+                  className={cn(inputCls, 'w-auto py-1 text-xs')}
+                  aria-label="Bulk classification"
+                >
+                  <option value="">reclassify to…</option>
+                  <option value="qualified">Qualified</option>
+                  <option value="ordinary">Ordinary (non-qualified)</option>
+                  <option value="return_of_capital">Return of capital</option>
+                  <option value="capital_gain_dist">Capital gain distribution</option>
+                  <option value="unclassified">Unclassified</option>
+                </select>
+                <button
+                  onClick={() => setBulkConfirm(true)}
+                  disabled={!bulkClass}
+                  className={cn(secondaryBtnCls, 'text-xs px-2.5 py-1 disabled:opacity-50')}
+                >
+                  Apply to all {filteredHist.length}
+                </button>
+              </div>
+            )}
             {allocError && (
               <p className="mx-4 mt-2 text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{allocError}</p>
             )}
@@ -367,7 +457,7 @@ export function Income() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {sortedHist.map((r) => (
+                {filteredHist.map((r) => (
                   <tr key={r.lot.id} className="hover:bg-gray-50">
                     <td className={cn('px-4 py-2 tabular-nums', r.lot.date ? 'text-gray-600' : 'text-amber-800')}
                       title={r.lot.exDate ? `Ex-date ${r.lot.exDate}` : undefined}>
@@ -409,17 +499,44 @@ export function Income() {
                     </td>
                   </tr>
                 ))}
-                {sortedHist.length === 0 && (
-                  <tr><td colSpan={6} className="px-4 py-6 text-sm text-gray-400 text-center">No dividends recorded yet</td></tr>
+                {filteredHist.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-6 text-sm text-gray-400 text-center">
+                      {sortedHist.length === 0 ? 'No dividends recorded yet' : 'No dividends match the filters'}
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>
+            {classTotals && filteredHist.length > 0 && (
+              <p className="px-4 py-3 text-xs text-gray-500 border-t border-gray-100 tabular-nums">
+                {histFilters.year}{histFilters.ticker ? ` · ${histFilters.ticker}` : ''} by class
+                (the 1099-DIV boxes):{' '}
+                {(['qualified', 'ordinary', 'return_of_capital', 'capital_gain_dist', 'unclassified'] as DividendClassification[])
+                  .filter((c) => (classTotals.get(c) ?? 0) > 0)
+                  .map((c) => `${CLASSIFICATION_LABELS[c]} ${formatCurrency(roundCents(classTotals.get(c) ?? 0))}`)
+                  .join(' · ')}
+                {' '}· Total {formatCurrency(roundCents(filteredHist.reduce((t, r) => t + r.lot.amount, 0)))}
+              </p>
+            )}
           </div>
         </>
       )}
 
       {reclassifying && (
         <ReclassifyModal row={reclassifying} onClose={() => setReclassifying(null)} />
+      )}
+      {bulkConfirm && bulkClass && (
+        <ConfirmModal
+          title={`Reclassify ${filteredHist.length} dividends`}
+          message={`Set all ${filteredHist.length} filtered dividends${histFilters.year ? ` from ${histFilters.year}` : ''}${histFilters.ticker ? ` (${histFilters.ticker})` : ''} to "${CLASSIFICATION_LABELS[bulkClass]}"? Rows already confirmed as another class get the reclassified flag; moves into or out of Return of capital re-run basis allocation per dividend.`}
+          confirmLabel="Reclassify"
+          onConfirm={async () => {
+            await reclassifyDividends(filteredHist.map((r) => r.lot.id), bulkClass);
+            setBulkClass('');
+          }}
+          onClose={() => setBulkConfirm(false)}
+        />
       )}
       {deleting && (
         <ConfirmModal

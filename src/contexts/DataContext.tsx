@@ -192,6 +192,8 @@ interface DataContextValue extends DataState {
     classification: DividendClassification,
     exDate?: string | null,
   ) => Promise<void>;
+  /** Bulk 1099 confirm: same logic per dividend, one refresh at the end. */
+  reclassifyDividends: (ids: string[], classification: DividendClassification) => Promise<void>;
   /** Backfill: allocate basis for ROC dividends that predate Phase 2, oldest
    * first. Idempotent per dividend; one refresh at the end. */
   allocateRocDividends: (dividendLotIds: string[]) => Promise<void>;
@@ -984,8 +986,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
    * is normal bookkeeping; only a change to an already-confirmed class is a
    * true post-1099 correction and gets the reclassified stamp. Moving into
    * ROC allocates basis reductions; moving out deletes that event's rows —
-   * exact reversal. Shares/amount untouched, so no aggregate recompute. */
-  const reclassifyDividend = useCallback(
+   * exact reversal. Shares/amount untouched, so no aggregate recompute.
+   * No refresh — the single and bulk callers layer their own. */
+  const reclassifyCore = useCallback(
     async (id: string, classification: DividendClassification, exDate?: string | null) => {
       const client = db();
       const lot = state.parkedLots.find((l) => l.id === id);
@@ -1014,9 +1017,32 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const { error: err } = await client.from('parked_lots').update(payload).eq('id', id);
       if (err) throw err;
       if (toRoc && lot) await insertRocAllocations(lot);
+    },
+    [state.parkedLots, insertRocAllocations],
+  );
+
+  const reclassifyDividend = useCallback(
+    async (id: string, classification: DividendClassification, exDate?: string | null) => {
+      await reclassifyCore(id, classification, exDate);
       await refresh();
     },
-    [refresh, state.parkedLots, insertRocAllocations],
+    [refresh, reclassifyCore],
+  );
+
+  /** 1099 season: confirm a whole filtered set at once. Runs the same
+   * per-dividend logic (including ROC transitions) with ONE refresh at the
+   * end — a mid-list failure refreshes too, so the survivors show. */
+  const reclassifyDividends = useCallback(
+    async (ids: string[], classification: DividendClassification) => {
+      try {
+        for (const id of ids) {
+          await reclassifyCore(id, classification);
+        }
+      } finally {
+        await refresh();
+      }
+    },
+    [refresh, reclassifyCore],
   );
 
   const addParkedPosition = useCallback(
@@ -2222,6 +2248,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       addParkedLot,
       deleteParkedLot,
       reclassifyDividend,
+      reclassifyDividends,
       allocateRocDividends,
       addParkedPosition,
       deleteParkedSale,
@@ -2254,6 +2281,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setTradeWashSale, deleteTrade, updateParked, recordMilestone, deleteMilestone,
       addAccount, addOutsideSale,
       deleteOutsideSale, recordTrim, addParkedLot, deleteParkedLot, reclassifyDividend,
+      reclassifyDividends,
       allocateRocDividends, addParkedPosition,
       deleteParkedSale, updateParkedSale, undoParkedSale, editParkedSaleAmounts, transferParked,
       accountCash, addParkedCashEvent,

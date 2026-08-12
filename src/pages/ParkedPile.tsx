@@ -1161,6 +1161,7 @@ function LotPanel({ position: p, summary }: { position: ParkedPosition; summary:
   };
   const [deleting, setDeleting] = useState<ParkedLot | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [justAdded, setJustAdded] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const openForm = (m: 'purchase' | 'dividend') => {
@@ -1173,6 +1174,7 @@ function LotPanel({ position: p, summary }: { position: ParkedPosition; summary:
     setClassification('unclassified');
     setExDate('');
     setFormError(null);
+    setJustAdded(null);
   };
 
   const submit = async (e: React.FormEvent) => {
@@ -1192,6 +1194,7 @@ function LotPanel({ position: p, summary }: { position: ParkedPosition; summary:
           price: pr,
           amount: roundCents(sh * pr),
         });
+        setMode(null);
       } else {
         const pr = Number(price);
         if (reinvested && (!pr || pr <= 0)) throw new Error('Reinvested dividends need the reinvestment price.');
@@ -1209,8 +1212,13 @@ function LotPanel({ position: p, summary }: { position: ParkedPosition; summary:
           exDate: exDate || null,
           notes: reinvested ? 'reinvested' : 'cash',
         });
+        // Streaks are the norm (daily/monthly payers entered in a run) — keep
+        // the form open with date/classification/reinvest intact and only the
+        // per-entry fields cleared.
+        setAmount('');
+        setShares('');
+        setJustAdded(`Added ${formatCurrency(roundCents(amt))} ✓ — form kept for the next one`);
       }
-      setMode(null);
     } catch (err) {
       setFormError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -1225,6 +1233,12 @@ function LotPanel({ position: p, summary }: { position: ParkedPosition; summary:
       </p>
       <p className="text-sm text-gray-600 mb-3">
         {unlockSentence(summary)}
+        {(() => {
+          const lastDiv = lots.filter((l) => l.source === 'dividend' && l.date).at(-1);
+          return lastDiv ? (
+            <span className="text-gray-500"> Last dividend {lastDiv.date} ({formatCurrency(lastDiv.amount)}).</span>
+          ) : null;
+        })()}
         {adjustedAgg.adjustedCostBasis < adjustedAgg.costBasis - 0.005 && (
           <span className="text-gray-500">
             {' '}Basis {formatCurrency(roundCents(adjustedAgg.costBasis))} original ·{' '}
@@ -1367,8 +1381,13 @@ function LotPanel({ position: p, summary }: { position: ParkedPosition; summary:
               </>
             )}
             {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
+            {justAdded && !formError && (
+              <p className="text-sm text-green-700 bg-green-50 rounded-md px-3 py-2">{justAdded}</p>
+            )}
             <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setMode(null)} className={secondaryBtnCls}>Cancel</button>
+              <button type="button" onClick={() => setMode(null)} className={secondaryBtnCls}>
+                {justAdded ? 'Done' : 'Cancel'}
+              </button>
               <button type="submit" disabled={busy} className={primaryBtnCls}>{busy ? 'Saving…' : 'Add'}</button>
             </div>
           </form>
