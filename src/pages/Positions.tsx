@@ -172,14 +172,14 @@ function AddPositionModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
   // Pile sales at a loss count for Rule 9 too — merge them into the radar.
   // Unknown-basis (legacy) sales can't prove a loss, so they warn as
   // POTENTIAL losses rather than slipping through the window silently.
-  const unknownBasisIds = new Set(
-    parkedSales.filter((s) => s.costBasis == null).map((s) => s.id),
-  );
   const saleRadar = [
-    ...outsideSales,
+    ...outsideSales.map((s) => ({ ...s, basisUnknown: false })),
     ...parkedSales
       .filter((s) => s.costBasis == null || s.proceeds < s.costBasis)
-      .map((s) => ({ id: s.id, accountId: s.accountId, ticker: s.ticker, saleDate: s.date, loss: true })),
+      .map((s) => ({
+        id: s.id, accountId: s.accountId, ticker: s.ticker, saleDate: s.date,
+        loss: true, notes: null, basisUnknown: s.costBasis == null,
+      })),
   ];
   const [ticker, setTicker] = useState('');
   const [buyDate, setBuyDate] = useState(todayISO());
@@ -204,7 +204,7 @@ function AddPositionModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
     ...conflicts.trades.map((t) => `${t.closeDate} (challenge account)`),
     ...conflicts.outside.map(
       (s) =>
-        `${s.saleDate} (${accounts.find((a) => a.id === s.accountId)?.name ?? 'outside'}${unknownBasisIds.has(s.id) ? ', unknown basis — possible loss' : ''})`,
+        `${s.saleDate} (${accounts.find((a) => a.id === s.accountId)?.name ?? 'outside'}${s.basisUnknown ? ', unknown basis — possible loss' : ''})`,
     ),
   ];
 

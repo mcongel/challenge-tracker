@@ -21,11 +21,11 @@ import {
   totalScore, trimPreview,
 } from '../lib/engine';
 import type {
-  AccountCashBreakdown, DividendClassification, DividendTaxRates, IncomeScenario, ParkedCashEvent,
-  ParkedLot, ParkedLotAdjustment, ParkedSale, ParkedSaleSnapshot, ScenarioRotation,
+  AccountCashBreakdown, DividendClassification, DividendTaxRates, IncomeScenario, LotConsumption,
+  ParkedCashEvent, ParkedLot, ParkedLotAdjustment, ParkedSale, ParkedSaleSnapshot, ScenarioRotation,
 } from '../lib/engine';
 import { priceMapFor } from '../lib/alerts';
-import { todayISO } from '../lib/utils';
+import { errorMessage, todayISO } from '../lib/utils';
 import {
   cashEventPayload,
   db,
@@ -488,8 +488,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       });
   }, [loading, error, state, quotes, mergedParked, refresh]);
 
-  const addCashEvent = useCallback(
-    async (e: Omit<CashEvent, 'id'>, vooPriceThatDay?: number) => {
+  /** Insert a Deposit cash event and its shadow-VOO twin as one converging
+   * unit. Never leave a deposit without its twin — the benchmark would
+   * silently understate forever — so a twin failure compensates by deleting
+   * the deposit, and that compensating delete is CHECKED: if it also fails,
+   * the error says exactly what row survived. No refresh — callers own it. */
+  const insertDepositWithTwin = useCallback(
+    async (e: Omit<CashEvent, 'id'>, vooPriceThatDay: number) => {
       const client = db();
       const { data: cashRow, error: err } = await client
         .from('cash_events')
@@ -497,23 +502,40 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         .select('id')
         .single();
       if (err) throw err;
-      if (e.type === 'Deposit' && vooPriceThatDay) {
-        const { error: benchErr } = await client.from('benchmark_deposits').insert({
-          date: e.date,
-          amount: e.amount,
-          voo_price_that_day: vooPriceThatDay,
-          cash_event_id: cashRow.id,
-        });
-        if (benchErr) {
-          // Never leave a deposit without its shadow twin — the benchmark
-          // would silently understate forever. Compensate and rethrow.
-          await client.from('cash_events').delete().eq('id', cashRow.id);
-          throw benchErr;
+      const { error: benchErr } = await client.from('benchmark_deposits').insert({
+        date: e.date,
+        amount: e.amount,
+        voo_price_that_day: vooPriceThatDay,
+        cash_event_id: cashRow.id,
+      });
+      if (benchErr) {
+        const { error: compErr } = await client
+          .from('cash_events').delete().eq('id', cashRow.id);
+        if (compErr) {
+          throw new Error(
+            `Shadow VOO twin failed (${benchErr.message}) and the deposit could not be rolled back (${compErr.message}) — a twinless Deposit for ${e.date} may remain on the Cash Ledger. Delete it before re-adding, or the benchmark understates.`,
+          );
         }
+        throw new Error(
+          `Shadow VOO twin failed (${benchErr.message}). The deposit was rolled back — nothing was recorded.`,
+        );
+      }
+      return cashRow.id as string;
+    },
+    [],
+  );
+
+  const addCashEvent = useCallback(
+    async (e: Omit<CashEvent, 'id'>, vooPriceThatDay?: number) => {
+      if (e.type === 'Deposit' && vooPriceThatDay) {
+        await insertDepositWithTwin(e, vooPriceThatDay);
+      } else {
+        const { error: err } = await db().from('cash_events').insert(cashEventPayload(e));
+        if (err) throw err;
       }
       await refresh();
     },
-    [refresh],
+    [refresh, insertDepositWithTwin],
   );
 
   const deleteCashEvent = useCallback(
@@ -522,9 +544,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const event = state.cashEvents.find((e) => e.id === id);
       // Linked twins die via the FK cascade; legacy (unlinked) twins fall
       // back to date+amount matching — and that delete is CHECKED, because a
-      // silently orphaned twin inflates shadow VOO forever.
+      // silently orphaned twin inflates shadow VOO forever. A deposit that
+      // HAS a linked twin must never also take the fallback: on a date+amount
+      // collision it would eat another deposit's legacy twin too.
+      const hasLinkedTwin = state.benchmarkDeposits.some((b) => b.cashEventId === id);
       const legacyTwin =
-        event?.type === 'Deposit'
+        !hasLinkedTwin && event?.type === 'Deposit'
           ? state.benchmarkDeposits.find(
               (b) => b.cashEventId == null && b.date === event.date && b.amount === event.amount,
             )
@@ -575,6 +600,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const client = db();
       const result = closeShares(state.lots, ticker, shares, pricePerShare, closeDate, allocations);
 
+      let closed = false;
       try {
         // Trades are one batch insert (all-or-nothing at PostgREST), so a
         // failure below can't leave half the paper trail.
@@ -594,19 +620,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         const afterById = new Map(
           result.remainingLots.filter((l) => l.ticker === ticker).map((l) => [l.id, l]),
         );
-        for (const lot of before) {
-          const after = afterById.get(lot.id);
-          if (!after) {
-            const { error: err } = await client.from('position_lots').delete().eq('id', lot.id);
-            if (err) throw err;
-          } else if (after.shares !== lot.shares) {
-            const { error: err } = await client
-              .from('position_lots')
-              .update({ shares: after.shares })
-              .eq('id', lot.id);
-            if (err) throw err;
-          }
+        // One batched delete + parallel updates — fewer round trips means a
+        // smaller mid-failure window for the warning below to matter.
+        const lotDeletes = before.filter((l) => !afterById.has(l.id)).map((l) => l.id);
+        const lotUpdates = before.flatMap((l) => {
+          const after = afterById.get(l.id);
+          return after && after.shares !== l.shares ? [{ id: l.id, shares: after.shares }] : [];
+        });
+        if (lotDeletes.length > 0) {
+          const { error: err } = await client.from('position_lots').delete().in('id', lotDeletes);
+          if (err) throw err;
         }
+        const updateResults = await Promise.all(
+          lotUpdates.map(({ id, shares: s }) =>
+            client.from('position_lots').update({ shares: s }).eq('id', id),
+          ),
+        );
+        const firstUpdateErr = updateResults.find((r) => r.error)?.error;
+        if (firstUpdateErr) throw firstUpdateErr;
 
         const { error: cashErr } = await client.from('cash_events').insert(
           cashEventPayload({
@@ -617,15 +648,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           }),
         );
         if (cashErr) throw cashErr;
+        closed = true;
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
         throw new Error(
-          `Close failed midway (${msg}). Check the Trade Log and lot list for partial records before retrying — retrying blindly can duplicate trades.`,
+          `Close failed midway (${errorMessage(err)}). Check the Trade Log and lot list for partial records before retrying — retrying blindly can duplicate trades.`,
         );
       } finally {
         // Refresh even on failure — a retry must never recompute the close
-        // from stale lots.
-        await refresh();
+        // from stale lots. But a refresh failure must not replace the
+        // guidance error above with a bare fetch error.
+        try {
+          await refresh();
+        } catch (refreshErr) {
+          if (closed) throw refreshErr;
+        }
       }
     },
     [refresh, state.lots],
@@ -729,21 +765,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     async (ticker: string, ratio: number, date: string) => {
       const client = db();
       const note = `${ratio}:1 split recorded ${date}`;
-      for (const lot of state.lots.filter((l) => l.ticker === ticker)) {
-        const { error: err } = await client
-          .from('position_lots')
-          .update({
-            shares: lot.shares * ratio,
-            avg_cost: lot.avgCost / ratio,
-            // The exit target is a price too — an unscaled target after a
-            // split silences (or falsely fires) the exit alert forever.
-            exit_target: lot.exitTarget / ratio,
-            bail_point: lot.bailPoint != null ? lot.bailPoint / ratio : null,
-            thesis: lot.thesis ? `${lot.thesis} · ${note}` : note,
-          })
-          .eq('id', lot.id);
-        if (err) throw err;
-      }
+      const lotResults = await Promise.all(
+        state.lots.filter((l) => l.ticker === ticker).map((lot) =>
+          client
+            .from('position_lots')
+            .update({
+              shares: lot.shares * ratio,
+              avg_cost: lot.avgCost / ratio,
+              // The exit target is a price too — an unscaled target after a
+              // split silences (or falsely fires) the exit alert forever.
+              exit_target: lot.exitTarget / ratio,
+              bail_point: lot.bailPoint != null ? lot.bailPoint / ratio : null,
+              thesis: lot.thesis ? `${lot.thesis} · ${note}` : note,
+            })
+            .eq('id', lot.id),
+        ),
+      );
+      const lotErr = lotResults.find((r) => r.error)?.error;
+      if (lotErr) throw lotErr;
       // Parked positions are aggregates maintained FROM lots — the split must
       // land on the lots (basis/amount unchanged; a split moves no money) or
       // the next recompute silently reverts it and FIFO share math wedges.
@@ -751,31 +790,49 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         const positionLots = state.parkedLots.filter(
           (l) => l.parkedPositionId === p.id && l.shares > 0,
         );
-        for (const l of positionLots) {
-          const { error: err } = await client
-            .from('parked_lots')
-            .update({
-              shares: l.shares * ratio,
-              price: l.price != null ? l.price / ratio : null,
-            })
-            .eq('id', l.id);
-          if (err) throw err;
-        }
-        const { error: noteErr } = await client
+        const parkedLotResults = await Promise.all(
+          positionLots.map((l) =>
+            client
+              .from('parked_lots')
+              .update({
+                shares: l.shares * ratio,
+                price: l.price != null ? l.price / ratio : null,
+              })
+              .eq('id', l.id),
+          ),
+        );
+        const parkedLotErr = parkedLotResults.find((r) => r.error)?.error;
+        if (parkedLotErr) throw parkedLotErr;
+        // The aggregate scales locally — shares × ratio, avg_cost ÷ ratio
+        // (lot amounts are unchanged, so this matches a recompute exactly).
+        // NOT recomputeParkedAggregate: a legacy lot-less position has zero
+        // lot rows, and the recompute would delete the holding outright.
+        const { error: posErr } = await client
           .from('parked_positions')
           .update({
+            shares: p.shares * ratio,
+            avg_cost: Math.round((p.avgCost / ratio) * 10000) / 10000,
             current_price: p.currentPrice / ratio,
             notes: p.notes ? `${p.notes} · ${note}` : note,
           })
           .eq('id', p.id);
-        if (noteErr) throw noteErr;
-        await recomputeParkedAggregate(p.id);
+        if (posErr) throw posErr;
+      }
+      // A pinned manual price is a price too — left unscaled it would value
+      // the doubled shares at the pre-split price and false-fire the target
+      // alert against the newly scaled exit target.
+      const pinned = state.overrides[ticker];
+      if (pinned != null) {
+        const { error: ovErr } = await client
+          .from('price_overrides')
+          .update({ price: pinned / ratio })
+          .eq('ticker', ticker);
+        if (ovErr) throw ovErr;
       }
       await refresh();
     },
-    [refresh, state.lots, state.parked, state.parkedLots, recomputeParkedAggregate],
+    [refresh, state.lots, state.parked, state.parkedLots, state.overrides],
   );
-
 
   /** Allocate an ROC dividend's basis reductions across the position's
    * current share lots (its own DRIP lot excluded via allocateRoc's
@@ -982,15 +1039,22 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       // dividends that funded them must drop back to "unallocated" so the
       // Income badge offers the idempotent re-spread, instead of keeping a
       // stale "allocated" stamp over silently un-reduced basis.
+      // Same-position dividends only: re-spread walks the DIVIDEND's own
+      // position's lots, so un-stamping a carried (ACATS'd, cross-position)
+      // dividend would invite a re-spread that erases the destination
+      // position's surviving reductions and dumps everything to overflow.
+      const divPositionById = new Map(state.parkedLots.map((l) => [l.id, l.parkedPositionId]));
       const affectedDividends = [
         ...new Set(
           state.parkedLotAdjustments
             .filter((a) => a.shareLotId === id && a.dividendLotId != null)
-            .map((a) => a.dividendLotId as string),
+            .map((a) => a.dividendLotId as string)
+            .filter((divId) => divPositionById.get(divId) === lot.parkedPositionId),
         ),
       ];
-      const { error: err } = await client.from('parked_lots').delete().eq('id', id);
-      if (err) throw err;
+      // Un-stamp FIRST: unallocated-with-lot-present is repairable (the
+      // re-spread converges), but a deleted lot under stale stamps is not —
+      // the delete can't be retried once the lot row is gone.
       if (affectedDividends.length > 0) {
         const { error: unstampErr } = await client
           .from('parked_lots')
@@ -998,6 +1062,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           .in('id', affectedDividends);
         if (unstampErr) throw unstampErr;
       }
+      const { error: err } = await client.from('parked_lots').delete().eq('id', id);
+      if (err) throw err;
       await recomputeParkedAggregate(lot.parkedPositionId);
       await refresh();
     },
@@ -1151,15 +1217,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       // A full transfer moves the holding, not just shares — transition
       // rotations that sell it must follow to the destination, or the
       // source-position delete/archive silently kills the what-if.
-      if (shares >= p.shares - 1e-9 && destId !== parkedId) {
+      if (shares >= p.shares - 1e-9) {
         const { error: rotErr } = await client
           .from('scenario_rotations')
           .update({ sell_holding_id: destId })
           .eq('sell_holding_id', parkedId);
         if (rotErr) throw rotErr;
       }
-      await recomputeParkedAggregate(destId);
-      await recomputeParkedAggregate(parkedId);
+      await Promise.all([recomputeParkedAggregate(destId), recomputeParkedAggregate(parkedId)]);
       await refresh();
     },
     [refresh, state.parked, state.parkedLots, state.parkedLotAdjustments, recomputeParkedAggregate],
@@ -1256,7 +1321,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       let costBasis: number | null = null;
       let ltShares: number | null = null;
       let snapshot: ParkedSaleSnapshot | null = null;
-      let consumption: ReturnType<typeof consumeLotsFifo> | null = null;
+      let consumption: LotConsumption | null = null;
       let dripDeletes: string[] = [];
       let hardDeletes: string[] = [];
       if (positionLots.length > 0) {
@@ -1287,9 +1352,26 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         );
       }
 
-      // The sale row (and its undo snapshot) is written FIRST: a mid-failure
-      // below leaves a recorded sale whose Undo converges — restoring only
-      // what actually applied — instead of eaten shares with no record.
+      if (!consumption) {
+        // No lot history (legacy) — adjust the aggregate directly, and do it
+        // BEFORE the sale row: a snapshot-less sale has no Undo, so a
+        // mid-failure must leave "no sale record" (repairable in Edit), never
+        // a phantom sale over undiminished shares.
+        const remaining = p.shares - args.shares;
+        if (remaining > 1e-9) {
+          const { error: err } = await client
+            .from('parked_positions').update({ shares: remaining }).eq('id', p.id);
+          if (err) throw err;
+        } else {
+          const { error: err } = await client.from('parked_positions').delete().eq('id', p.id);
+          if (err) throw err;
+        }
+      }
+
+      // For lot-backed trims the sale row (and its undo snapshot) is written
+      // FIRST: a mid-failure below leaves a recorded sale whose Undo
+      // converges — restoring only what actually applied — instead of eaten
+      // shares with no record.
       const { data: saleRow, error: saleErr } = await client
         .from('parked_sales')
         .insert(
@@ -1309,7 +1391,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         )
         .select('id')
         .single();
-      if (saleErr) throw saleErr;
+      if (saleErr) {
+        if (!consumption) {
+          throw new Error(
+            `Shares were reduced but the sale record failed (${saleErr.message}). Fix the share count in Edit, then re-record the sale.`,
+          );
+        }
+        throw saleErr;
+      }
       const saleId = saleRow.id as string;
 
       if (consumption) {
@@ -1333,18 +1422,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           if (err) throw err;
         }
         await recomputeParkedAggregate(p.id);
-      } else {
-        // No lot history (legacy) — adjust the aggregate directly; no
-        // snapshot is possible, so the sale stays field-edit-only.
-        const remaining = p.shares - args.shares;
-        if (remaining > 1e-9) {
-          const { error: err } = await client
-            .from('parked_positions').update({ shares: remaining }).eq('id', p.id);
-          if (err) throw err;
-        } else {
-          const { error: err } = await client.from('parked_positions').delete().eq('id', p.id);
-          if (err) throw err;
-        }
       }
       return saleId;
     },
@@ -1369,56 +1446,60 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         throw new Error(`Only ${p.shares} shares parked; cannot trim ${shares}`);
       }
       const positionLots = state.parkedLots.filter((l) => l.parkedPositionId === parkedId);
+      let done = false;
       try {
-      const saleId = await trimCore({
-        position: p,
-        lots: positionLots,
-        adjustments: adjustmentsForLots(positionLots, state.parkedLotAdjustments),
-        allLots: state.parkedLots,
-        shares,
-        pricePerShare,
-        date,
-        fundedChallenge: Boolean(depositVooPrice),
-      });
+        // The sale starts UNFUNDED and is marked funded only after the
+        // Deposit + twin actually land — so the record never claims a ledger
+        // deposit that doesn't exist, no matter where a failure hits.
+        const saleId = await trimCore({
+          position: p,
+          lots: positionLots,
+          adjustments: adjustmentsForLots(positionLots, state.parkedLotAdjustments),
+          allLots: state.parkedLots,
+          shares,
+          pricePerShare,
+          date,
+          fundedChallenge: false,
+        });
 
-      if (depositVooPrice) {
-        try {
-          const amount = roundCents(shares * pricePerShare);
-          const { data: cashRow, error: cashErr } = await client
-            .from('cash_events')
-            .insert(
-              cashEventPayload({
+        if (depositVooPrice) {
+          try {
+            await insertDepositWithTwin(
+              {
                 date,
                 type: 'Deposit',
-                amount,
+                amount: roundCents(shares * pricePerShare),
                 sourceDestination: `${p.ticker} trim (${p.account})`,
                 accountId: p.accountId,
-              }),
-            )
-            .select('id')
-            .single();
-          if (cashErr) throw cashErr;
-          const { error: benchErr } = await client
-            .from('benchmark_deposits')
-            .insert({ date, amount, voo_price_that_day: depositVooPrice, cash_event_id: cashRow.id });
-          if (benchErr) throw benchErr;
-        } catch (fundErr) {
-          // The sale is real; only the funding failed. Un-mark it so the
-          // record doesn't claim a ledger deposit that doesn't exist.
-          await client.from('parked_sales').update({ funded_challenge: false }).eq('id', saleId);
-          const msg = fundErr instanceof Error ? fundErr.message : String(fundErr);
-          throw new Error(
-            `Sale recorded, but funding the challenge failed (${msg}). Add the Deposit manually on the Cash Ledger.`,
-          );
+              },
+              depositVooPrice,
+            );
+          } catch (fundErr) {
+            throw new Error(
+              `Sale recorded, but funding the challenge failed. ${errorMessage(fundErr)} The sale stays marked unfunded.`,
+            );
+          }
+          const { error: markErr } = await client
+            .from('parked_sales').update({ funded_challenge: true }).eq('id', saleId);
+          if (markErr) {
+            throw new Error(
+              `Deposit recorded, but the sale couldn't be marked as challenge-funded (${markErr.message}) — pile account cash will double-count the proceeds until it is.`,
+            );
+          }
         }
-      }
+        done = true;
       } finally {
         // Refresh even on failure — a mid-trim error leaves a recorded sale
-        // whose Undo affordance must be visible immediately.
-        await refresh();
+        // whose Undo affordance must be visible immediately. But a refresh
+        // failure must not replace the guidance error with a fetch error.
+        try {
+          await refresh();
+        } catch (refreshErr) {
+          if (done) throw refreshErr;
+        }
       }
     },
-    [refresh, state.parked, state.parkedLots, state.parkedLotAdjustments, trimCore],
+    [refresh, state.parked, state.parkedLots, state.parkedLotAdjustments, trimCore, insertDepositWithTwin],
   );
 
   /** Undo a snapshot-bearing sale: fresh-read everything, build the

@@ -28,13 +28,15 @@ export interface WashSaleConflicts {
 }
 
 /** The full Rule 8 check for a proposed buy: loss-sales of the ticker in the
- * past 31 days from the challenge account AND any recorded outside account. */
-export function washSaleConflicts(
+ * past 31 days from the challenge account AND any recorded outside account.
+ * Generic over the sale shape so callers can carry extra fields (e.g. an
+ * unknown-basis flag) through the filter. */
+export function washSaleConflicts<S extends OutsideSale>(
   trades: Trade[],
-  outsideSales: OutsideSale[],
+  outsideSales: S[],
   ticker: string,
   buyDate: string,
-): WashSaleConflicts {
+): { trades: Trade[]; outside: S[] } {
   const windowStart = addDays(buyDate, -WASH_SALE_WINDOW_DAYS);
   return {
     trades: washSaleWarnings(trades, ticker, buyDate),

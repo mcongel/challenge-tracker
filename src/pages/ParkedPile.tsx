@@ -671,7 +671,7 @@ export function ParkedPile() {
       {deletingSale && (
         <ConfirmModal
           title="Delete sale record"
-          message={`Delete the ${deletingSale.ticker} sale from ${deletingSale.date} (${formatCurrency(deletingSale.proceeds)})? This removes only the history record — it does not restore shares or lots.${deletingSale.consumed ? ` If you want the shares back, use Undo instead. Deleting this also removes the undo guard for any OLDER ${deletingSale.ticker} sales — undo those first if you plan to.` : ''}`}
+          message={`Delete the ${deletingSale.ticker} sale from ${deletingSale.date} (${formatCurrency(deletingSale.proceeds)})? This removes only the history record — it does not restore shares or lots.${deletingSale.consumed ? ` If you want the shares back, use Undo instead. Deleting the record also lifts the check that stops OLDER ${deletingSale.ticker} sales from being undone out of order — their Undo could then restore lots this sale already consumed.` : ''}`}
           onConfirm={() => deleteParkedSale(deletingSale.id)}
           onClose={() => setDeletingSale(null)}
         />
