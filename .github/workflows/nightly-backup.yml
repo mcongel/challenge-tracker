@@ -1,0 +1,27 @@
+name: Nightly backup
+
+on:
+  schedule:
+    # 21:40 UTC daily — after the weekday snapshot slot.
+    - cron: '40 21 * * *'
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node scripts/backup.mjs backup.json
+        env:
+          SUPABASE_URL: https://mlvntnbgboinjhmavwao.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: challenge-backup-${{ github.run_id }}
+          path: backup.json
+          retention-days: 90

@@ -11,7 +11,9 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json",
     "seed": "node scripts/seed.mjs",
-    "snapshot": "tsx scripts/daily-snapshot.ts"
+    "snapshot": "tsx scripts/daily-snapshot.ts",
+    "backup": "node scripts/backup.mjs",
+    "restore": "node scripts/restore.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.0",
