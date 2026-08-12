@@ -975,14 +975,33 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const deleteParkedLot = useCallback(
     async (id: string) => {
+      const client = db();
       const lot = state.parkedLots.find((l) => l.id === id);
       if (!lot) throw new Error('Lot not found');
-      const { error: err } = await db().from('parked_lots').delete().eq('id', id);
+      // A share lot's ROC adjustment rows die with it (cascade) — the
+      // dividends that funded them must drop back to "unallocated" so the
+      // Income badge offers the idempotent re-spread, instead of keeping a
+      // stale "allocated" stamp over silently un-reduced basis.
+      const affectedDividends = [
+        ...new Set(
+          state.parkedLotAdjustments
+            .filter((a) => a.shareLotId === id && a.dividendLotId != null)
+            .map((a) => a.dividendLotId as string),
+        ),
+      ];
+      const { error: err } = await client.from('parked_lots').delete().eq('id', id);
       if (err) throw err;
+      if (affectedDividends.length > 0) {
+        const { error: unstampErr } = await client
+          .from('parked_lots')
+          .update({ roc_allocated_at: null, roc_overflow: null })
+          .in('id', affectedDividends);
+        if (unstampErr) throw unstampErr;
+      }
       await recomputeParkedAggregate(lot.parkedPositionId);
       await refresh();
     },
-    [refresh, recomputeParkedAggregate, state.parkedLots],
+    [refresh, recomputeParkedAggregate, state.parkedLots, state.parkedLotAdjustments],
   );
 
   const deleteParkedSale = useCallback(

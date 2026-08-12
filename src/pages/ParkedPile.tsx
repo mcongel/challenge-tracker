@@ -671,7 +671,7 @@ export function ParkedPile() {
       {deletingSale && (
         <ConfirmModal
           title="Delete sale record"
-          message={`Delete the ${deletingSale.ticker} sale from ${deletingSale.date} (${formatCurrency(deletingSale.proceeds)})? This removes only the history record — it does not restore shares or lots.${deletingSale.consumed ? ' If you want the shares back, use Undo instead.' : ''}`}
+          message={`Delete the ${deletingSale.ticker} sale from ${deletingSale.date} (${formatCurrency(deletingSale.proceeds)})? This removes only the history record — it does not restore shares or lots.${deletingSale.consumed ? ` If you want the shares back, use Undo instead. Deleting this also removes the undo guard for any OLDER ${deletingSale.ticker} sales — undo those first if you plan to.` : ''}`}
           onConfirm={() => deleteParkedSale(deletingSale.id)}
           onClose={() => setDeletingSale(null)}
         />
@@ -1365,8 +1365,10 @@ function LotPanel({ position: p, summary }: { position: ParkedPosition; summary:
         )}
 
         <p className="text-xs text-gray-400 mt-3">
-          Shares and cost basis derive from these lots. To fix a wrong entry, delete it and re-add.
-          Leave the date blank only if it's truly unknown — dated lots drive the unlock countdowns.
+          Shares and cost basis derive from these lots. To fix a wrong entry, delete it and re-add —
+          any ROC that was applied to it flips back to "unallocated" on the Income screen for
+          one-click re-spreading. Leave the date blank only if it's truly unknown — dated lots
+          drive the unlock countdowns.
         </p>
         </div>
       </div>
