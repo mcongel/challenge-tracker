@@ -1,13 +1,14 @@
 import { Fragment, useCallback, useMemo, useState } from 'react';
 import {
   AlertTriangle, Archive, ArrowDown, ArrowLeftRight, ArrowUp, ArrowUpDown, ChevronDown,
-  ChevronRight, Lock, Pencil, Plus, Scissors, Settings2, Trash2, Undo2, Unlock,
+  ChevronRight, Divide, Lock, Pencil, Plus, Scissors, Settings2, Trash2, Undo2, Unlock,
 } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
 import { AccountSelect } from '../components/ui/AccountSelect';
 import { ErrorCard, SkeletonTable } from './CashLedger';
+import { SplitModal } from './Positions';
 import { useData } from '../contexts/DataContext';
 import type {
   Account, AccountKind, DividendClassification, ParkedCashEvent, ParkedLot, ParkedPosition,
@@ -121,6 +122,7 @@ export function ParkedPile() {
   // screen; this table shows live holdings only.
   const parked = useMemo(() => allParked.filter((p) => !isArchivedPosition(p)), [allParked]);
   const [capOpen, setCapOpen] = useState(false);
+  const [splitTicker, setSplitTicker] = useState<string | null>(null);
   const [deletingSale, setDeletingSale] = useState<ParkedSale | null>(null);
   const [editingSale, setEditingSale] = useState<ParkedSale | null>(null);
   const [undoingSale, setUndoingSale] = useState<ParkedSale | null>(null);
@@ -541,6 +543,9 @@ export function ParkedPile() {
                         <button onClick={() => setTransferring(p)} className="p-1 rounded hover:bg-gray-100" aria-label={`Transfer ${p.ticker}`} title="Transfer between accounts (ACATS)">
                           <ArrowLeftRight className="h-4 w-4 text-gray-300 hover:text-gray-600" />
                         </button>
+                        <button onClick={() => setSplitTicker(p.ticker)} className="p-1 rounded hover:bg-gray-100" aria-label={`Record split for ${p.ticker}`} title={`Record stock split — adjusts every ${p.ticker} holding (all accounts + any challenge lots)`}>
+                          <Divide className="h-4 w-4 text-gray-300 hover:text-gray-600" />
+                        </button>
                         <button onClick={() => setEditing(p)} className="p-1 rounded hover:bg-gray-100" aria-label={`Edit ${p.ticker}`}>
                           <Pencil className="h-4 w-4 text-gray-300 hover:text-gray-600" />
                         </button>
@@ -677,6 +682,7 @@ export function ParkedPile() {
       {editing && <EditParkedModal position={editing} onClose={() => setEditing(null)} />}
       {trimming && <TrimModal position={trimming} onClose={() => setTrimming(null)} />}
       {transferring && <TransferModal position={transferring} onClose={() => setTransferring(null)} />}
+      {splitTicker && <SplitModal ticker={splitTicker} onClose={() => setSplitTicker(null)} />}
       {accountsOpen && <AccountsModal onClose={() => setAccountsOpen(false)} />}
       {addOpen && <AddHoldingModal onClose={() => setAddOpen(false)} />}
       {deletingSale && (

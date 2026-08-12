@@ -577,7 +577,9 @@ function ClosePositionModal({ ticker, onClose }: { ticker: string; onClose: () =
   );
 }
 
-function SplitModal({ ticker, onClose }: { ticker: string; onClose: () => void }) {
+/** Shared with the Parked Pile — a split is per-ticker and adjusts challenge
+ * lots AND parked holdings in one action, whichever screen opens it. */
+export function SplitModal({ ticker, onClose }: { ticker: string; onClose: () => void }) {
   const { recordSplit } = useData();
   const [ratio, setRatio] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
