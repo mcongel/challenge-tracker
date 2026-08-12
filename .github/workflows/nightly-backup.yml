@@ -15,8 +15,11 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - run: node scripts/backup.mjs backup.json
+      # Prod deps only: the script needs @supabase/supabase-js and nothing
+      # else — no reason to install the frontend toolchain into a runner
+      # holding the service-role key.
+      - run: npm ci --omit=dev
+      - run: npm run backup -- backup.json
         env:
           SUPABASE_URL: https://mlvntnbgboinjhmavwao.supabase.co
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

@@ -1,8 +1,10 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "lib": ["ES2022", "DOM"],
+    "lib": ["ES2022"],
     "types": ["node"]
   },
-  "include": ["scripts/**/*.ts", "src/lib/engine", "src/lib/alerts.ts"]
+  // The engine/alerts imports come in transitively — listing them here would
+  // only re-check the test suite a second time for zero extra coverage.
+  "include": ["scripts/**/*.ts"]
 }

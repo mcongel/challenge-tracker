@@ -12,6 +12,10 @@
     "moduleDetection": "force",
     "noEmit": true,
     "jsx": "react-jsx",
+    // Pin ambient types: @types/node (a devDep for the scripts config) must
+    // not leak Node globals into browser code — `process.env` in src/ should
+    // stay a compile error.
+    "types": ["vite/client"],
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,

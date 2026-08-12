@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { DataProvider } from './contexts/DataContext';
 import { Layout } from './components/layout/Layout';
@@ -39,9 +39,12 @@ function Gate() {
 }
 
 function AppRoutes() {
+  // Keyed by route: a crash on one screen must not follow the user to every
+  // other screen — navigation remounts the boundary and clears it.
+  const { pathname } = useLocation();
   return (
     <Layout>
-      <ErrorBoundary>
+      <ErrorBoundary key={pathname}>
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/ledger" element={<CashLedger />} />

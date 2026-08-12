@@ -7,7 +7,8 @@ any other schema — the Sackets project also hosts the race-management apps.
 
 Supabase dashboard → SQL Editor → paste and run each file in
 `supabase/migrations/` in ascending filename order (the timestamps sort
-correctly), or `supabase db push` with the CLI linked to this project:
+correctly), or with the CLI: `supabase link --project-ref mlvntnbgboinjhmavwao`
+once (the link state is gitignored), then `supabase db push`:
 
 ```
 20260804000000_init_challenge.sql        schema, RLS, grants
@@ -96,3 +97,9 @@ from the UI when real trading starts.
 - The service role key is for the scripts (seed/snapshot/backup/restore)
   only. Never put it in a `VITE_`-prefixed var, a `.env` that ships, or the
   repo.
+- Backup artifacts are the FULL unencrypted ledger — anyone with read access
+  to the repo can download them from the Actions tab. The repo must stay
+  private.
+- GitHub disables scheduled workflows after ~60 days without repository
+  activity. If commits go quiet, glance at the Actions tab monthly — a
+  `workflow_dispatch` run re-arms the schedules.

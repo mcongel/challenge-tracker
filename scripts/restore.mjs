@@ -9,6 +9,7 @@
  */
 import { createClient } from '@supabase/supabase-js';
 import { readFileSync } from 'node:fs';
+import { TABLE_NAMES, WIPE_ORDER } from './tables.mjs';
 
 const url = process.env.SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -79,6 +80,7 @@ const TABLES = [
     id: e.id, date: e.date, type: e.type, amount: e.amount, ticker: e.ticker ?? null,
     source_destination: e.sourceDestination ?? null, account_id: e.accountId ?? null,
     destination_account_id: e.destinationAccountId ?? null, notes: e.notes ?? null,
+    created_at: e.createdAt ?? undefined, // same-date rows order by it in the app
   })), 'id'],
   ['position_lots', get('position_lots').map((l) => ({
     id: l.id, ticker: l.ticker, buy_date: l.buyDate, shares: l.shares, avg_cost: l.avgCost,
@@ -104,24 +106,35 @@ const TABLES = [
     parked_pile_value: s.parkedPileValue, semi_ai_pct: s.semiAiPct,
   })), 'date'],
   ['loss_carryforwards', get('loss_carryforwards').map((c) => ({
-    tax_year: c.taxYear, amount: c.amount,
+    tax_year: c.taxYear, amount: c.amount, notes: c.notes ?? null,
   })), 'tax_year'],
   ['price_overrides', get('price_overrides').map((o) => ({
     ticker: o.ticker, price: o.price,
+    set_at: o.setAt ?? undefined, // the "pinned since" staleness cue reads it
   })), 'ticker'],
-  ['app_settings', get('app_settings').map((s) => ({ key: s.key, value: s.value })), 'key'],
+  ['app_settings', get('app_settings').map((s) => ({
+    key: s.key, value: s.value, updated_at: s.updatedAt ?? undefined,
+  })), 'key'],
 ];
 
+// Drift guard: the shared roster and this file's mappers must agree — a
+// table added to one but not the other means silent data loss on the next
+// backup or restore, exactly when it hurts most.
+{
+  const mapped = new Set(TABLES.map(([t]) => t));
+  const shared = new Set(TABLE_NAMES);
+  const missing = [...shared].filter((t) => !mapped.has(t));
+  const extra = [...mapped].filter((t) => !shared.has(t));
+  if (missing.length > 0 || extra.length > 0) {
+    console.error(
+      `Table roster drift — missing mappers: [${missing.join(', ')}], unlisted mappers: [${extra.join(', ')}]. Fix scripts/tables.mjs and restore.mjs together.`,
+    );
+    process.exit(1);
+  }
+}
+
 if (wipe) {
-  // Children before parents; accounts last.
-  const order = [
-    'scenario_rotations', 'income_scenarios',
-    'parked_lot_adjustments', 'parked_lots', 'parked_sales', 'parked_cash_events',
-    'outside_sales', 'cash_events', 'position_lots', 'trades',
-    'milestones', 'benchmark_deposits', 'snapshots', 'loss_carryforwards', 'price_overrides',
-    'parked_positions', 'app_settings', 'accounts',
-  ];
-  for (const table of order) {
+  for (const table of WIPE_ORDER) {
     const pk = table === 'snapshots' ? 'date' : table === 'loss_carryforwards' ? 'tax_year'
       : table === 'price_overrides' ? 'ticker' : table === 'app_settings' ? 'key' : 'id';
     const { error } = await supabase.from(table).delete().not(pk, 'is', null);

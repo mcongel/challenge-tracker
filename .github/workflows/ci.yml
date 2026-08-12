@@ -16,4 +16,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      # Both configs — app AND scripts. Kept out of `build` so a script-only
+      # type error can't block a Cloudflare Pages deploy of unrelated UI.
+      - run: npm run typecheck
       - run: npm run build

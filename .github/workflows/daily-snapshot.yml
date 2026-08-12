@@ -16,7 +16,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx tsx scripts/daily-snapshot.ts
+      - run: npm run snapshot
         env:
           SUPABASE_URL: https://mlvntnbgboinjhmavwao.supabase.co
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

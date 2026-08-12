@@ -27,14 +27,27 @@ if (!url || !key) {
 }
 
 const supabase = createClient(url, key, { db: { schema: 'challenge' } });
-const today = new Date().toISOString().slice(0, 10);
+// Snapshot dates are the OWNER's calendar (America/New_York) — the runner is
+// UTC, so a late-evening manual dispatch would otherwise stamp tomorrow and
+// block the real snapshot. SNAPSHOT_DATE=YYYY-MM-DD backfills a missed day.
+const today =
+  process.env.SNAPSHOT_DATE ??
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
 
 const num = (v: any) => Number(v);
 
+// PostgREST caps responses at max-rows (default 1000) SERVER-side — page
+// until a short page, or a grown table silently truncates the math.
+const PAGE = 1000;
 async function load(table: string) {
-  const { data, error } = await supabase.from(table).select('*');
-  if (error) throw new Error(`${table}: ${error.message}`);
-  return (data ?? []) as any[];
+  const rows: any[] = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await supabase
+      .from(table).select('*').range(offset, offset + PAGE - 1);
+    if (error) throw new Error(`${table}: ${error.message}`);
+    rows.push(...(data ?? []));
+    if ((data ?? []).length < PAGE) return rows;
+  }
 }
 
 async function main(): Promise<void> {
@@ -103,7 +116,7 @@ async function main(): Promise<void> {
     // shadow would poison the verdict, so we can't write either — make the
     // workflow red and say exactly what to do.
     throw new Error(
-      'No VOO price available (quote fetch failed and no VOO override is pinned) — no snapshot written for a market day. Pin a VOO price on the Benchmark screen or re-run once quotes recover.',
+      `No VOO price available (quote fetch failed and no VOO override is pinned) — no snapshot written for ${today}. Pin a VOO price on the Benchmark screen, then re-run with SNAPSHOT_DATE=${today} to backfill this day. (A red run on a US market holiday can be ignored.)`,
     );
   }
 
