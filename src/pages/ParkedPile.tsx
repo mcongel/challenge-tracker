@@ -1,5 +1,8 @@
 import { Fragment, useCallback, useMemo, useState } from 'react';
 import {
+  Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis,
+} from 'recharts';
+import {
   AlertTriangle, Archive, ArrowDown, ArrowLeftRight, ArrowUp, ArrowUpDown, ChevronDown,
   ChevronRight, Divide, Lock, Pencil, Plus, Scissors, Settings2, Trash2, Unlock,
 } from 'lucide-react';
@@ -12,17 +15,19 @@ import { SplitModal } from './Positions';
 import { useData } from '../contexts/DataContext';
 import type {
   Account, AccountKind, DividendClassification, ParkedCashEvent, ParkedLot, ParkedPosition,
-  ParkedSale, UnlockSummary,
+  ParkedSale, Snapshot, UnlockSummary,
 } from '../lib/engine';
+import { useIsDark } from '../lib/useIsDark';
 import {
   adjustmentsForLots, aggregateLotsAdjusted, basisExhaustedLotIds, concentration,
   contributionStatus, daysBetween, depositExceedsCap, dividendsCollected, estimatedPileTax,
   isArchivedPosition, isNeverTrimFuel, netContributed, parkedCostBasis, parkedMarketValue,
-  roundCents, trimPreview, unlockSummary,
+  positionTotalReturn, roundCents, trimPreview, unlockSummary,
 } from '../lib/engine';
+import type { PositionTotalReturn } from '../lib/engine';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import {
-  cn, errorMessage, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls,
+  cn, compactUsd, errorMessage, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls,
   secondaryBtnCls, todayISO,
 } from '../lib/utils';
 import { useNotional } from '../lib/useNotional';
@@ -45,6 +50,43 @@ export const classificationPillCls = (c: DividendClassification) =>
       ? 'bg-sky-50 text-sky-700'
       : 'bg-gray-100 text-gray-600';
 
+/** Pile value from the daily snapshots — house chart contract (green area,
+ * CVD-validated palette). VALUE, not a return series: new money moves it. */
+function PileValueChart({ snapshots }: { snapshots: Snapshot[] }) {
+  const isDark = useIsDark();
+  const gridColor = isDark ? '#334155' : '#e5e7eb';
+  const axisColor = isDark ? '#94a3b8' : '#6b7280';
+  const green = isDark ? '#22c55e' : '#16a34a';
+  const data = snapshots.map((s) => ({
+    date: s.date.slice(5),
+    Value: roundCents(s.parkedPileValue),
+  }));
+  return (
+    <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6 mb-4">
+      <p className="text-sm font-medium text-gray-700 mb-1">
+        Pile value over time
+        <span className="ml-2 text-xs font-normal text-gray-400">
+          value, not return — new money moves this line too
+        </span>
+      </p>
+      <div className="h-40">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 4 }}>
+            <CartesianGrid stroke={gridColor} vertical={false} />
+            <XAxis dataKey="date" stroke={axisColor} tickLine={false} axisLine={false}
+              tick={{ fontSize: 11 }} minTickGap={32} />
+            <YAxis stroke={axisColor} tickLine={false} axisLine={false}
+              tick={{ fontSize: 11 }} tickFormatter={compactUsd} width={52} domain={['auto', 'auto']} />
+            <Tooltip formatter={(v) => formatCurrency(Number(v))} />
+            <Area type="monotone" dataKey="Value" stroke={green} strokeWidth={2}
+              fill={green} fillOpacity={0.12} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
 const CATEGORY_STYLES: Record<ParkedPosition['category'], string> = {
   'Semi/AI': 'bg-indigo-50 text-indigo-700',
   'AI-adjacent': 'bg-sky-50 text-sky-700',
@@ -58,7 +100,7 @@ export const fmtSh = (n: number) => String(Number(n.toFixed(4)));
 type GroupBy = 'account' | 'ticker' | 'flat';
 type SortKey =
   | 'default' | 'label' | 'shares' | 'avgCost' | 'price' | 'dayChange' | 'value' | 'unreal'
-  | 'unlock';
+  | 'totalReturn' | 'unlock';
 /** Reused by other sortable tables (Income) — the thead needs `group/head`
  * for the idle-arrow hover reveal. */
 export interface SortState<K extends string = SortKey> {
@@ -76,6 +118,7 @@ const NATURAL_DIR: Record<SortKey, 'asc' | 'desc'> = {
   dayChange: 'desc',
   value: 'desc',
   unreal: 'desc',
+  totalReturn: 'desc',
   unlock: 'asc',
 };
 const SORT_KEYS = Object.keys(NATURAL_DIR) as SortKey[];
@@ -115,8 +158,8 @@ export function SortHeader<K extends string = SortKey>({
 
 export function ParkedPile() {
   const {
-    parked: allParked, parkedLots, accounts, tickerNames,
-    concentrationCap, updateSetting, accountCash, dayChange,
+    parked: allParked, parkedLots, parkedLotAdjustments, parkedSales, snapshots, accounts,
+    tickerNames, concentrationCap, updateSetting, accountCash, dayChange,
     overrides, overrideSetAt, loading, error,
   } = useData();
   // Archived (zero-share) rows keep dividend history alive on the Income
@@ -137,6 +180,26 @@ export function ParkedPile() {
     return m;
   }, [parkedLots]);
   const divTotal = dividendsCollected(parkedLots);
+
+  // Total return per position (price + income + realized, ROC counted once)
+  // — the ranking answer to "which of these actually worked?" Includes
+  // archived positions so the pile-wide figure keeps closed winners/losers.
+  const totalReturnByPosition = useMemo(() => {
+    const m = new Map<string, PositionTotalReturn>();
+    for (const p of allParked) {
+      const lots = parkedLots.filter((l) => l.parkedPositionId === p.id);
+      const sales = parkedSales.filter((s) => s.ticker === p.ticker && s.accountId === p.accountId);
+      m.set(p.id, positionTotalReturn(p, lots, parkedLotAdjustments, sales));
+    }
+    return m;
+  }, [allParked, parkedLots, parkedLotAdjustments, parkedSales]);
+  const pileReturn = useMemo(() => {
+    let total = 0; let invested = 0;
+    for (const r of totalReturnByPosition.values()) {
+      total += r.total; invested += r.invested;
+    }
+    return { total, invested, pct: invested > 0 ? total / invested : null };
+  }, [totalReturnByPosition]);
 
   const today = todayISO();
   const c = concentration(parked, concentrationCap);
@@ -195,6 +258,8 @@ export function ParkedPile() {
         case 'unreal':
           // By dollars — it's the figure the cell leads with.
           return parkedMarketValue(p) - parkedCostBasis(p);
+        case 'totalReturn':
+          return totalReturnByPosition.get(p.id)?.total ?? -Infinity;
         case 'unlock': {
           // Soonest actionable first: fully unlocked, then by days to unlock,
           // undated last (the app can't prove a holding period).
@@ -207,7 +272,7 @@ export function ParkedPile() {
           return 0;
       }
     },
-    [groupBy, lotsByPosition, today, dayChange],
+    [groupBy, lotsByPosition, today, dayChange, totalReturnByPosition],
   );
 
   const sortPositions = useCallback(
@@ -291,9 +356,15 @@ export function ParkedPile() {
         <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
           <p className="text-xs font-medium text-gray-500">Pile total</p>
           <p className="mt-0.5 text-xl font-bold tabular-nums text-gray-900">{formatCurrency(roundCents(c.total))}</p>
-          <p className="text-xs text-gray-400 mt-0.5">
+          <p className="text-xs text-gray-400 mt-0.5"
+            title={`All-time total return: price + dividends (${formatCurrency(roundCents(divTotal))} collected) + realized sales, ROC counted once. Simple return on dollars invested, not annualized.`}>
             not in score
-            {divTotal > 0 && <span className="text-green-700"> · +{formatCurrency(roundCents(divTotal))} dividends</span>}
+            {pileReturn.invested > 0 && (
+              <span className={pileReturn.total >= 0 ? 'text-green-700' : 'text-red-600'}>
+                {' '}· {pileReturn.total >= 0 ? '+' : '−'}{formatCurrency(Math.abs(roundCents(pileReturn.total)))} all-time
+                {pileReturn.pct != null && ` (${formatPercent(pileReturn.pct)})`}
+              </span>
+            )}
           </p>
         </div>
         <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
@@ -327,6 +398,10 @@ export function ParkedPile() {
           funds the challenge account AND reduces concentration.
         </div>
       )}
+
+      {/* Value history from the daily snapshots. Honesty note: this is VALUE,
+          not a return series — new money moves it too. */}
+      {snapshots.length >= 2 && <PileValueChart snapshots={snapshots} />}
 
       {loading ? (
         <SkeletonTable />
@@ -376,6 +451,8 @@ export function ParkedPile() {
                 <SortHeader label="Value" sortKey="value" sort={sort} onSort={toggleSort} align="right" />
                 <SortHeader label="Unrealized" sortKey="unreal" sort={sort} onSort={toggleSort} align="right"
                   title="Gain or loss against cost basis, in dollars and percent. Sorts by dollars." />
+                <SortHeader label="Total return" sortKey="totalReturn" sort={sort} onSort={toggleSort} align="right"
+                  title="The whole story: price gain + dividends + realized sales, with ROC counted once. Percent is simple return on dollars invested — not annualized. Sort to rank winners and losers." />
                 <SortHeader label="LT" sortKey="unlock" sort={sort} onSort={toggleSort}
                   title="Funding unlock: shares held >1 year sell at long-term rates — the only legitimate funding trims (Rule 5). Open lock = unlocked, amber = partly, closed = locked, warning = needs lot dates. Sorts soonest-actionable first; expand a row for the schedule." />
                 <th className="px-2 py-3" />
@@ -391,7 +468,7 @@ export function ParkedPile() {
                   <Fragment key={group.key}>
                     {groupBy !== 'flat' && (
                     <tr className="bg-gray-50">
-                      <td colSpan={10} className="px-4 py-2">
+                      <td colSpan={11} className="px-4 py-2">
                         {groupBy === 'account' ? (
                           <span className="font-bold text-gray-700">
                             {group.label}
@@ -509,6 +586,20 @@ export function ParkedPile() {
                       <td className="px-4 py-3 text-right">
                         <UnrealCell gain={value - basis} basis={basis} />
                       </td>
+                      <td className="px-4 py-3 text-right">
+                        {(() => {
+                          const tr = totalReturnByPosition.get(p.id);
+                          if (!tr) return <span className="text-gray-400">—</span>;
+                          return (
+                            <span className={cn('tabular-nums font-medium', tr.total >= 0 ? 'text-green-600' : 'text-red-600')}>
+                              {tr.total >= 0 ? '+' : '−'}{formatCurrency(Math.abs(roundCents(tr.total)))}
+                              {tr.pct != null && (
+                                <span className="block text-xs font-normal">{formatPercent(tr.pct)}</span>
+                              )}
+                            </span>
+                          );
+                        })()}
+                      </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <UnlockCell summary={summ} />
                       </td>
@@ -529,7 +620,7 @@ export function ParkedPile() {
                     </tr>
                     {expanded && (
                       <tr>
-                        <td colSpan={10} className="bg-gray-50 px-4 sm:px-6 py-4">
+                        <td colSpan={11} className="bg-gray-50 px-4 sm:px-6 py-4">
                           <LotPanel position={p} summary={summ} />
                         </td>
                       </tr>
@@ -967,7 +1058,9 @@ function unlockSentence(s: UnlockSummary): string {
 }
 
 function LotPanel({ position: p, summary }: { position: ParkedPosition; summary: UnlockSummary }) {
-  const { parkedLots, parkedLotAdjustments, addParkedLot, deleteParkedLot, overrides, quotes } = useData();
+  const {
+    parkedLots, parkedLotAdjustments, parkedSales, addParkedLot, deleteParkedLot, overrides, quotes,
+  } = useData();
   const { lots, adjustedAgg, exhausted } = useMemo(() => {
     const positionLots = parkedLots
       .filter((l) => l.parkedPositionId === p.id)
@@ -979,6 +1072,13 @@ function LotPanel({ position: p, summary }: { position: ParkedPosition; summary:
       exhausted: new Set(basisExhaustedLotIds(positionLots, positionAdjs)),
     };
   }, [parkedLots, parkedLotAdjustments, p.id]);
+  const totalReturn = useMemo(
+    () => positionTotalReturn(
+      p, lots, parkedLotAdjustments,
+      parkedSales.filter((s) => s.ticker === p.ticker && s.accountId === p.accountId),
+    ),
+    [p, lots, parkedLotAdjustments, parkedSales],
+  );
   const effectivePrice = overrides[p.ticker] ?? quotes[p.ticker] ?? p.currentPrice;
   const lastDiv = lots.filter((l) => l.source === 'dividend' && l.date).at(-1);
 
@@ -1092,6 +1192,18 @@ function LotPanel({ position: p, summary }: { position: ParkedPosition; summary:
       </p>
       <p className="text-sm text-gray-600 mb-3">
         {unlockSentence(summary)}
+        {totalReturn.invested > 0 && (
+          <span className="text-gray-500">
+            {' '}Total return{' '}
+            <span className={cn('font-medium tabular-nums', totalReturn.total >= 0 ? 'text-green-600' : 'text-red-600')}>
+              {totalReturn.total >= 0 ? '+' : '−'}{formatCurrency(Math.abs(roundCents(totalReturn.total)))}
+              {totalReturn.pct != null && ` (${formatPercent(totalReturn.pct)})`}
+            </span>
+            {' '}— unrealized {formatCurrency(roundCents(totalReturn.unrealized))} · income{' '}
+            {formatCurrency(roundCents(totalReturn.income))} · realized {formatCurrency(roundCents(totalReturn.realized))}
+            {totalReturn.unknownBasisSales > 0 && ` · ${totalReturn.unknownBasisSales} unknown-basis sale${totalReturn.unknownBasisSales > 1 ? 's' : ''} excluded`}.
+          </span>
+        )}
         {lastDiv && (
           <span className="text-gray-500"> Last dividend {lastDiv.date} ({formatCurrency(lastDiv.amount)}).</span>
         )}

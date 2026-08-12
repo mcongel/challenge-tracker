@@ -1194,3 +1194,87 @@ describe('the wall — parked dividends cannot reach the score', () => {
     expect(totalScore.length).toBe(4);
   });
 });
+
+describe('parkedReturns — total return counts every dollar exactly once', () => {
+  const pos = (shares: number, currentPrice: number) => ({ shares, currentPrice });
+  const shareLot = (id: string, shares: number, amount: number): ParkedLot => ({
+    id, parkedPositionId: 'p1', date: '2025-01-01', source: 'purchase', shares, price: null, amount,
+  });
+  const divLot = (id: string, amount: number, over: Partial<ParkedLot> = {}): ParkedLot => ({
+    id, parkedPositionId: 'p1', date: '2026-01-01', source: 'dividend', shares: 0, price: null,
+    amount, classification: 'qualified', ...over,
+  });
+  const sale = (proceeds: number, costBasis: number | null): import('../types').ParkedSale => ({
+    id: 's1', ticker: 'XYZ', accountId: 'a1', date: '2026-06-01', shares: 1,
+    pricePerShare: proceeds, proceeds, costBasis, ltShares: null, fundedChallenge: false,
+    consumed: null, createdAt: null,
+  });
+
+  it('plain price gain plus dividends', async () => {
+    const { positionTotalReturn } = await import('../parkedReturns');
+    const r = positionTotalReturn(pos(10, 15), [shareLot('a', 10, 100), divLot('d', 5)], [], []);
+    expect(r.unrealized).toBe(50);
+    expect(r.income).toBe(5);
+    expect(r.total).toBe(55);
+    expect(r.pct).toBeCloseTo(0.55, 10);
+  });
+
+  it('allocated ROC counts once: reduced basis, not income', async () => {
+    const { positionTotalReturn } = await import('../parkedReturns');
+    // Buy $100, ROC $10 allocated (basis → $90), price flat: economic +$10.
+    const lots = [
+      shareLot('a', 10, 100),
+      divLot('roc', 10, { classification: 'return_of_capital', rocAllocatedAt: '2026-01-02', rocOverflow: 0 }),
+    ];
+    const adjs: ParkedLotAdjustment[] = [{ id: 'j1', shareLotId: 'a', dividendLotId: 'roc', amount: 10 }];
+    const r = positionTotalReturn(pos(10, 10), lots, adjs, []);
+    expect(r.unrealized).toBe(10); // 100 value − 90 adjusted basis
+    expect(r.income).toBe(0);      // the ROC dollar lives in the basis leg
+    expect(r.total).toBe(10);
+  });
+
+  it('ROC then sell-all still counts once via the recorded adjusted basis', async () => {
+    const { positionTotalReturn } = await import('../parkedReturns');
+    // Sold everything: no live lots, sale recorded against $90 adjusted basis.
+    const lots = [
+      divLot('roc', 10, { classification: 'return_of_capital', rocAllocatedAt: '2026-01-02', rocOverflow: 0 }),
+    ];
+    const r = positionTotalReturn(pos(0, 0), lots, [], [sale(100, 90)]);
+    expect(r.realized).toBe(10);
+    expect(r.income).toBe(0);
+    expect(r.total).toBe(10); // paid 100, got 100 + 10 ROC back
+  });
+
+  it('unallocated ROC and overflow stay income', async () => {
+    const { positionTotalReturn } = await import('../parkedReturns');
+    const lots = [
+      shareLot('a', 10, 100),
+      divLot('un', 4, { classification: 'return_of_capital' }), // not yet allocated
+      divLot('ov', 6, { classification: 'return_of_capital', rocAllocatedAt: '2026-01-02', rocOverflow: 6 }),
+    ];
+    const r = positionTotalReturn(pos(10, 10), lots, [], []);
+    expect(r.income).toBe(10); // both count as income — neither reduced basis
+    expect(r.total).toBe(10);
+  });
+
+  it('DRIP reinvestment is not double-counted', async () => {
+    const { positionTotalReturn } = await import('../parkedReturns');
+    // Buy $100, $10 DRIP (its own lot with $10 basis), value now $110: +$10.
+    const lots = [
+      shareLot('a', 10, 100),
+      divLot('drip', 10, { shares: 1, price: 10 }),
+    ];
+    const r = positionTotalReturn(pos(11, 10), lots, [], []);
+    expect(r.unrealized).toBe(0); // 110 value − 110 basis (incl. the DRIP lot)
+    expect(r.income).toBe(10);
+    expect(r.total).toBe(10);
+  });
+
+  it('unknown-basis sales are excluded and surfaced', async () => {
+    const { positionTotalReturn } = await import('../parkedReturns');
+    const r = positionTotalReturn(pos(10, 10), [shareLot('a', 10, 100)], [], [sale(50, null)]);
+    expect(r.realized).toBe(0);
+    expect(r.unknownBasisSales).toBe(1);
+    expect(r.invested).toBe(100);
+  });
+});
