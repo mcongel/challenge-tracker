@@ -401,6 +401,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       ...new Set([
         ...state.lots.map((l) => l.ticker),
         ...state.parked.filter((p) => !isArchivedPosition(p)).map((p) => p.ticker),
+        // Bench names too — the Watchlist's "price now" column is the point.
+        ...state.watchlist.map((w) => w.ticker),
         'VOO',
       ]),
     ];
@@ -444,7 +446,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       // shows an amber "quotes stale" stamp instead of an error.
       setQuotesError(true);
     }
-  }, [state.lots, state.parked, persistQuotedPrices]);
+  }, [state.lots, state.parked, state.watchlist, persistQuotedPrices]);
 
   const refreshQuotesRef = useRef(refreshQuotes);
   useEffect(() => {

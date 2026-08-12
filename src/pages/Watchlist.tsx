@@ -157,8 +157,8 @@ export function Watchlist() {
             </tbody>
           </table>
           <p className="px-4 py-3 text-xs text-gray-400 border-t border-gray-100">
-            Research notes only — nothing here trades or touches the score. Quotes fetch only for
-            held tickers, so Price now fills in when a bench name is also held somewhere.
+            Research notes only — nothing here trades or touches the score. Prices are the same
+            delayed quotes as everywhere else; hit refresh in the header if the stamp looks stale.
           </p>
         </div>
       )}
