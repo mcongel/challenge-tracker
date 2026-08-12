@@ -596,37 +596,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [refresh, state.lots],
   );
 
-  const recordSplit = useCallback(
-    async (ticker: string, ratio: number, date: string) => {
-      const client = db();
-      const note = `${ratio}:1 split recorded ${date}`;
-      for (const lot of state.lots.filter((l) => l.ticker === ticker)) {
-        const { error: err } = await client
-          .from('position_lots')
-          .update({
-            shares: lot.shares * ratio,
-            avg_cost: lot.avgCost / ratio,
-            thesis: lot.thesis ? `${lot.thesis} · ${note}` : note,
-          })
-          .eq('id', lot.id);
-        if (err) throw err;
-      }
-      for (const p of state.parked.filter((p) => p.ticker === ticker)) {
-        const { error: err } = await client
-          .from('parked_positions')
-          .update({
-            shares: p.shares * ratio,
-            avg_cost: p.avgCost / ratio,
-            notes: p.notes ? `${p.notes} · ${note}` : note,
-          })
-          .eq('id', p.id);
-        if (err) throw err;
-      }
-      await refresh();
-    },
-    [refresh, state.lots, state.parked],
-  );
-
   const setTradeWashSale = useCallback(
     async (id: string, washSale: boolean) => {
       const { error: err } = await db().from('trades').update({ wash_sale: washSale }).eq('id', id);
@@ -720,6 +689,58 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (err) throw err;
     }
   }, []);
+
+  const recordSplit = useCallback(
+    async (ticker: string, ratio: number, date: string) => {
+      const client = db();
+      const note = `${ratio}:1 split recorded ${date}`;
+      for (const lot of state.lots.filter((l) => l.ticker === ticker)) {
+        const { error: err } = await client
+          .from('position_lots')
+          .update({
+            shares: lot.shares * ratio,
+            avg_cost: lot.avgCost / ratio,
+            // The exit target is a price too — an unscaled target after a
+            // split silences (or falsely fires) the exit alert forever.
+            exit_target: lot.exitTarget / ratio,
+            bail_point: lot.bailPoint != null ? lot.bailPoint / ratio : null,
+            thesis: lot.thesis ? `${lot.thesis} · ${note}` : note,
+          })
+          .eq('id', lot.id);
+        if (err) throw err;
+      }
+      // Parked positions are aggregates maintained FROM lots — the split must
+      // land on the lots (basis/amount unchanged; a split moves no money) or
+      // the next recompute silently reverts it and FIFO share math wedges.
+      for (const p of state.parked.filter((p) => p.ticker === ticker)) {
+        const positionLots = state.parkedLots.filter(
+          (l) => l.parkedPositionId === p.id && l.shares > 0,
+        );
+        for (const l of positionLots) {
+          const { error: err } = await client
+            .from('parked_lots')
+            .update({
+              shares: l.shares * ratio,
+              price: l.price != null ? l.price / ratio : null,
+            })
+            .eq('id', l.id);
+          if (err) throw err;
+        }
+        const { error: noteErr } = await client
+          .from('parked_positions')
+          .update({
+            current_price: p.currentPrice / ratio,
+            notes: p.notes ? `${p.notes} · ${note}` : note,
+          })
+          .eq('id', p.id);
+        if (noteErr) throw noteErr;
+        await recomputeParkedAggregate(p.id);
+      }
+      await refresh();
+    },
+    [refresh, state.lots, state.parked, state.parkedLots, recomputeParkedAggregate],
+  );
+
 
   /** Allocate an ROC dividend's basis reductions across the position's
    * current share lots (its own DRIP lot excluded via allocateRoc's
