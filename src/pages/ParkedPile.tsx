@@ -171,6 +171,12 @@ export function ParkedPile() {
   const [trimming, setTrimming] = useState<ParkedPosition | null>(null);
   /** Trim-fuel shortcut: prefill the Sell form with the unlocked shares. */
   const [trimPresetShares, setTrimPresetShares] = useState<number | null>(null);
+  // Accordion — the summary lives in the header, so collapsed still informs.
+  const [fuelOpen, setFuelOpenState] = useState(() => localStorage.getItem('pileFuelOpen') === '1');
+  const setFuelOpen = (v: boolean) => {
+    setFuelOpenState(v);
+    localStorage.setItem('pileFuelOpen', v ? '1' : '0');
+  };
   const [transferring, setTransferring] = useState<ParkedPosition | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [accountsOpen, setAccountsOpen] = useState(false);
@@ -460,23 +466,31 @@ export function ParkedPile() {
       )}
 
       {/* The funding answer: what's ready to move into the challenge, in plan
-          order, with the tax cost attached. Supersedes squinting at locks. */}
+          order, with the tax cost attached. Supersedes squinting at locks.
+          Accordion: the header carries the summary, so collapsed still informs. */}
       {(trimFuel.length > 0 || nextUnlocks.length > 0) && (
         <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6 mb-4 density-aware-card">
-          <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
-            <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-              Trim fuel — long-term shares ready to fund the challenge (Rule 5)
-            </p>
+          <button
+            onClick={() => setFuelOpen(!fuelOpen)}
+            className="w-full flex flex-wrap items-baseline justify-between gap-2 text-left"
+            aria-expanded={fuelOpen}
+          >
+            <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-gray-400">
+              {fuelOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              Trim fuel — {trimFuel.length > 0
+                ? `${trimFuel.length} holding${trimFuel.length > 1 ? 's' : ''} · ${formatCurrency(roundCents(trimFuel.reduce((s, r) => s + r.readyValue, 0)))} ready (Rule 5)`
+                : 'nothing long-term yet (Rule 5)'}
+            </span>
             {capRoom !== null && (
-              <p className={cn('text-xs tabular-nums', capRoom <= 0 ? 'text-red-600 font-medium' : 'text-gray-400')}>
+              <span className={cn('text-xs tabular-nums', capRoom <= 0 ? 'text-red-600 font-medium' : 'text-gray-400')}>
                 {capRoom <= 0
                   ? 'contribution cap reached — proceeds stay in the pile'
                   : `${formatCurrency(roundCents(capRoom))} of contribution-cap room`}
-              </p>
+              </span>
             )}
-          </div>
-          {trimFuel.length > 0 ? (
-            <ul className="divide-y divide-gray-100">
+          </button>
+          {fuelOpen && (trimFuel.length > 0 ? (
+            <ul className="mt-2 divide-y divide-gray-100">
               {trimFuel.map(({ p, unlockedShares, readyValue, gain, estTax }) => (
                 <li key={p.id} className="py-2 flex flex-wrap items-center justify-between gap-2">
                   <span className="flex items-center gap-1.5 min-w-0">
@@ -520,9 +534,9 @@ export function ParkedPile() {
               ))}
             </ul>
           ) : (
-            <p className="text-sm text-gray-400">Nothing is long-term yet.</p>
-          )}
-          {nextUnlocks.length > 0 && (
+            <p className="mt-2 text-sm text-gray-400">Nothing is long-term yet.</p>
+          ))}
+          {fuelOpen && nextUnlocks.length > 0 && (
             <p className="mt-2 text-xs text-gray-400 tabular-nums">
               Unlocking next: {nextUnlocks.map(({ p, next }) =>
                 `${fmtSh(next.shares)} sh ${p.ticker} on ${next.date}`).join(' · ')}
