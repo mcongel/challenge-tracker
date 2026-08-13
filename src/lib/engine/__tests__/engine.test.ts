@@ -1321,3 +1321,14 @@ describe('tradeStats — the pattern behind the closed trades', () => {
     expect(s.avgLoss).toBe(-10);
   });
 });
+
+describe('suggestCategory — hints only for the unambiguous industries', () => {
+  it('semis and crypto suggest; everything else stays a human call', async () => {
+    const { suggestCategory } = await import('../parked');
+    expect(suggestCategory('Semiconductors')).toBe('Semi/AI');
+    expect(suggestCategory('Bitcoin & Cryptocurrency')).toBe('BTC');
+    expect(suggestCategory('Software')).toBeNull(); // MSTR is BTC only to the owner
+    expect(suggestCategory('Auto Manufacturers')).toBeNull(); // TSLA is a thesis call
+    expect(suggestCategory(null)).toBeNull();
+  });
+});

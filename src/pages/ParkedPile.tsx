@@ -22,7 +22,7 @@ import {
   adjustmentsForLots, aggregateLotsAdjusted, basisExhaustedLotIds, concentration,
   contributionStatus, daysBetween, depositExceedsCap, dividendsCollected, estimatedPileTax,
   isArchivedPosition, isNeverTrimFuel, netContributed, parkedCostBasis, parkedMarketValue,
-  positionTotalReturn, roundCents, trimPreview, unlockSummary,
+  positionTotalReturn, roundCents, suggestCategory, trimPreview, unlockSummary,
 } from '../lib/engine';
 import type { PositionTotalReturn } from '../lib/engine';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
@@ -32,7 +32,7 @@ import {
 } from '../lib/utils';
 import { useNotional } from '../lib/useNotional';
 import { TotalField } from '../components/ui/TotalField';
-import { fetchClose } from '../lib/quotes';
+import { fetchClose, fetchProfile } from '../lib/quotes';
 
 /** Short pill labels for dividend tax character; unclassified reads as a
  * warning (amber) until the owner confirms what the broker actually paid. */
@@ -1017,12 +1017,33 @@ function AddHoldingModal({ onClose }: { onClose: () => void }) {
   const outside = accounts.filter((a) => a.kind === 'outside');
   const [ticker, setTicker] = useState('');
   const [accountId, setAccountId] = useState(outside[0]?.id ?? '');
-  const [category, setCategory] = useState<ParkedPosition['category']>('Semi/AI');
+  const [category, setCategory] = useState<ParkedPosition['category']>('Other');
   const [date, setDate] = useState('');
   const { shares, price, total, setShares, setPrice, setTotal } = useNotional();
   const [notes, setNotes] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Category help: the vendor industry shows as a hint, and unambiguous
+  // industries (semis, crypto) pre-select — but a hand-picked category is
+  // never overridden. Categories are strategy buckets, not sectors.
+  const [industry, setIndustry] = useState<string | null>(null);
+  const categoryTouched = useRef(false);
+  const profileFetchedFor = useRef<string | null>(null);
+  useEffect(() => {
+    const t = ticker.trim().toUpperCase();
+    if (!/^[A-Z.\-]{1,10}$/.test(t) || profileFetchedFor.current === t) return;
+    const timer = setTimeout(() => {
+      profileFetchedFor.current = t;
+      void fetchProfile(t).then((p) => {
+        if (!p) return;
+        setIndustry(p.industry);
+        const suggested = suggestCategory(p.industry);
+        if (suggested && !categoryTouched.current) setCategory(suggested);
+      });
+    }, 500); // debounce typing
+    return () => clearTimeout(timer);
+  }, [ticker]);
 
   // Buying more of something already held merges as a new purchase lot; the
   // existing position's category wins. (Archived matches go through the
@@ -1084,13 +1105,18 @@ function AddHoldingModal({ onClose }: { onClose: () => void }) {
             <select
               value={liveMatch ? liveMatch.category : category}
               disabled={Boolean(liveMatch)}
-              onChange={(e) => setCategory(e.target.value as ParkedPosition['category'])}
+              onChange={(e) => { categoryTouched.current = true; setCategory(e.target.value as ParkedPosition['category']); }}
               className={cn(inputCls, liveMatch && 'opacity-60')}>
               <option>Semi/AI</option>
               <option>AI-adjacent</option>
               <option>BTC</option>
               <option>Other</option>
             </select>
+            {industry && !liveMatch && (
+              <p className="mt-0.5 text-xs text-gray-400" title="Vendor classification (Finnhub) — a hint, not an assignment. Semi/AI vs AI-adjacent is your thesis call.">
+                {industry}{suggestCategory(industry) ? ` → ${suggestCategory(industry)}` : ''}
+              </p>
+            )}
           </div>
           <div>
             <label className={labelCls}>Buy date</label>
@@ -2173,10 +2199,20 @@ function EditParkedModal({ position: p, onClose }: { position: ParkedPosition; o
   const pinnedAt = overrideSetAt[p.ticker];
   const [price, setPrice] = useState(String(p.currentPrice || ''));
   const [trimRank, setTrimRank] = useState(p.trimRank != null ? String(p.trimRank) : '');
+  const [category, setCategory] = useState<ParkedPosition['category']>(p.category);
   const [accountId, setAccountId] = useState(p.accountId);
   const [notes, setNotes] = useState(p.notes ?? '');
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Vendor industry as a reference while re-categorizing (hint, never auto).
+  const [industry, setIndustry] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void fetchProfile(p.ticker).then((r) => {
+      if (!cancelled && r) setIndustry(r.industry);
+    });
+    return () => { cancelled = true; };
+  }, [p.ticker]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2186,6 +2222,7 @@ function EditParkedModal({ position: p, onClose }: { position: ParkedPosition; o
       await updateParked(p.id, {
         currentPrice: Number(price) || 0,
         trimRank: trimRank === '' ? null : Number(trimRank),
+        category,
         accountId,
         notes: notes || null,
       });
@@ -2210,6 +2247,20 @@ function EditParkedModal({ position: p, onClose }: { position: ParkedPosition; o
             <label className={labelCls}>Trim rank</label>
             <input type="number" min="1" step="1" value={trimRank}
               onChange={(e) => setTrimRank(e.target.value)} className={inputCls} placeholder="1 = trim first" />
+          </div>
+          <div>
+            <label className={labelCls}>Category</label>
+            <select value={category} className={inputCls}
+              onChange={(e) => setCategory(e.target.value as ParkedPosition['category'])}>
+              <option>Semi/AI</option>
+              <option>AI-adjacent</option>
+              <option>BTC</option>
+              <option>Other</option>
+            </select>
+            <p className="mt-0.5 text-xs text-gray-400"
+              title="Vendor classification (Finnhub) — a hint, not an assignment. The category drives the concentration cap, so it's your thesis call.">
+              {industry ?? 'no vendor classification'}
+            </p>
           </div>
         </div>
         <div className="flex items-center justify-between gap-2 text-xs text-gray-400">

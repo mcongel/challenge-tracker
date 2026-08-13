@@ -16,6 +16,19 @@ export const NEVER_TRIM_TICKERS = new Set(['NVDA', 'TSLA', 'MSTR']);
 export const isNeverTrimFuel = (p: Pick<ParkedPosition, 'ticker' | 'category'>): boolean =>
   NEVER_TRIM_TICKERS.has(p.ticker) || p.category === 'BTC';
 
+/** Map an API industry string to a category SUGGESTION — never an
+ * assignment. The categories are strategy buckets, not sectors: MSTR reads
+ * "Software" to every data vendor but is BTC here, and "AI-adjacent" is a
+ * thesis only the owner can hold. Suggest only the unambiguous cases. */
+export function suggestCategory(
+  industry: string | null | undefined,
+): ParkedPosition['category'] | null {
+  if (!industry) return null;
+  if (/semiconductor/i.test(industry)) return 'Semi/AI';
+  if (/bitcoin|crypto|blockchain/i.test(industry)) return 'BTC';
+  return null;
+}
+
 export function parkedMarketValue(p: ParkedPosition): number {
   return p.shares * p.currentPrice;
 }
