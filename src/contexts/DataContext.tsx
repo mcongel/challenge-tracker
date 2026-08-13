@@ -185,6 +185,8 @@ interface DataContextValue extends DataState {
     voo?: { accountId: string; price: number },
   ) => Promise<void>;
   addAccount: (name: string, kind: AccountKind, broker?: string) => Promise<void>;
+  /** Rename/relabel only — kind is immutable (it steers ledger/pile logic). */
+  updateAccount: (id: string, patch: { name?: string; broker?: string | null; notes?: string | null }) => Promise<void>;
   addOutsideSale: (sale: Omit<OutsideSale, 'id'>) => Promise<void>;
   deleteOutsideSale: (id: string) => Promise<void>;
   /** The trim flow in one action: shrink (or remove) the parked position,
@@ -817,6 +819,22 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (patch.dividendFrequency !== undefined) payload.dividend_frequency = patch.dividendFrequency;
       if (patch.dividendGrowthPct !== undefined) payload.dividend_growth_pct = patch.dividendGrowthPct;
       const { error: err } = await db().from('parked_positions').update(payload).eq('id', id);
+      if (err) throw err;
+      await refresh();
+    },
+    [refresh],
+  );
+
+  /** Labels only — accounts are referenced by id everywhere, so a rename
+   * touches nothing else. Kind stays immutable; it steers real logic. */
+  const updateAccount = useCallback(
+    async (id: string, patch: { name?: string; broker?: string | null; notes?: string | null }) => {
+      const payload: Record<string, unknown> = {};
+      if (patch.name !== undefined) payload.name = patch.name;
+      if (patch.broker !== undefined) payload.broker = patch.broker;
+      if (patch.notes !== undefined) payload.notes = patch.notes;
+      if (Object.keys(payload).length === 0) return;
+      const { error: err } = await db().from('accounts').update(payload).eq('id', id);
       if (err) throw err;
       await refresh();
     },
@@ -2414,6 +2432,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       recordMilestone,
       deleteMilestone,
       addAccount,
+      updateAccount,
       addOutsideSale,
       deleteOutsideSale,
       recordTrim,
@@ -2452,7 +2471,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       refresh, addCashEvent, updateCashEvent, deleteCashEvent, addLot, deleteLot, updateLotDetails,
       closePosition, recordSplit,
       setTradeWashSale, deleteTrade, updateParked, recordMilestone, deleteMilestone,
-      addAccount, addOutsideSale,
+      addAccount, updateAccount, addOutsideSale,
       deleteOutsideSale, recordTrim, addParkedLot, deleteParkedLot, reclassifyDividend,
       reclassifyDividends,
       allocateRocDividends, addParkedPosition,

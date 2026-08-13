@@ -1925,6 +1925,7 @@ function AccountsModal({ onClose }: { onClose: () => void }) {
   const [kind, setKind] = useState<AccountKind>('bank');
   const [broker, setBroker] = useState('');
   const [cashFor, setCashFor] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<Account | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -1969,6 +1970,9 @@ function AccountsModal({ onClose }: { onClose: () => void }) {
                     <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', KIND_STYLES[a.kind])}>
                       {a.kind}
                     </span>
+                    <button onClick={() => setRenaming(a)} className="ml-auto p-1 rounded hover:bg-gray-100" aria-label={`Rename ${a.name}`}>
+                      <Pencil className="h-3.5 w-3.5 text-gray-300 hover:text-gray-600" />
+                    </button>
                   </div>
                   <p className="text-xs text-gray-400 mt-0.5">its cash lives on the Cash Ledger</p>
                 </div>
@@ -1980,11 +1984,13 @@ function AccountsModal({ onClose }: { onClose: () => void }) {
               ? ' · never reconciled'
               : ` · reconciled ${recDays <= 0 ? 'today' : `${recDays}d ago`}`;
             return (
-              <button
+              <div
                 key={a.id}
-                type="button"
+                role="button"
+                tabIndex={0}
                 onClick={() => setCashFor(a.id)}
-                className="w-full text-left rounded-lg border border-gray-200 px-3 py-2.5 hover:bg-gray-50 transition-colors"
+                onKeyDown={(e) => { if (e.key === 'Enter') setCashFor(a.id); }}
+                className="w-full text-left rounded-lg border border-gray-200 px-3 py-2.5 hover:bg-gray-50 transition-colors cursor-pointer"
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 min-w-0">
@@ -1992,6 +1998,13 @@ function AccountsModal({ onClose }: { onClose: () => void }) {
                     <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', KIND_STYLES[a.kind])}>
                       {a.kind}
                     </span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setRenaming(a); }}
+                      className="p-1 rounded hover:bg-gray-100"
+                      aria-label={`Rename ${a.name}`}
+                    >
+                      <Pencil className="h-3.5 w-3.5 text-gray-300 hover:text-gray-600" />
+                    </button>
                   </div>
                   <ChevronRight className="h-4 w-4 text-gray-400 flex-shrink-0" />
                 </div>
@@ -2001,7 +2014,7 @@ function AccountsModal({ onClose }: { onClose: () => void }) {
                 <p className="text-xs text-gray-400">
                   tracked cash · view history & reconcile{recLabel}
                 </p>
-              </button>
+              </div>
             );
           })}
         </div>
@@ -2045,6 +2058,58 @@ function AccountsModal({ onClose }: { onClose: () => void }) {
           onClose={() => setCashFor(null)}
         />
       )}
+      {renaming && <RenameAccountModal account={renaming} onClose={() => setRenaming(null)} />}
+    </Modal>
+  );
+}
+
+function RenameAccountModal({ account, onClose }: { account: Account; onClose: () => void }) {
+  const { accounts, updateAccount } = useData();
+  const [name, setName] = useState(account.name);
+  const [broker, setBroker] = useState(account.broker ?? '');
+  const [formError, setFormError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    const trimmed = name.trim();
+    if (!trimmed) return setFormError('Name required.');
+    if (accounts.some((a) => a.id !== account.id && a.name.toLowerCase() === trimmed.toLowerCase())) {
+      return setFormError(`An account named "${trimmed}" already exists.`);
+    }
+    setBusy(true);
+    try {
+      await updateAccount(account.id, { name: trimmed, broker: broker.trim() || null });
+      onClose();
+    } catch (err) {
+      setFormError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal isOpen onClose={onClose} title={`Rename ${account.name}`}>
+      <form onSubmit={submit} className="space-y-3">
+        <div>
+          <label className={labelCls}>Name</label>
+          <input required autoFocus value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
+        </div>
+        <div>
+          <label className={labelCls}>Broker / institution (optional)</label>
+          <input value={broker} onChange={(e) => setBroker(e.target.value)} className={inputCls} />
+        </div>
+        <p className="text-xs text-gray-400">
+          Labels only — history, cash, and holdings all reference the account by id, so nothing
+          else moves. The kind ({account.kind}) can't change; it steers ledger and pile logic.
+        </p>
+        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} className={secondaryBtnCls}>Cancel</button>
+          <button type="submit" disabled={busy} className={primaryBtnCls}>{busy ? 'Saving…' : 'Save'}</button>
+        </div>
+      </form>
     </Modal>
   );
 }
