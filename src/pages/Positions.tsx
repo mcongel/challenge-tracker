@@ -18,6 +18,7 @@ import {
 } from '../lib/utils';
 import { useNotional } from '../lib/useNotional';
 import { TotalField } from '../components/ui/TotalField';
+import { useIndustries } from '../lib/useIndustries';
 
 export function Positions() {
   const data = useData();
@@ -32,6 +33,7 @@ export function Positions() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const today = todayISO();
+  const industries = useIndustries(lots.map((l) => l.ticker));
   const byTicker = useMemo(() => {
     const m = new Map<string, PositionLot[]>();
     for (const lot of lots) (m.get(lot.ticker) ?? m.set(lot.ticker, []).get(lot.ticker)!).push(lot);
@@ -97,6 +99,7 @@ export function Positions() {
                         {ticker}
                         <span className="text-xs font-normal text-gray-400">
                           {tickerLots.length} lot{tickerLots.length > 1 ? 's' : ''}
+                          {industries[ticker] && ` · ${industries[ticker]}`}
                         </span>
                         <button onClick={() => setCloseTicker(ticker)}
                           className="text-xs font-medium text-indigo-600 hover:text-indigo-800">

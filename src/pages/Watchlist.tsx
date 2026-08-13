@@ -11,6 +11,7 @@ import { addDays, daysBetween, washSaleConflicts, WASH_SALE_WINDOW_DAYS } from '
 import {
   cn, errorMessage, formatCurrency, inputCls, labelCls, primaryBtnCls, secondaryBtnCls, todayISO,
 } from '../lib/utils';
+import { useIndustries } from '../lib/useIndustries';
 
 /** The bench. Rule 7's rotation — sell into strength, then rotate — only
  * works when the next setup is already researched. Candidates wait here
@@ -47,6 +48,7 @@ export function Watchlist() {
     [watchlist],
   );
   const openTickers = new Set(lots.map((l) => l.ticker));
+  const industries = useIndustries(watchlist.map((w) => w.ticker));
 
   return (
     <div>
@@ -113,6 +115,9 @@ export function Watchlist() {
                           title={`Sold at a loss within the last ${WASH_SALE_WINDOW_DAYS} days — buying before ${washUntil} disallows that loss (Rule 9).`}>
                           <AlertTriangle className="h-3 w-3" /> wash until {washUntil}
                         </span>
+                      )}
+                      {industries[w.ticker] && (
+                        <span className="block text-xs font-normal text-gray-400">{industries[w.ticker]}</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-gray-600 max-w-[16rem] truncate" title={w.catalyst ?? undefined}>

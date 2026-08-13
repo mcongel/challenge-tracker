@@ -12,6 +12,8 @@ import {
   netRealizedYTD, realizedGain, realizedPct, roundCents, stLt, taxYearOf, tradeDaysHeld,
   tradeStats,
 } from '../lib/engine';
+import { useIndustries } from '../lib/useIndustries';
+import { useMemo } from 'react';
 import {
   cn, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls, secondaryBtnCls, todayISO,
 } from '../lib/utils';
@@ -30,6 +32,22 @@ export function TradeLog() {
   const ytd = netRealizedYTD(trades, currentYear);
   const ordered = [...trades].sort((a, b) => b.closeDate.localeCompare(a.closeDate));
   const stats = tradeStats(trades);
+  // Vendor industry labels — the "win rate in WHAT?" dimension.
+  const industries = useIndustries(trades.map((t) => t.ticker));
+  const byIndustry = useMemo(() => {
+    const groups = new Map<string, typeof trades>();
+    for (const t of trades) {
+      const ind = industries[t.ticker] ?? 'Unclassified';
+      groups.set(ind, [...(groups.get(ind) ?? []), t]);
+    }
+    return [...groups.entries()]
+      .map(([industry, ts]) => ({
+        industry,
+        s: tradeStats(ts),
+        net: ts.reduce((sum, t) => sum + realizedGain(t), 0),
+      }))
+      .sort((a, b) => b.net - a.net);
+  }, [trades, industries]);
 
   return (
     <div>
@@ -110,6 +128,25 @@ export function TradeLog() {
               Worst: {stats.worst.ticker} {formatCurrency(roundCents(realizedGain(stats.worst)))}
             </p>
           )}
+          {byIndustry.length >= 2 && (
+            <div className="mt-3 border-t border-gray-100 pt-2">
+              <p className="text-xs font-medium text-gray-500 mb-1">By industry — where the edge actually is</p>
+              <ul className="space-y-0.5 text-xs tabular-nums">
+                {byIndustry.map(({ industry, s, net }) => (
+                  <li key={industry} className="flex flex-wrap gap-x-3">
+                    <span className="text-gray-600 min-w-[10rem]">{industry}</span>
+                    <span className="text-gray-500">{s.wins}W–{s.losses}L</span>
+                    <span className={cn('font-medium', net >= 0 ? 'text-green-600' : 'text-red-600')}>
+                      {net >= 0 ? '+' : '−'}{formatCurrency(Math.abs(roundCents(net)))}
+                    </span>
+                    {s.winRate != null && s.count >= 2 && (
+                      <span className="text-gray-400">{formatPercent(s.winRate, 0)} win rate</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
 
@@ -147,7 +184,12 @@ export function TradeLog() {
                 const big = Math.abs(pct) > 0.25;
                 return (
                   <tr key={t.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium">{t.ticker}</td>
+                    <td className="px-4 py-3 font-medium">
+                      {t.ticker}
+                      {industries[t.ticker] && (
+                        <span className="block text-xs font-normal text-gray-400">{industries[t.ticker]}</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 tabular-nums text-gray-500">{t.openDate}</td>
                     <td className="px-4 py-3 tabular-nums text-gray-500">{t.closeDate}</td>
                     <td className="px-4 py-3 text-right tabular-nums">{tradeDaysHeld(t)}</td>
