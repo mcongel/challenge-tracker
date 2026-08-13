@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
@@ -32,6 +32,7 @@ import {
 } from '../lib/utils';
 import { useNotional } from '../lib/useNotional';
 import { TotalField } from '../components/ui/TotalField';
+import { fetchClose } from '../lib/quotes';
 
 /** Short pill labels for dividend tax character; unclassified reads as a
  * warning (amber) until the owner confirms what the broker actually paid. */
@@ -1636,6 +1637,27 @@ function TrimModal({
     setDate(d);
     if (d !== todayISO() && vooQuote && vooPrice === String(vooQuote)) setVooPrice('');
   };
+  // Backdated funded trims auto-fill VOO's historical close (once per date;
+  // a cleared field stays cleared; fetch failure falls back to the hint).
+  const [vooClose, setVooClose] = useState<{ requested: string; actual: string } | null>(null);
+  const [closeFailedFor, setCloseFailedFor] = useState<string | null>(null);
+  const closeFetchedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!fund || date >= todayISO()) return;
+    if (vooPrice !== '' || closeFetchedFor.current === date) return;
+    closeFetchedFor.current = date;
+    let cancelled = false;
+    void fetchClose('VOO', date).then((r) => {
+      if (cancelled) return;
+      if (!r) {
+        setCloseFailedFor(date);
+        return;
+      }
+      setVooPrice(String(Math.round(r.close * 100) / 100));
+      setVooClose({ requested: date, actual: r.date });
+    });
+    return () => { cancelled = true; };
+  }, [fund, date, vooPrice]);
   const [fees, setFees] = useState('');
   const feeNum = Number(fees) || 0;
   const [formError, setFormError] = useState<string | null>(null);
@@ -1772,7 +1794,13 @@ function TrimModal({
               <p className="mt-0.5 text-xs text-gray-400">from the live quote — edit if the fill differed</p>
             )}
             {!vooPrefilled && date !== todayISO() && (
-              <p className="mt-0.5 text-xs text-gray-400">backdated — look up VOO's close for {date}</p>
+              <p className="mt-0.5 text-xs text-gray-400">
+                {vooClose?.requested === date && vooPrice !== ''
+                  ? `VOO close ${vooClose.actual === date ? 'that day' : `on ${vooClose.actual} (nearest session)`} — fetched; edit if needed`
+                  : closeFailedFor === date
+                    ? `couldn't fetch — look up VOO's close for ${date}`
+                    : `backdated — fetching VOO's close for ${date}…`}
+              </p>
             )}
           </div>
         )}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pencil, Plus, Trash2, Wallet } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
@@ -16,6 +16,7 @@ import {
   cn, errorMessage, formatCurrency, formatCurrencyWhole, inputCls, labelCls, primaryBtnCls,
   todayISO,
 } from '../lib/utils';
+import { fetchClose } from '../lib/quotes';
 
 const TYPES: CashEventType[] = [
   'Deposit', 'Withdrawal', 'Buy', 'Sell', 'Dividend', 'TaxSkim', 'MilestoneBank', 'Fee',
@@ -227,6 +228,29 @@ function AddEventModal({
     setDate(d);
     if (d !== todayISO() && vooQuote && vooPrice === String(vooQuote)) setVooPrice('');
   };
+  // Backdated dates auto-fill VOO's historical close instead of sending the
+  // owner off to look it up. Once per date (the ref), so a deliberately
+  // cleared field stays cleared; a fetch failure falls back to the hint.
+  const [vooClose, setVooClose] = useState<{ requested: string; actual: string } | null>(null);
+  const [closeFailedFor, setCloseFailedFor] = useState<string | null>(null);
+  const closeFetchedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isOpen || type !== 'Deposit') return;
+    if (date >= todayISO()) return; // same-day uses the live prefill
+    if (vooPrice !== '' || closeFetchedFor.current === date) return;
+    closeFetchedFor.current = date;
+    let cancelled = false;
+    void fetchClose('VOO', date).then((r) => {
+      if (cancelled) return;
+      if (!r) {
+        setCloseFailedFor(date);
+        return;
+      }
+      setVooPrice(String(Math.round(r.close * 100) / 100));
+      setVooClose({ requested: date, actual: r.date });
+    });
+    return () => { cancelled = true; };
+  }, [isOpen, type, date, vooPrice]);
   const [fromAccount, setFromAccount] = useState('');
   const [toAccount, setToAccount] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
@@ -314,7 +338,13 @@ function AddEventModal({
                 <p className="mt-0.5 text-xs text-gray-400">from the live quote — edit if needed</p>
               )}
               {date !== todayISO() && (
-                <p className="mt-0.5 text-xs text-gray-400">backdated — look up VOO's close for {date}</p>
+                <p className="mt-0.5 text-xs text-gray-400">
+                  {vooClose?.requested === date && vooPrice !== ''
+                    ? `VOO close ${vooClose.actual === date ? 'that day' : `on ${vooClose.actual} (nearest session)`} — fetched; edit if needed`
+                    : closeFailedFor === date
+                      ? `couldn't fetch — look up VOO's close for ${date}`
+                      : `backdated — fetching VOO's close for ${date}…`}
+                </p>
               )}
             </div>
           ) : <div />}
