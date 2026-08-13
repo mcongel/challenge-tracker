@@ -214,7 +214,7 @@ describe('holding-period boundaries', () => {
   });
 
   it('parked LT status: countdown, unlocked, and missing buy date', () => {
-    const p = { id: 'p', ticker: 'MU', accountId: 'a1', account: 'Cash App', category: 'Semi/AI' as const, shares: 1, avgCost: 1, currentPrice: 1 };
+    const p = { id: 'p', ticker: 'MU', accountId: 'a1', account: 'Cash App', category: 'Semiconductors' as const, shares: 1, avgCost: 1, currentPrice: 1 };
     expect(ltStatus({ ...p, buyDate: '2025-08-03' }, '2026-08-04').kind).toBe('UNLOCKED');
     const counting = ltStatus({ ...p, buyDate: '2026-08-01' }, '2026-08-04');
     expect(counting).toMatchObject({ kind: 'COUNTDOWN', daysLeft: 363, unlockDate: '2027-08-02' });
@@ -319,7 +319,7 @@ describe('parked cash — tracked balance with auto-flows', () => {
       parkedSales: [
         { id: 's1', ticker: 'MU', accountId: acct, date: '2026-05-29', shares: 2, pricePerShare: 1000, proceeds: 2000, fundedChallenge: true },
       ],
-      parked: [{ id: 'p1', ticker: 'GLW', accountId: acct, account: 'Cash App', category: 'AI-adjacent', shares: 4, avgCost: 100, currentPrice: 100 }],
+      parked: [{ id: 'p1', ticker: 'GLW', accountId: acct, account: 'Cash App', category: 'Electrical Equipment', shares: 4, avgCost: 100, currentPrice: 100 }],
       parkedLots: [
         { id: 'l1', parkedPositionId: 'p1', date: '2026-04-01', source: 'purchase', shares: 4, amount: 400 },
         { id: 'l2', parkedPositionId: 'p1', date: '2026-06-01', source: 'dividend', shares: 0, amount: 25 },      // cash dividend
@@ -1325,10 +1325,10 @@ describe('tradeStats — the pattern behind the closed trades', () => {
 describe('suggestCategory — hints only for the unambiguous industries', () => {
   it('semis and crypto suggest; everything else stays a human call', async () => {
     const { suggestCategory } = await import('../parked');
-    expect(suggestCategory('Semiconductors')).toBe('Semi/AI');
-    expect(suggestCategory('Bitcoin & Cryptocurrency')).toBe('BTC');
-    expect(suggestCategory('Software')).toBeNull(); // MSTR is BTC only to the owner
-    expect(suggestCategory('Auto Manufacturers')).toBeNull(); // TSLA is a thesis call
+    expect(suggestCategory('Semiconductors')).toBe('Semiconductors');
+    expect(suggestCategory('Bitcoin & Cryptocurrency')).toBe('BTC'); // crypto normalizes to the bucket
+    expect(suggestCategory('Software')).toBe('Software'); // sector verbatim — MSTR's BTC tag is the owner's edit
+    expect(suggestCategory('Auto Manufacturers')).toBe('Auto Manufacturers');
     expect(suggestCategory(null)).toBeNull();
   });
 });

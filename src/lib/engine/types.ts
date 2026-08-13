@@ -103,7 +103,12 @@ export interface BenchmarkDeposit {
   cashEventId?: string | null;
 }
 
-export type ParkedCategory = 'Semi/AI' | 'AI-adjacent' | 'BTC' | 'Other';
+/** Real sectors since 2026-08-12 (owner decision) — vendor-informed but
+ * freely editable text, e.g. 'Semiconductors', 'Media', 'Energy'. Two values
+ * carry rule semantics: 'Semiconductors' drives the concentration cap, and
+ * 'BTC' marks the bitcoin conviction bucket (never trim fuel). Edge cases
+ * are curated by hand — NBIS is 'Semiconductors' by thesis, not by vendor. */
+export type ParkedCategory = string;
 
 export type DividendFrequency =
   | 'daily'        // e.g. SATA

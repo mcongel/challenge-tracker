@@ -16,17 +16,17 @@ export const NEVER_TRIM_TICKERS = new Set(['NVDA', 'TSLA', 'MSTR']);
 export const isNeverTrimFuel = (p: Pick<ParkedPosition, 'ticker' | 'category'>): boolean =>
   NEVER_TRIM_TICKERS.has(p.ticker) || p.category === 'BTC';
 
-/** Map an API industry string to a category SUGGESTION — never an
- * assignment. The categories are strategy buckets, not sectors: MSTR reads
- * "Software" to every data vendor but is BTC here, and "AI-adjacent" is a
- * thesis only the owner can hold. Suggest only the unambiguous cases. */
+/** Default category from the vendor industry — the sector itself, with
+ * crypto normalized into the BTC bucket and the cap category name pinned.
+ * A DEFAULT, never an override: the owner's thesis edits (NBIS as
+ * 'Semiconductors', MSTR as 'BTC') always win. */
 export function suggestCategory(
   industry: string | null | undefined,
 ): ParkedPosition['category'] | null {
   if (!industry) return null;
-  if (/semiconductor/i.test(industry)) return 'Semi/AI';
+  if (/semiconductor/i.test(industry)) return 'Semiconductors';
   if (/bitcoin|crypto|blockchain/i.test(industry)) return 'BTC';
-  return null;
+  return industry;
 }
 
 export function parkedMarketValue(p: ParkedPosition): number {
@@ -54,12 +54,19 @@ export function ltStatus(p: ParkedPosition, today: string): LtStatus {
   return daysLeft <= 0 ? { kind: 'UNLOCKED' } : { kind: 'COUNTDOWN', daysLeft, unlockDate };
 }
 
+/** The category that carries the concentration cap. Edge cases (NBIS-style
+ * semi-correlated names) are curated INTO it by hand — the cap is a risk
+ * bucket, and vendor labels are only its default. */
+export const SEMI_CATEGORY = 'Semiconductors';
+/** The bitcoin conviction bucket — also the never-trim marker. */
+export const BTC_CATEGORY = 'BTC';
+
 export interface Concentration {
   total: number;
   semiValue: number;
-  semiPlusAdjacentValue: number;
   semiPct: number;
-  semiPlusAdjacentPct: number;
+  /** Value share per category, for the mix display. */
+  byCategory: Record<string, number>;
   overCap: boolean;
 }
 
@@ -68,17 +75,11 @@ export function concentration(
   cap = DEFAULT_CONCENTRATION_CAP,
 ): Concentration {
   const total = pileTotal(positions);
-  const semiValue = pileTotal(positions.filter((p) => p.category === 'Semi/AI'));
-  const semiPlusAdjacentValue =
-    semiValue + pileTotal(positions.filter((p) => p.category === 'AI-adjacent'));
+  const semiValue = pileTotal(positions.filter((p) => p.category === SEMI_CATEGORY));
   const semiPct = total === 0 ? 0 : semiValue / total;
-  const semiPlusAdjacentPct = total === 0 ? 0 : semiPlusAdjacentValue / total;
-  return {
-    total,
-    semiValue,
-    semiPlusAdjacentValue,
-    semiPct,
-    semiPlusAdjacentPct,
-    overCap: semiPct > cap,
-  };
+  const byCategory: Record<string, number> = {};
+  for (const p of positions) {
+    byCategory[p.category] = (byCategory[p.category] ?? 0) + parkedMarketValue(p);
+  }
+  return { total, semiValue, semiPct, byCategory, overCap: semiPct > cap };
 }

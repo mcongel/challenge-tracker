@@ -239,7 +239,7 @@ export function Help() {
             ledger: if the sale funded a Deposit, fix the Cash Ledger yourself.
           </li>
           <li>
-            <strong className="text-gray-900">Concentration watch</strong>: Semi/AI past the 50%
+            <strong className="text-gray-900">Concentration watch</strong>: semiconductors past the 50%
             cap turns the banner red — trim semis first; it funds the account <em>and</em> fixes
             the concentration.
           </li>

@@ -1,16 +1,16 @@
 {
-  "note": "Extracted from Challenge_Account_Tracker.xlsx 'Parked Pile' tab. Doubles as the Phase-3 seed source. NVDA/TSLA omitted until the Stash ACATS transfer lands (no shares/cost yet).",
+  "note": "Categories migrated to real sectors 2026-08-12 (owner decision; NBIS stays in Semiconductors by thesis). Extracted from Challenge_Account_Tracker.xlsx 'Parked Pile' tab. Doubles as the Phase-3 seed source. NVDA/TSLA omitted until the Stash ACATS transfer lands (no shares/cost yet).",
   "positions": [
-    { "ticker": "MU", "account": "Cash App", "category": "Semi/AI", "shares": 5.55873475, "avgCost": 262.07, "currentPrice": 892.67, "notes": "Biggest gain, biggest position — trim first" },
-    { "ticker": "AMAT", "account": "Cash App", "category": "Semi/AI", "shares": 4.39095828, "avgCost": 228.66, "currentPrice": 546.62 },
-    { "ticker": "AMKR", "account": "Cash App", "category": "Semi/AI", "shares": 38.98181005, "avgCost": 31.03, "currentPrice": 55.87 },
-    { "ticker": "ASML", "account": "Cash App", "category": "Semi/AI", "shares": 1.18684799, "avgCost": 1015.39, "currentPrice": 1711.89 },
-    { "ticker": "SOXX", "account": "Cash App", "category": "Semi/AI", "shares": 3.38595508, "avgCost": 296.26, "currentPrice": 542.21 },
-    { "ticker": "NBIS", "account": "Cash App", "category": "Semi/AI", "shares": 9.01876715, "avgCost": 110.88, "currentPrice": 225.74 },
-    { "ticker": "AMD", "account": "Cash App", "category": "Semi/AI", "shares": 1.67270758, "avgCost": 239.14, "currentPrice": 518.58 },
-    { "ticker": "AVGO", "account": "Cash App", "category": "Semi/AI", "shares": 2.82930485, "avgCost": 355.39, "currentPrice": 418.16 },
-    { "ticker": "GOOGL", "account": "Cash App", "category": "AI-adjacent", "shares": 3.81088169, "avgCost": 289.27, "currentPrice": 377.65 },
-    { "ticker": "GLW", "account": "Cash App", "category": "AI-adjacent", "shares": 3.77643504, "avgCost": 132.4, "currentPrice": 159.89, "notes": "Optical fiber for AI data centers" },
+    { "ticker": "MU", "account": "Cash App", "category": "Semiconductors", "shares": 5.55873475, "avgCost": 262.07, "currentPrice": 892.67, "notes": "Biggest gain, biggest position — trim first" },
+    { "ticker": "AMAT", "account": "Cash App", "category": "Semiconductors", "shares": 4.39095828, "avgCost": 228.66, "currentPrice": 546.62 },
+    { "ticker": "AMKR", "account": "Cash App", "category": "Semiconductors", "shares": 38.98181005, "avgCost": 31.03, "currentPrice": 55.87 },
+    { "ticker": "ASML", "account": "Cash App", "category": "Semiconductors", "shares": 1.18684799, "avgCost": 1015.39, "currentPrice": 1711.89 },
+    { "ticker": "SOXX", "account": "Cash App", "category": "Semiconductors", "shares": 3.38595508, "avgCost": 296.26, "currentPrice": 542.21 },
+    { "ticker": "NBIS", "account": "Cash App", "category": "Semiconductors", "shares": 9.01876715, "avgCost": 110.88, "currentPrice": 225.74 },
+    { "ticker": "AMD", "account": "Cash App", "category": "Semiconductors", "shares": 1.67270758, "avgCost": 239.14, "currentPrice": 518.58 },
+    { "ticker": "AVGO", "account": "Cash App", "category": "Semiconductors", "shares": 2.82930485, "avgCost": 355.39, "currentPrice": 418.16 },
+    { "ticker": "GOOGL", "account": "Cash App", "category": "Media", "shares": 3.81088169, "avgCost": 289.27, "currentPrice": 377.65 },
+    { "ticker": "GLW", "account": "Cash App", "category": "Electrical Equipment", "shares": 3.77643504, "avgCost": 132.4, "currentPrice": 159.89, "notes": "Optical fiber for AI data centers" },
     { "ticker": "MSTR", "account": "Cash App", "category": "BTC", "shares": 31.33597956, "avgCost": 380.86, "currentPrice": 97.65, "notes": "Conviction hold — separate bucket, not trim fuel" }
   ],
   "expected": {

@@ -107,7 +107,7 @@ export function activeAlerts(d: AlertInputs): AppAlert[] {
   if (concentration(d.parked, d.concentrationCap).overCap) {
     alerts.push({
       kind: 'CAP',
-      message: 'Parked pile over the Semi/AI concentration cap — trim semis first',
+      message: 'Parked pile over the semiconductor concentration cap — trim semis first',
       to: '/parked',
     });
   }

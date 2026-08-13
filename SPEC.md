@@ -94,10 +94,10 @@ Reference implementation: `Challenge_Account_Tracker.xlsx` in this repo — the 
 - Lead = TotalScore − shadowValue (also as %)
 
 ### ParkedPosition (context only — excluded from all score math)
-- ticker, account (Cash App / Robinhood), category: enum [Semi/AI, AI-adjacent, BTC, Other]
+- ticker, account (Cash App / Robinhood), category: free-text real sector since 2026-08-12 (vendor-informed via /api/profile, editable; was enum [Semi/AI, AI-adjacent, BTC, Other]). Two reserved values carry rule semantics: 'Semiconductors' drives the concentration cap and 'BTC' marks the never-trim bitcoin bucket; edge cases (NBIS) are hand-curated into the cap. The Semi+adjacent metric retired with the enum.
 - shares, avgCost, currentPrice, buyDate (oldest lot), notes, trimRank
 - Derived: longTermDate = buyDate + 366; ltStatus = "FUNDING UNLOCKED" when today ≥ longTermDate, else countdown
-- Concentration: Semi/AI % of pile; Semi/AI + AI-adjacent %; target cap (default 50%, editable); status "OVER CAP — trim semis first" when exceeded
+- Concentration: Semiconductors % of pile against the target cap (default 50%, editable); status "OVER CAP — trim semis first" when exceeded; per-category value mix for display
 - Seed data lives in the reference workbook's Parked Pile tab (MU, AMAT, AMKR, ASML, SOXX, NBIS, AMD, AVGO, GOOGL, GLW, MSTR, plus NVDA/TSLA arriving from a Stash ACATS transfer). MSTR is a conviction hold, category BTC, never trim fuel.
 - Manual income estimate for projections: dividendRate (annual $ per share) + dividendFrequency (daily/semimonthly/monthly/quarterly/semiannual/annual — daily for SATA-style payers, semimonthly for STRC), plus dividendGrowthPct (assumed annual growth, drives the Transition modeler). All nullable; clearing the rate retires its companions.
 

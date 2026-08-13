@@ -191,12 +191,14 @@ describe('Parked Pile tab — full seed', () => {
     );
   });
 
-  it('concentration: Semi/AI 77.4%, +adjacent 86.5%, over the 50% cap', () => {
+  it('concentration: semis 77.4%, over the 50% cap (workbook parity)', () => {
+    // The +adjacent metric retired with the sector-category migration
+    // (2026-08-12, owner decision) — semis parity is what the cap needs.
     const c = concentration(positions);
     expect(c.semiValue).toBeCloseTo(expected.semiAiValue, 6);
-    expect(c.semiPlusAdjacentValue).toBeCloseTo(expected.semiPlusAdjacentValue, 6);
     expect(c.semiPct).toBeCloseTo(expected.semiAiPct, 12);
-    expect(c.semiPlusAdjacentPct).toBeCloseTo(expected.semiPlusAdjacentPct, 12);
+    expect(c.byCategory['Media'] + c.byCategory['Electrical Equipment'] + c.semiValue)
+      .toBeCloseTo(expected.semiPlusAdjacentValue, 6);
     expect(c.overCap).toBe(true);
   });
 });

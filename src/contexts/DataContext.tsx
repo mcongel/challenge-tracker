@@ -121,7 +121,7 @@ interface DataContextValue extends DataState {
   error: string | null;
   /** Rule 12 cap from app_settings; null (feature off) if the row is missing. */
   contributionCap: number | null;
-  /** Semi/AI concentration cap (editable, default 50%). */
+  /** Semiconductor concentration cap (editable, default 50%). */
   concentrationCap: number;
   /** Pile capital-gains estimate rates from app_settings (defaults 21%/29%). */
   ltTaxRate: number;

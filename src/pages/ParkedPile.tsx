@@ -22,7 +22,7 @@ import {
   adjustmentsForLots, aggregateLotsAdjusted, basisExhaustedLotIds, concentration,
   contributionStatus, daysBetween, depositExceedsCap, dividendsCollected, estimatedPileTax,
   isArchivedPosition, isNeverTrimFuel, netContributed, parkedCostBasis, parkedMarketValue,
-  positionTotalReturn, roundCents, suggestCategory, trimPreview, unlockSummary,
+  positionTotalReturn, roundCents, SEMI_CATEGORY, suggestCategory, trimPreview, unlockSummary,
 } from '../lib/engine';
 import type { PositionTotalReturn } from '../lib/engine';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
@@ -88,12 +88,21 @@ function PileValueChart({ snapshots }: { snapshots: Snapshot[] }) {
   );
 }
 
-const CATEGORY_STYLES: Record<ParkedPosition['category'], string> = {
-  'Semi/AI': 'bg-indigo-50 text-indigo-700',
-  'AI-adjacent': 'bg-sky-50 text-sky-700',
-  BTC: 'bg-amber-50 text-amber-800',
-  Other: 'bg-gray-100 text-gray-600',
-};
+/** Pill style per sector: the two rule-bearing categories get their own
+ * colors (semis = cap, BTC = never-trim); everything else reads neutral. */
+export const categoryPillCls = (category: string): string =>
+  category === 'Semiconductors'
+    ? 'bg-indigo-50 text-indigo-700'
+    : category === 'BTC'
+      ? 'bg-amber-50 text-amber-800'
+      : 'bg-gray-100 text-gray-600';
+
+/** Sector suggestions for the category datalist — vendor labels plus the
+ * house buckets. Free text; these are conveniences, not an enum. */
+export const CATEGORY_SUGGESTIONS = [
+  'Semiconductors', 'BTC', 'Technology', 'Media', 'Retail', 'Automobiles', 'Energy',
+  'Electrical Equipment', 'Aerospace', 'Preferred Income', 'Income ETF', 'Other',
+];
 
 
 export const fmtSh = (n: number) => String(Number(n.toFixed(4)));
@@ -249,8 +258,8 @@ export function ParkedPile() {
         if (a.p.trimRank != null) return -1;
         if (b.p.trimRank != null) return 1;
         if (c.overCap) {
-          const aSemi = a.p.category === 'Semi/AI' ? 0 : 1;
-          const bSemi = b.p.category === 'Semi/AI' ? 0 : 1;
+          const aSemi = a.p.category === SEMI_CATEGORY ? 0 : 1;
+          const bSemi = b.p.category === SEMI_CATEGORY ? 0 : 1;
           if (aSemi !== bSemi) return aSemi - bSemi;
         }
         return b.readyValue - a.readyValue;
@@ -435,7 +444,7 @@ export function ParkedPile() {
           </p>
         </div>
         <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
-          <p className="text-xs font-medium text-gray-500">Semi/AI</p>
+          <p className="text-xs font-medium text-gray-500">Semiconductors</p>
           <p className={cn('mt-0.5 text-xl font-bold tabular-nums', c.overCap ? 'text-red-600' : 'text-gray-900')}>
             {formatPercent(c.semiPct)}
           </p>
@@ -444,10 +453,18 @@ export function ParkedPile() {
             cap {formatPercent(concentrationCap, 0)} — edit
           </button>
         </div>
-        <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
-          <p className="text-xs font-medium text-gray-500">Semi/AI + adjacent</p>
-          <p className="mt-0.5 text-xl font-bold tabular-nums text-gray-900">{formatPercent(c.semiPlusAdjacentPct)}</p>
-          <p className="text-xs text-gray-400 mt-0.5">{formatCurrency(roundCents(c.semiPlusAdjacentValue))}</p>
+        <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card"
+          title={Object.entries(c.byCategory).sort((a, b) => b[1] - a[1])
+            .map(([k, v]) => `${k} ${c.total > 0 ? Math.round((v / c.total) * 100) : 0}%`).join(' · ')}>
+          <p className="text-xs font-medium text-gray-500">Sector mix</p>
+          <p className="mt-0.5 text-xl font-bold tabular-nums text-gray-900">
+            {Object.keys(c.byCategory).length}
+          </p>
+          <p className="text-xs text-gray-400 mt-0.5 truncate">
+            {Object.entries(c.byCategory).sort((a, b) => b[1] - a[1]).slice(1, 3)
+              .map(([k, v]) => `${k} ${c.total > 0 ? Math.round((v / c.total) * 100) : 0}%`)
+              .join(' · ') || '—'}
+          </p>
         </div>
         <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
           <p className="text-xs font-medium text-gray-500">Unrealized</p>
@@ -461,7 +478,7 @@ export function ParkedPile() {
 
       {c.overCap && (
         <div className="mb-4 bg-red-50 text-red-700 rounded-lg px-4 py-3 text-sm font-medium">
-          OVER CAP — trim semis first. When a lot goes long-term, trimming Semi/AI does double duty:
+          OVER CAP — trim semis first. When a lot goes long-term, trimming a semiconductor does double duty:
           funds the challenge account AND reduces concentration.
         </div>
       )}
@@ -503,9 +520,9 @@ export function ParkedPile() {
                     )}
                     <span className="font-medium">{p.ticker}</span>
                     <span className="text-xs text-gray-400 truncate">{p.account}</span>
-                    {c.overCap && p.category === 'Semi/AI' && (
+                    {c.overCap && p.category === SEMI_CATEGORY && (
                       <span className="inline-block rounded-full bg-red-50 text-red-700 px-1.5 py-0.5 text-[10px] font-medium"
-                        title="Over the Semi/AI cap — trimming this funds the challenge AND fixes concentration.">
+                        title="Over the semiconductor cap — trimming this funds the challenge AND fixes concentration.">
                         double duty
                       </span>
                     )}
@@ -637,7 +654,7 @@ export function ParkedPile() {
                         ) : (
                           <span className="flex items-center gap-1.5 font-bold text-gray-700">
                             {group.label}
-                            <span className={cn('inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium', CATEGORY_STYLES[first.category])}>
+                            <span className={cn('inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium', categoryPillCls(first.category))}>
                               {first.category}
                             </span>
                             {tickerNames[group.label] && (
@@ -679,7 +696,7 @@ export function ParkedPile() {
                         <td className="px-4 py-3 font-medium">
                           <span className="flex items-center gap-1.5">
                             {p.ticker}
-                            <span className={cn('inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium', CATEGORY_STYLES[p.category])}>
+                            <span className={cn('inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium', categoryPillCls(p.category))}>
                               {p.category}
                             </span>
                             {p.trimRank != null && (
@@ -833,7 +850,7 @@ function CapModal({
   };
 
   return (
-    <Modal isOpen onClose={onClose} title="Semi/AI concentration cap">
+    <Modal isOpen onClose={onClose} title="Semiconductor concentration cap">
       <form onSubmit={submit} className="space-y-3">
         <div>
           <label className={labelCls}>Cap (% of pile)</label>
@@ -841,7 +858,7 @@ function CapModal({
             onChange={(e) => setPct(e.target.value)} className={inputCls} />
         </div>
         <p className="text-xs text-gray-400">
-          Above this share of the pile in Semi/AI, the OVER CAP banner fires — trim semis first.
+          Above this share of the pile in Semiconductors, the OVER CAP banner fires — trim semis first.
         </p>
         {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
         <div className="flex justify-end">
@@ -1076,7 +1093,7 @@ function AddHoldingModal({ onClose }: { onClose: () => void }) {
         await addParkedPosition({
           ticker: t,
           accountId,
-          category,
+          category: category.trim() || 'Other',
           date: date || null,
           shares: sh,
           price: pr,
@@ -1101,20 +1118,22 @@ function AddHoldingModal({ onClose }: { onClose: () => void }) {
               className={inputCls} placeholder="NVDA" />
           </div>
           <div>
-            <label className={labelCls}>Category</label>
-            <select
+            <label className={labelCls}>Sector</label>
+            <input
+              list="sector-suggestions"
               value={liveMatch ? liveMatch.category : category}
               disabled={Boolean(liveMatch)}
-              onChange={(e) => { categoryTouched.current = true; setCategory(e.target.value as ParkedPosition['category']); }}
-              className={cn(inputCls, liveMatch && 'opacity-60')}>
-              <option>Semi/AI</option>
-              <option>AI-adjacent</option>
-              <option>BTC</option>
-              <option>Other</option>
-            </select>
+              onChange={(e) => { categoryTouched.current = true; setCategory(e.target.value); }}
+              className={cn(inputCls, liveMatch && 'opacity-60')}
+              placeholder="auto from ticker"
+            />
+            <datalist id="sector-suggestions">
+              {CATEGORY_SUGGESTIONS.map((s) => <option key={s} value={s} />)}
+              {industry && !CATEGORY_SUGGESTIONS.includes(industry) && <option value={industry} />}
+            </datalist>
             {industry && !liveMatch && (
-              <p className="mt-0.5 text-xs text-gray-400" title="Vendor classification (Finnhub) — a hint, not an assignment. Semi/AI vs AI-adjacent is your thesis call.">
-                {industry}{suggestCategory(industry) ? ` → ${suggestCategory(industry)}` : ''}
+              <p className="mt-0.5 text-xs text-gray-400" title="Vendor sector (Finnhub) — the default, not the law. Semiconductors drives the cap; BTC marks the never-trim bucket.">
+                vendor: {industry}
               </p>
             )}
           </div>
@@ -2249,17 +2268,16 @@ function EditParkedModal({ position: p, onClose }: { position: ParkedPosition; o
               onChange={(e) => setTrimRank(e.target.value)} className={inputCls} placeholder="1 = trim first" />
           </div>
           <div>
-            <label className={labelCls}>Category</label>
-            <select value={category} className={inputCls}
-              onChange={(e) => setCategory(e.target.value as ParkedPosition['category'])}>
-              <option>Semi/AI</option>
-              <option>AI-adjacent</option>
-              <option>BTC</option>
-              <option>Other</option>
-            </select>
+            <label className={labelCls}>Sector</label>
+            <input list="sector-suggestions-edit" value={category} className={inputCls}
+              onChange={(e) => setCategory(e.target.value)} />
+            <datalist id="sector-suggestions-edit">
+              {CATEGORY_SUGGESTIONS.map((s) => <option key={s} value={s} />)}
+              {industry && !CATEGORY_SUGGESTIONS.includes(industry) && <option value={industry} />}
+            </datalist>
             <p className="mt-0.5 text-xs text-gray-400"
-              title="Vendor classification (Finnhub) — a hint, not an assignment. The category drives the concentration cap, so it's your thesis call.">
-              {industry ?? 'no vendor classification'}
+              title="Vendor sector (Finnhub) — the default, not the law. Semiconductors drives the concentration cap; BTC marks the never-trim bucket.">
+              vendor: {industry ?? 'none'}
             </p>
           </div>
         </div>

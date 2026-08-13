@@ -83,7 +83,7 @@ export function Dashboard() {
   // Its own series — a percent doesn't belong in the dollar charts' rows.
   const concentrationData = snapshots.map((s) => ({
     date: s.date.slice(5),
-    'Semi/AI %': Math.round(s.semiAiPct * 1000) / 10,
+    'Semis %': Math.round(s.semiAiPct * 1000) / 10,
   }));
   const youColor = isDark ? SERIES.you.dark : SERIES.you.light;
   const shadowColor = isDark ? SERIES.shadow.dark : SERIES.shadow.light;
@@ -235,10 +235,10 @@ export function Dashboard() {
         )}
       </div>
 
-      {/* Concentration trend — is the Semi/AI share of the pile drifting toward the cap? */}
+      {/* Concentration trend — is the semiconductor share of the pile drifting toward the cap? */}
       {concentrationData.length >= 2 && (
         <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6">
-          <p className="text-sm font-medium text-gray-700 mb-1">Pile concentration — Semi/AI share</p>
+          <p className="text-sm font-medium text-gray-700 mb-1">Pile concentration — semiconductor share</p>
           <div className="h-40">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={concentrationData} margin={{ top: 8, right: 12, bottom: 0, left: 4 }}>
@@ -250,7 +250,7 @@ export function Dashboard() {
                 <Tooltip formatter={(v) => `${v}%`} />
                 <ReferenceLine y={concentrationCap * 100} stroke="#d97706" strokeDasharray="4 4"
                   label={{ value: `cap ${Math.round(concentrationCap * 100)}%`, position: 'insideTopRight', fontSize: 11, fill: '#d97706' }} />
-                <Line type="monotone" dataKey="Semi/AI %" stroke={shadowColor} strokeWidth={2}
+                <Line type="monotone" dataKey="Semis %" stroke={shadowColor} strokeWidth={2}
                   dot={false} activeDot={{ r: 4 }} />
               </LineChart>
             </ResponsiveContainer>
