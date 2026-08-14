@@ -33,8 +33,25 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
         run: |
           gh label create market-alert --color D93F0B --description "Fired by the market-alerts workflow" 2>/dev/null || true
+          # Direct email on a NEW alert via Resend (same account as SpokenFor).
+          # The issue stays the dedup/state machine; this is just delivery.
+          # No secret configured -> issues only, GitHub notifications still apply.
+          send_email() {
+            [ -n "$RESEND_API_KEY" ] || return 0
+            jq -n --arg subject "$1" --arg body "$2" '{
+              from: "Challenge Tracker <hello@spokenfor.money>",
+              to: ["mcongel@gmail.com"],
+              subject: $subject,
+              html: ("<p style=\"font-size:16px\">" + $body + "</p><p><a href=\"https://challenge-tracker.pages.dev\">Open the tracker</a> · <a href=\"https://github.com/mcongel/challenge-tracker/issues?q=label%3Amarket-alert\">Alert board</a></p><p style=\"color:#888;font-size:12px\">Delayed quotes, checked every 30 min during market hours. One email per crossing — clears show on the alert board.</p>")
+            }' > email.json
+            curl -s -X POST https://api.resend.com/emails \
+              -H "Authorization: Bearer $RESEND_API_KEY" -H "Content-Type: application/json" \
+              --data-binary @email.json || echo "resend send failed (alert issue still opened)"
+            echo
+          }
           declare -A live
           while IFS='|' read -r tag key title; do
             [ "$tag" = "ALERT" ] || continue
@@ -43,6 +60,7 @@ jobs:
             if [ -z "$existing" ]; then
               gh issue create --title "[$key] $title" --label market-alert \
                 --body "Fired $(date -u '+%Y-%m-%d %H:%M UTC') by the market-alerts workflow. Closes itself when the alert clears."
+              send_email "$title" "$title"
               echo "opened: $title"
             else
               echo "already open: #$existing ($key)"
