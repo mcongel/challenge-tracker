@@ -105,6 +105,7 @@ export const mapTrade = (r: any): Trade => ({
   costBasis: Number(r.cost_basis),
   proceeds: Number(r.proceeds),
   washSale: r.wash_sale,
+  exitReason: r.exit_reason,
   notes: r.notes,
 });
 
@@ -115,6 +116,7 @@ export const tradePayload = (t: Omit<Trade, 'id'>) => ({
   cost_basis: t.costBasis,
   proceeds: t.proceeds,
   wash_sale: t.washSale,
+  exit_reason: t.exitReason ?? null,
   notes: t.notes ?? null,
 });
 
@@ -345,6 +347,7 @@ export const mapWatchlistItem = (r: any): WatchlistItem => ({
   catalystDate: r.catalyst_date,
   entryNote: r.entry_note,
   plannedTarget: r.planned_target == null ? null : Number(r.planned_target),
+  entryTrigger: r.entry_trigger == null ? null : Number(r.entry_trigger),
   notes: r.notes,
   createdAt: r.created_at,
 });
@@ -355,5 +358,6 @@ export const watchlistItemPayload = (w: Omit<WatchlistItem, 'id' | 'createdAt'>)
   catalyst_date: w.catalystDate ?? null,
   entry_note: w.entryNote ?? null,
   planned_target: w.plannedTarget ?? null,
+  entry_trigger: w.entryTrigger ?? null,
   notes: w.notes ?? null,
 });

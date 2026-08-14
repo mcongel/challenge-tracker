@@ -31,12 +31,13 @@ const ALERT_STYLES: Record<string, string> = {
   TARGET: 'bg-green-50 text-green-700 border-green-200',
   TAX: 'bg-yellow-50 text-yellow-800 border-amber-300 border',
   CAP: 'bg-red-50 text-red-700 border-red-200',
+  ENTRY: 'bg-indigo-50 text-indigo-700 border-indigo-200',
 };
 
 export function Dashboard() {
   const {
     lots, cashEvents, trades, milestones, benchmarkDeposits, parked, parkedLots, snapshots,
-    carryforwards, overrides, quotes, contributionCap, concentrationCap, loading, error,
+    carryforwards, overrides, quotes, contributionCap, concentrationCap, watchlist, loading, error,
   } = useData();
   const isDark = useIsDark();
   const today = todayISO();
@@ -52,7 +53,7 @@ export function Dashboard() {
   const ytd = netRealizedYTD(trades, taxYearOf(today));
   const alerts = activeAlerts({
     lots, cashEvents, trades, milestones, parked, carryforwards, overrides, quotes,
-    concentrationCap, today,
+    concentrationCap, watchlist, today,
   });
 
   // Soonest unlock across the pile — the trim calendar at a glance. Rule 5's

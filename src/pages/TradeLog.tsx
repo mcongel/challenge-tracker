@@ -18,6 +18,13 @@ import {
   cn, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls, secondaryBtnCls, todayISO,
 } from '../lib/utils';
 
+const EXIT_REASON_LABELS: Record<string, string> = {
+  target_hit: 'target hit',
+  calendar: 'calendar',
+  early: 'early',
+  thesis_broke: 'thesis broke',
+};
+
 export function TradeLog() {
   const {
     trades, setTradeWashSale, deleteTrade, outsideSales, accounts, deleteOutsideSale,
@@ -128,6 +135,19 @@ export function TradeLog() {
               Worst: {stats.worst.ticker} {formatCurrency(roundCents(realizedGain(stats.worst)))}
             </p>
           )}
+          {(() => {
+            const reasoned = trades.filter((t) => t.exitReason && EXIT_REASON_LABELS[t.exitReason]);
+            if (reasoned.length < 2) return null;
+            const counts = new Map<string, number>();
+            for (const t of reasoned) counts.set(t.exitReason!, (counts.get(t.exitReason!) ?? 0) + 1);
+            return (
+              <p className="mt-2 text-xs text-gray-400"
+                title="Target calibration: mostly target-hit exits mean the written targets are honest; mostly early exits mean they're fantasy (or nerves).">
+                Exits: {[...counts.entries()].map(([r, n]) => `${n} ${EXIT_REASON_LABELS[r]}`).join(' · ')}
+                {reasoned.length < trades.length && ` · ${trades.length - reasoned.length} unlabeled`}
+              </p>
+            );
+          })()}
           {byIndustry.length >= 2 && (
             <div className="mt-3 border-t border-gray-100 pt-2">
               <p className="text-xs font-medium text-gray-500 mb-1">By industry — where the edge actually is</p>
@@ -188,6 +208,14 @@ export function TradeLog() {
                       {t.ticker}
                       {industries[t.ticker] && (
                         <span className="block text-xs font-normal text-gray-400">{industries[t.ticker]}</span>
+                      )}
+                      {t.exitReason && EXIT_REASON_LABELS[t.exitReason] && (
+                        <span className={cn('mt-0.5 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium',
+                          t.exitReason === 'target_hit' ? 'bg-green-50 text-green-700'
+                          : t.exitReason === 'thesis_broke' ? 'bg-red-50 text-red-700'
+                          : 'bg-gray-100 text-gray-600')}>
+                          {EXIT_REASON_LABELS[t.exitReason]}
+                        </span>
                       )}
                     </td>
                     <td className="px-4 py-3 tabular-nums text-gray-500">{t.openDate}</td>

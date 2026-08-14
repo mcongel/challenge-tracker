@@ -1,5 +1,5 @@
 import type {
-  CashEvent, LossCarryforward, MilestoneRecord, ParkedPosition, PositionLot, Trade,
+  CashEvent, LossCarryforward, MilestoneRecord, ParkedPosition, PositionLot, Trade, WatchlistItem,
 } from './engine';
 import {
   accountTotal, concentration, formatQuarterLabel, milestoneTable, quartersEnded, computeCheck,
@@ -29,7 +29,7 @@ export function priceMapFor(
 }
 
 export interface AppAlert {
-  kind: 'MILESTONE' | 'TAX' | 'CAP' | 'TARGET';
+  kind: 'MILESTONE' | 'TAX' | 'CAP' | 'TARGET' | 'ENTRY';
   message: string;
   to: string;
 }
@@ -44,6 +44,8 @@ interface AlertInputs {
   overrides: Record<string, number>;
   quotes?: Record<string, number>;
   concentrationCap?: number;
+  /** Bench candidates — entry triggers fire the ENTRY alert. */
+  watchlist?: WatchlistItem[];
   today: string;
 }
 
@@ -66,9 +68,34 @@ export function targetHits(
   return [...byTicker.entries()].map(([ticker, v]) => ({ ticker, ...v }));
 }
 
+/** The entry-side tripwire: a live price at or below a bench candidate's
+ * numeric trigger. Mirrors targetHits — the exit's twin. */
+export function entryHits(
+  watchlist: WatchlistItem[],
+  overrides: Record<string, number>,
+  quotes: Record<string, number> = {},
+): { ticker: string; price: number; trigger: number }[] {
+  const hits: { ticker: string; price: number; trigger: number }[] = [];
+  for (const w of watchlist) {
+    if (w.entryTrigger == null || w.entryTrigger <= 0) continue;
+    const price = overrides[w.ticker] ?? quotes[w.ticker];
+    if (price === undefined || price > w.entryTrigger) continue;
+    hits.push({ ticker: w.ticker, price, trigger: w.entryTrigger });
+  }
+  return hits;
+}
+
 export function activeAlerts(d: AlertInputs): AppAlert[] {
   const alerts: AppAlert[] = [];
   const account = accountTotal(d.lots, priceMapFor(d.lots, d.overrides, d.quotes), d.cashEvents);
+
+  for (const hit of entryHits(d.watchlist ?? [], d.overrides, d.quotes)) {
+    alerts.push({
+      kind: 'ENTRY',
+      message: `${hit.ticker} hit your ${formatCurrency(hit.trigger)} entry trigger (now ${formatCurrency(hit.price)}) — the bench setup is live`,
+      to: '/watchlist',
+    });
+  }
 
   for (const hit of targetHits(d.lots, d.overrides, d.quotes)) {
     alerts.push({

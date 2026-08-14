@@ -72,6 +72,9 @@ export interface Trade {
   costBasis: number;
   proceeds: number;
   washSale: boolean;
+  /** Why the exit happened: target_hit | calendar | early | thesis_broke —
+   * the pattern card reads it to judge target calibration. */
+  exitReason?: string | null;
   notes?: string | null;
 }
 
@@ -226,6 +229,8 @@ export interface WatchlistItem {
   entryNote?: string | null;
   /** The Rule 8 target, drafted before the entry exists. */
   plannedTarget?: number | null;
+  /** Numeric entry price — at/below it, the ENTRY alert fires. */
+  entryTrigger?: number | null;
   notes?: string | null;
   createdAt?: string | null;
 }

@@ -174,6 +174,7 @@ interface DataContextValue extends DataState {
     closeDate: string,
     allocations?: CloseAllocation[],
     fees?: number,
+    exitReason?: string | null,
   ) => Promise<void>;
   recordSplit: (ticker: string, ratio: number, date: string) => Promise<void>;
   setTradeWashSale: (id: string, washSale: boolean) => Promise<void>;
@@ -701,6 +702,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       closeDate: string,
       allocations?: CloseAllocation[],
       fees = 0,
+      exitReason: string | null = null,
     ) => {
       const client = db();
       const result = closeShares(state.lots, ticker, shares, pricePerShare, closeDate, allocations);
@@ -730,7 +732,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         // Trades are one batch insert (all-or-nothing at PostgREST), so a
         // failure below can't leave half the paper trail.
         const { error: tradeErr } = await client.from('trades').insert(
-          tradeRows.map((t) => tradePayload({ ...t, washSale: false })),
+          tradeRows.map((t) => tradePayload({ ...t, washSale: false, exitReason })),
         );
         if (tradeErr) throw tradeErr;
 

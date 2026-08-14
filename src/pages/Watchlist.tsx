@@ -138,7 +138,15 @@ export function Watchlist() {
                         <span className="text-gray-400">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-gray-600">{w.entryNote ?? <span className="text-gray-400">—</span>}</td>
+                    <td className="px-4 py-3 text-gray-600">
+                      {w.entryNote ?? <span className="text-gray-400">—</span>}
+                      {w.entryTrigger != null && (
+                        <span className="block text-xs text-gray-400 tabular-nums"
+                          title="Dashboard alert fires at/below this price.">
+                          alert ≤ {formatCurrency(w.entryTrigger)}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-right tabular-nums">
                       {w.plannedTarget != null ? formatCurrency(w.plannedTarget) : <span className="text-gray-400">—</span>}
                     </td>
@@ -190,6 +198,9 @@ function CandidateModal({ item, onClose }: { item: WatchlistItem | null; onClose
   const [catalyst, setCatalyst] = useState(item?.catalyst ?? '');
   const [catalystDate, setCatalystDate] = useState(item?.catalystDate ?? '');
   const [entryNote, setEntryNote] = useState(item?.entryNote ?? '');
+  const [entryTrigger, setEntryTrigger] = useState(
+    item?.entryTrigger != null ? String(item.entryTrigger) : '',
+  );
   const [plannedTarget, setPlannedTarget] = useState(
     item?.plannedTarget != null ? String(item.plannedTarget) : '',
   );
@@ -205,6 +216,10 @@ function CandidateModal({ item, onClose }: { item: WatchlistItem | null; onClose
     if (target != null && (Number.isNaN(target) || target <= 0)) {
       return setFormError('Planned target must be a positive price.');
     }
+    const trigger = entryTrigger === '' ? null : Number(entryTrigger);
+    if (trigger != null && (Number.isNaN(trigger) || trigger <= 0)) {
+      return setFormError('Entry trigger must be a positive price.');
+    }
     setBusy(true);
     try {
       const payload = {
@@ -212,6 +227,7 @@ function CandidateModal({ item, onClose }: { item: WatchlistItem | null; onClose
         catalyst: catalyst || null,
         catalystDate: catalystDate || null,
         entryNote: entryNote || null,
+        entryTrigger: trigger,
         plannedTarget: target,
         notes: notes || null,
       };
@@ -245,11 +261,19 @@ function CandidateModal({ item, onClose }: { item: WatchlistItem | null; onClose
           <input value={catalyst} onChange={(e) => setCatalyst(e.target.value)}
             className={inputCls} placeholder="Q3 earnings; new fab ramp guidance" />
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <div>
             <label className={labelCls}>Entry zone</label>
             <input value={entryNote} onChange={(e) => setEntryNote(e.target.value)}
               className={inputCls} placeholder="55–58 on a pullback" />
+          </div>
+          <div>
+            <label className={labelCls} title="At or below this price, the Dashboard fires the ENTRY alert.">
+              Entry trigger ($)
+            </label>
+            <input type="number" step="any" min="0.01" value={entryTrigger}
+              onChange={(e) => setEntryTrigger(e.target.value)} className={inputCls}
+              placeholder="alert at/below" />
           </div>
           <div>
             <label className={labelCls}>Planned target ($)</label>

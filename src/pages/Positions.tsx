@@ -444,6 +444,7 @@ function ClosePositionModal({ ticker, onClose }: { ticker: string; onClose: () =
   const [customize, setCustomize] = useState(false);
   const [allocs, setAllocs] = useState<Record<string, string>>({});
   const [fees, setFees] = useState('');
+  const [exitReason, setExitReason] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -493,7 +494,7 @@ function ClosePositionModal({ ticker, onClose }: { ticker: string; onClose: () =
     }
     setBusy(true);
     try {
-      await closePosition(ticker, numShares, numPrice, closeDate, allocations, feeNum || undefined);
+      await closePosition(ticker, numShares, numPrice, closeDate, allocations, feeNum || undefined, exitReason || null);
       onClose();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : String(err));
@@ -525,6 +526,18 @@ function ClosePositionModal({ ticker, onClose }: { ticker: string; onClose: () =
             <label className={labelCls}>Fees ($, optional)</label>
             <input type="number" step="0.01" min="0" value={fees} placeholder="SEC/FINRA fees"
               onChange={(e) => setFees(e.target.value)} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls} title="One tap of self-knowledge — the pattern card reads these to judge whether your written targets are calibrated.">
+              Why the exit?
+            </label>
+            <select value={exitReason} onChange={(e) => setExitReason(e.target.value)} className={inputCls}>
+              <option value="">— optional —</option>
+              <option value="target_hit">Target hit</option>
+              <option value="calendar">Calendar / pre-event</option>
+              <option value="early">Early — took profit</option>
+              <option value="thesis_broke">Thesis broke</option>
+            </select>
           </div>
         </div>
 
