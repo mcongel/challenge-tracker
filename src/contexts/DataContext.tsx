@@ -17,8 +17,8 @@ import {
   accountTotal, adjustmentsForLots, aggregateLots, allocateRoc, buildSaleSnapshot, closeShares,
   computeAccountCash, concentration, consumeLotsFifo, cumulativeFloor, isArchivedPosition,
   LT_TAX_RATE, netContributed, ORDINARY_DIVIDEND_TAX_RATE, pileTotal, planSaleRestore,
-  QUALIFIED_DIVIDEND_TAX_RATE, reservedTotal, round6, roundCents, shadowValue, ST_TAX_RATE,
-  totalScore, trimPreview,
+  QUALIFIED_DIVIDEND_TAX_RATE, reservedTotal, round6, roundCents, shadowValue, spentCash,
+  ST_TAX_RATE, totalScore, trimPreview,
 } from '../lib/engine';
 import type {
   AccountCashBreakdown, DividendClassification, DividendTaxRates, IncomeScenario, LotConsumption,
@@ -1523,6 +1523,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       let consumption: LotConsumption | null = null;
       let dripDeletes: string[] = [];
       let hardDeletes: string[] = [];
+      let consumedBasis: number | null = null;
       if (positionLots.length > 0) {
         // Consume lots oldest-first so remaining basis and unlock clocks stay
         // honest — and so the sale record carries the real basis and LT split.
@@ -1549,6 +1550,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           p, positionLots, positionAdjustments, consumption, dripDeletes,
           (id) => stampLookup.get(id),
         );
+        // RAW cash-spending basis this sale removes from the lots — the
+        // account-cash math adds it back so the original purchase stays
+        // spent. Same lot predicate as computeAccountCash's purchases leg;
+        // DRIP lots never brought cash in, so their basis doesn't count.
+        const preLotById = new Map(positionLots.map((l) => [l.id, l]));
+        let raw = 0;
+        for (const u of consumption.updates) {
+          const pre = preLotById.get(u.id);
+          if (pre && pre.source === 'purchase' && spentCash(pre)) raw += pre.amount - u.amount;
+        }
+        for (const id of consumption.deletes) {
+          const pre = preLotById.get(id);
+          if (pre && pre.source === 'purchase' && spentCash(pre)) raw += pre.amount;
+        }
+        consumedBasis = roundCents(raw) > 0 ? roundCents(raw) : null;
       }
 
       if (!consumption) {
@@ -1584,6 +1600,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             costBasis,
             ltShares,
             fundedChallenge: args.fundedChallenge,
+            consumedBasis,
             consumed: snapshot,
             notes: args.notes ?? null,
           }),

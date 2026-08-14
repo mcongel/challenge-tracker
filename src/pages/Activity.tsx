@@ -74,7 +74,7 @@ function SaleDetail({ sale: s }: { sale: ParkedSale }) {
 export function Activity() {
   const {
     parked: allParked, parkedLots, parkedSales, parkedCashEvents, accounts,
-    deleteParkedSale, undoParkedSale, ltTaxRate, stTaxRate, loading, error,
+    deleteParkedSale, undoParkedSale, accountCash, ltTaxRate, stTaxRate, loading, error,
   } = useData();
 
   const [showAll, setShowAll] = useState(false);
@@ -196,6 +196,40 @@ export function Activity() {
   );
   const visible = showAll ? filtered : filtered.slice(0, ACTIVITY_PAGE);
 
+  // Running tracked-cash balance — only when a single account's FULL stream
+  // is showing (a ticker/kind filter would hide rows the walk needs). Walked
+  // backward from the live balance so the top row always matches the
+  // Accounts modal; each row's cash impact mirrors computeAccountCash:
+  // DRIP/ACATS/milestone rows moved no cash, a consuming sale's basis stays
+  // spent, and a funded sale's proceeds left for the challenge ledger.
+  const balanceEligible = Boolean(actAccount) && !actTicker && !actKind;
+  const runningBalance = useMemo(() => {
+    if (!balanceEligible) return new Map<string, number>();
+    const cashImpact = (r: ActivityRow): number => {
+      switch (r.kind) {
+        case 'cash':
+          return r.kindLabel === 'withdrawal' || r.kindLabel === 'fee' ? -r.amount : r.amount;
+        case 'buy':
+          return r.detail?.startsWith('Milestone') ? 0 : -r.amount;
+        case 'transfer':
+          return 0;
+        case 'dividend':
+          return r.kindLabel === 'DRIP' ? 0 : r.amount;
+        case 'sell': {
+          const consumed = r.sale?.consumedBasis ?? 0;
+          return (r.sale?.fundedChallenge ? 0 : r.amount) - consumed;
+        }
+      }
+    };
+    const m = new Map<string, number>();
+    let bal = accountCash(actAccount).balance;
+    for (const r of filtered) {
+      m.set(r.key, bal);
+      bal = roundCents(bal - cashImpact(r));
+    }
+    return m;
+  }, [balanceEligible, filtered, accountCash, actAccount]);
+
   // Undo is LIFO per holding: only the newest snapshot sale for a
   // ticker+account can be undone (older restores would fight newer state).
   const newestSnapshotSaleIds = useMemo(() => {
@@ -284,6 +318,12 @@ export function Activity() {
                 <th className="px-4 py-2 text-right">Shares</th>
                 <th className="px-4 py-2 text-right">Price</th>
                 <th className="px-4 py-2 text-right">Amount</th>
+                {balanceEligible && (
+                  <th className="px-4 py-2 text-right"
+                    title="Tracked cash after this event. Exact from the last reconcile forward; below a reconcile adjustment the numbers show the pre-heal record.">
+                    Balance
+                  </th>
+                )}
                 <th className="px-4 py-2">Detail</th>
                 <th className="px-2 py-2" />
               </tr>
@@ -306,6 +346,12 @@ export function Activity() {
                   <td className={cn('px-4 py-2 text-right tabular-nums font-medium', r.amountCls)}>
                     {formatCurrency(roundCents(r.amount))}
                   </td>
+                  {balanceEligible && (
+                    <td className={cn('px-4 py-2 text-right tabular-nums',
+                      (runningBalance.get(r.key) ?? 0) < -0.005 ? 'text-red-600' : 'text-gray-500')}>
+                      {formatCurrency(runningBalance.get(r.key) ?? 0)}
+                    </td>
+                  )}
                   <td className="px-4 py-2">
                     {r.sale ? <SaleDetail sale={r.sale} /> : (
                       <span className="text-xs text-gray-500">
@@ -347,7 +393,7 @@ export function Activity() {
                 </tr>
               ))}
               {visible.length === 0 && (
-                <tr><td colSpan={9} className="px-4 py-6 text-sm text-gray-400 text-center">Nothing matches the filters</td></tr>
+                <tr><td colSpan={balanceEligible ? 10 : 9} className="px-4 py-6 text-sm text-gray-400 text-center">Nothing matches the filters</td></tr>
               )}
             </tbody>
           </table>

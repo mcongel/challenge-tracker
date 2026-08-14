@@ -56,6 +56,7 @@ const TABLES = [
     id: s.id, ticker: s.ticker, account_id: s.accountId, date: s.date, shares: s.shares,
     price_per_share: s.pricePerShare, proceeds: s.proceeds, cost_basis: s.costBasis ?? null,
     lt_shares: s.ltShares ?? null, funded_challenge: s.fundedChallenge,
+    consumed_basis: s.consumedBasis ?? null,
     consumed: s.consumed ?? null, created_at: s.createdAt ?? undefined, notes: s.notes ?? null,
   })), 'id'],
   ['income_scenarios', get('income_scenarios').map((s) => ({

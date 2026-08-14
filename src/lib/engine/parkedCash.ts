@@ -23,8 +23,10 @@ export function signedParkedCash(e: ParkedCashEvent): number {
 
 /** Lots that moved cash in this account. Transfer-created and milestone-bank
  * lots didn't (ACATS moves shares, not cash; milestone money came from the
- * challenge account) — they're identifiable by the notes the app writes. */
-const spentCash = (lot: ParkedLot) =>
+ * challenge account) — they're identifiable by the notes the app writes.
+ * Exported so trimCore can apply the SAME predicate when it records how much
+ * cash-spending basis a sale consumed. */
+export const spentCash = (lot: Pick<ParkedLot, 'notes'>) =>
   !(lot.notes && (/^ACATS from /.test(lot.notes) || /^Milestone /.test(lot.notes)));
 
 export interface AccountCashBreakdown {
@@ -71,9 +73,17 @@ export function computeAccountCash(
       .filter((l) => l.source === 'dividend' && l.shares <= 0 && l.price == null)
       .map((l) => l.amount),
   );
+  // Purchases = cash originally spent. Lot amounts SHRINK when a sale
+  // consumes them (basis moves into the sale record), but the cash left the
+  // account at buy time and never comes back — so each sale's consumed
+  // purchase basis is added back. Without this, every lot-consuming sale
+  // phantom-credits its cost basis to tracked cash.
+  const consumedBySales = sum(
+    args.parkedSales.filter((s) => s.accountId === accountId).map((s) => s.consumedBasis ?? 0),
+  );
   const purchases = sum(
     accountLots.filter((l) => l.source === 'purchase' && spentCash(l)).map((l) => l.amount),
-  );
+  ) + consumedBySales;
   const challengeFlows = trackedBalance(accountId, args.cashEvents);
   return {
     manual,

@@ -209,6 +209,11 @@ export interface ParkedSale {
   costBasis?: number | null;
   ltShares?: number | null;
   fundedChallenge: boolean;
+  /** RAW purchase-lot dollars this sale consumed (unadjusted, cash-spending
+   * lots only). Account-cash math adds it back to the shrunken lot amounts so
+   * selling never un-spends the original purchase. null = sale consumed no
+   * lots, or predates the account's last reconcile (already absorbed). */
+  consumedBasis?: number | null;
   /** Consumption snapshot; null = legacy sale, field-edit only, no undo. */
   consumed?: ParkedSaleSnapshot | null;
   /** Row insert time — gates which ROC allocations postdate the sale. */

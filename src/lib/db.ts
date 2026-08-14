@@ -234,6 +234,7 @@ export const mapParkedSale = (r: any): ParkedSale => ({
   costBasis: r.cost_basis === null ? null : Number(r.cost_basis),
   ltShares: r.lt_shares === null ? null : Number(r.lt_shares),
   fundedChallenge: r.funded_challenge,
+  consumedBasis: r.consumed_basis === null ? null : Number(r.consumed_basis),
   consumed: r.consumed ?? null,
   createdAt: r.created_at ?? null,
   notes: r.notes,
@@ -249,6 +250,7 @@ export const parkedSalePayload = (s: Omit<ParkedSale, 'id' | 'createdAt'>) => ({
   cost_basis: s.costBasis ?? null,
   lt_shares: s.ltShares ?? null,
   funded_challenge: s.fundedChallenge,
+  consumed_basis: s.consumedBasis ?? null,
   consumed: s.consumed ?? null,
   notes: s.notes ?? null,
 });

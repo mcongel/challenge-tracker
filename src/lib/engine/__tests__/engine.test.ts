@@ -340,6 +340,28 @@ describe('parked cash — tracked balance with auto-flows', () => {
     expect(result.challengeFlows).toBe(-2000);
     expect(result.balance).toBeCloseTo(85, 9);
   });
+
+  it('a consuming sale keeps the original purchase spent (consumedBasis add-back)', async () => {
+    const { computeAccountCash } = await import('../parkedCash');
+    const acct = 'cashapp';
+    // The 2026-08-14 bug in miniature: buy 842.34, trim consumes 123.98 of
+    // basis (lot amount shrinks to 718.36), proceeds 499.97 come in. Without
+    // the add-back the consumed basis reads as never-spent cash.
+    const result = computeAccountCash(acct, {
+      parkedCashEvents: [],
+      parkedSales: [
+        { id: 's1', ticker: 'MU', accountId: acct, date: '2026-08-14', shares: 0.51571, pricePerShare: 969.48, proceeds: 499.97, fundedChallenge: false, consumedBasis: 123.98 },
+      ],
+      parked: [{ id: 'p1', ticker: 'MU', accountId: acct, account: 'Cash App', category: 'Semiconductors', shares: 2.988, avgCost: 240.4, currentPrice: 969.48 }],
+      parkedLots: [
+        { id: 'l1', parkedPositionId: 'p1', date: '2025-11-06', source: 'purchase', shares: 2.98804194, amount: 718.36 }, // post-consumption
+      ],
+      cashEvents: [],
+    });
+    // −842.34 originally spent (718.36 remaining + 123.98 consumed) + 499.97 proceeds
+    expect(result.purchases).toBeCloseTo(842.34, 9);
+    expect(result.balance).toBeCloseTo(-342.37, 9);
+  });
 });
 
 describe('benchmark — rolling 12-month verdict', () => {
