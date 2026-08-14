@@ -1,0 +1,59 @@
+name: Market alerts
+
+# Every 30 minutes through the US session (13:30–20:00 UTC ≈ 9:30–4 ET).
+# Fired alerts become GitHub issues — GitHub's own notification email does
+# the delivery, so no mail credentials exist anywhere. Issues are deduped by
+# the stable key in the title and closed automatically when the alert clears.
+on:
+  schedule:
+    - cron: '*/30 13-20 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --omit=dev
+      - name: Check targets and entry triggers
+        id: check
+        run: node scripts/alert-check.mjs | tee alerts.txt
+        env:
+          SUPABASE_URL: https://mlvntnbgboinjhmavwao.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      - name: Open issues for fired alerts (deduped), close cleared ones
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh label create market-alert --color D93F0B --description "Fired by the market-alerts workflow" 2>/dev/null || true
+          declare -A live
+          while IFS='|' read -r tag key title; do
+            [ "$tag" = "ALERT" ] || continue
+            live["$key"]=1
+            existing=$(gh issue list --label market-alert --state open --search "in:title [$key]" --json number --jq '.[0].number')
+            if [ -z "$existing" ]; then
+              gh issue create --title "[$key] $title" --label market-alert \
+                --body "Fired $(date -u '+%Y-%m-%d %H:%M UTC') by the market-alerts workflow. Closes itself when the alert clears."
+              echo "opened: $title"
+            else
+              echo "already open: #$existing ($key)"
+            fi
+          done < alerts.txt
+          # Close alerts that are no longer firing.
+          gh issue list --label market-alert --state open --json number,title --jq '.[] | "\(.number)|\(.title)"' |
+          while IFS='|' read -r number title; do
+            key=$(echo "$title" | sed -n 's/^\[\([^]]*\)\].*/\1/p')
+            if [ -n "$key" ] && [ -z "${live[$key]:-}" ]; then
+              gh issue close "$number" --comment "Cleared $(date -u '+%Y-%m-%d %H:%M UTC')."
+              echo "closed: #$number ($key)"
+            fi
+          done
