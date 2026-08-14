@@ -112,7 +112,7 @@ Deno.serve(async (req) => {
     const price = priceOf(w.ticker);
     if (price !== undefined && trigger > 0 && price <= trigger) {
       firing.set(`entry-${w.ticker}`, {
-        title: `📥 ${w.ticker} hit your ${usd(trigger)} entry trigger (now ${usd(price)}) — the bench setup is live`,
+        title: `📊 ${w.ticker} hit your ${usd(trigger)} entry trigger (now ${usd(price)}) — the bench setup is live`,
         price,
       });
     }
