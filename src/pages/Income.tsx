@@ -8,8 +8,8 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { ErrorCard, SkeletonTable } from './CashLedger';
-import { CLASSIFICATION_LABELS, classificationPillCls, SortHeader } from './ParkedPile';
-import type { SortState } from './ParkedPile';
+import { CLASSIFICATION_LABELS, classificationPillCls, SortHeader } from '../components/parked/shared';
+import type { SortState } from '../components/parked/shared';
 import { useData } from '../contexts/DataContext';
 import type {
   DividendClassification, DividendFrequency, ParkedLot, ParkedPosition, PositionIncomeSummary,
