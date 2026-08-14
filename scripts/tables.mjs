@@ -35,16 +35,28 @@ export const WIPE_ORDER = [
   'watchlist', 'parked_positions', 'app_settings', 'accounts',
 ];
 
+/** Primary key per table — 'id' except the natural-key tables. Used for
+ * wipe deletes and for deterministic ordering in full-table reads. */
+export function pkOf(table) {
+  return table === 'snapshots' ? 'date'
+    : table === 'loss_carryforwards' ? 'tax_year'
+    : table === 'price_overrides' ? 'ticker'
+    : table === 'app_settings' ? 'key'
+    : 'id';
+}
+
 /** Page size for full-table reads. PostgREST enforces max-rows (default
  * 1000) SERVER-side — a bigger .range cannot beat it, so callers must page
  * until a short page. */
 export const PAGE = 1000;
 
 export async function fetchAllRows(supabase, table) {
+  // Ordering by pk keeps pagination stable (no skipped/duplicated rows when
+  // the planner changes between pages) and makes successive backups diffable.
   const rows = [];
   for (let offset = 0; ; offset += PAGE) {
     const { data, error } = await supabase
-      .from(table).select('*').range(offset, offset + PAGE - 1);
+      .from(table).select('*').order(pkOf(table)).range(offset, offset + PAGE - 1);
     if (error) throw new Error(`${table}: ${error.message}`);
     rows.push(...(data ?? []));
     if ((data ?? []).length < PAGE) return rows;

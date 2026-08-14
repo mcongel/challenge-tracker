@@ -9,7 +9,7 @@
  */
 import { createClient } from '@supabase/supabase-js';
 import { readFileSync } from 'node:fs';
-import { TABLE_NAMES, WIPE_ORDER } from './tables.mjs';
+import { TABLE_NAMES, WIPE_ORDER, pkOf } from './tables.mjs';
 
 const url = process.env.SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -89,7 +89,8 @@ const TABLES = [
   })), 'id'],
   ['trades', get('trades').map((t) => ({
     id: t.id, ticker: t.ticker, open_date: t.openDate, close_date: t.closeDate,
-    cost_basis: t.costBasis, proceeds: t.proceeds, wash_sale: t.washSale, notes: t.notes ?? null,
+    cost_basis: t.costBasis, proceeds: t.proceeds, wash_sale: t.washSale,
+    exit_reason: t.exitReason ?? null, notes: t.notes ?? null,
   })), 'id'],
   ['milestones', get('milestones').map((m) => ({
     id: m.id, level: m.level, account_value_at_hit: m.accountValueAtHit, date_hit: m.dateHit,
@@ -118,7 +119,8 @@ const TABLES = [
   ['watchlist', get('watchlist').map((w) => ({
     id: w.id, ticker: w.ticker, catalyst: w.catalyst ?? null,
     catalyst_date: w.catalystDate ?? null, entry_note: w.entryNote ?? null,
-    planned_target: w.plannedTarget ?? null, notes: w.notes ?? null,
+    planned_target: w.plannedTarget ?? null, entry_trigger: w.entryTrigger ?? null,
+    notes: w.notes ?? null,
     created_at: w.createdAt ?? undefined,
   })), 'id'],
 ];
@@ -141,9 +143,7 @@ const TABLES = [
 
 if (wipe) {
   for (const table of WIPE_ORDER) {
-    const pk = table === 'snapshots' ? 'date' : table === 'loss_carryforwards' ? 'tax_year'
-      : table === 'price_overrides' ? 'ticker' : table === 'app_settings' ? 'key' : 'id';
-    const { error } = await supabase.from(table).delete().not(pk, 'is', null);
+    const { error } = await supabase.from(table).delete().not(pkOf(table), 'is', null);
     if (error) { console.error(`wipe ${table}:`, error.message); process.exit(1); }
     console.log(`wiped ${table}`);
   }
