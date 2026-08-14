@@ -364,6 +364,43 @@ describe('parked cash — tracked balance with auto-flows', () => {
   });
 });
 
+describe('pile taxes — yearly capital-gains estimate', () => {
+  const sale = (over: Partial<import('../types').ParkedSale>): import('../types').ParkedSale => ({
+    id: 'x', ticker: 'MU', accountId: 'a', date: '2026-08-14', shares: 1, pricePerShare: 100,
+    proceeds: 100, costBasis: 50, ltShares: 1, fundedChallenge: false, ...over,
+  });
+
+  it('splits gain by the recorded LT-share fraction; unknown ltShares assumes LT', async () => {
+    const { pileCapGainsYear } = await import('../pileTax');
+    const r = pileCapGainsYear([
+      sale({ id: '1', proceeds: 300, costBasis: 100, shares: 4, ltShares: 3 }),  // +200: 150 LT, 50 ST
+      sale({ id: '2', proceeds: 100, costBasis: 40, ltShares: null }),           // +60 all LT
+      sale({ id: '3', date: '2025-06-01', proceeds: 999, costBasis: 1 }),        // other year
+      sale({ id: '4', costBasis: null }),                                        // unknown basis
+    ], 2026, 0.15, 0.24);
+    expect(r.saleCount).toBe(2);
+    expect(r.ltGain).toBeCloseTo(210, 9);
+    expect(r.stGain).toBeCloseTo(50, 9);
+    expect(r.estTax).toBeCloseTo(210 * 0.15 + 50 * 0.24, 2);
+    expect(r.unknownBasisCount).toBe(1);
+  });
+
+  it('nets a loss in one bucket against the other before rates; net loss owes 0', async () => {
+    const { pileCapGainsYear } = await import('../pileTax');
+    // ST −80 eats into LT +100 → only 20 taxed, at the LT rate.
+    const crossNet = pileCapGainsYear([
+      sale({ id: '1', proceeds: 200, costBasis: 100, ltShares: 1 }),             // +100 LT
+      sale({ id: '2', proceeds: 20, costBasis: 100, shares: 1, ltShares: 0 }),   // −80 ST
+    ], 2026, 0.15, 0.24);
+    expect(crossNet.estTax).toBeCloseTo(20 * 0.15, 9);
+    const netLoss = pileCapGainsYear([
+      sale({ id: '1', proceeds: 20, costBasis: 100 }),
+    ], 2026, 0.15, 0.24);
+    expect(netLoss.ltGain).toBeCloseTo(-80, 9);
+    expect(netLoss.estTax).toBe(0);
+  });
+});
+
 describe('benchmark — rolling 12-month verdict', () => {
   const snap = (date: string, totalScore: number, shadowVooValue: number): Snapshot => ({
     date, totalScore, shadowVooValue,

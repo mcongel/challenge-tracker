@@ -333,7 +333,17 @@ export function dividendTaxYTD(
   today: string,
   rates: DividendTaxRates,
 ): DividendTaxYTD {
-  const year = taxYearOf(today);
+  return dividendTaxForYear(lots, taxYearOf(today), today, rates);
+}
+
+/** Same estimate for an arbitrary tax year (the Pile-taxes card's year
+ * picker). Past years are complete; the current year clips at today. */
+export function dividendTaxForYear(
+  lots: ParkedLot[],
+  year: number,
+  today: string,
+  rates: DividendTaxRates,
+): DividendTaxYTD {
   const byClassification: DividendTaxYTD['byClassification'] = {};
   let totalTax = 0;
   let unclassifiedAmount = 0;

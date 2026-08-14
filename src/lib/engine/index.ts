@@ -17,5 +17,6 @@ export * from './parkedReturns';
 export * from './parkedCash';
 export * from './parkedIncome';
 export * from './parkedRoc';
+export * from './pileTax';
 export * from './parkedSaleRestore';
 export * from './transition';

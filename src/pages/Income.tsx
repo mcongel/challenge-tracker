@@ -15,8 +15,8 @@ import type {
   DividendClassification, DividendFrequency, ParkedLot, ParkedPosition, PositionIncomeSummary,
 } from '../lib/engine';
 import {
-  dividendTaxYTD, isArchivedPosition, isUnallocatedRoc, positionIncomeSummary, roundCents,
-  trailingIncomeByMonth,
+  dividendTaxForYear, dividendTaxYTD, isArchivedPosition, isUnallocatedRoc, pileCapGainsYear,
+  positionIncomeSummary, roundCents, taxYearOf, trailingIncomeByMonth,
 } from '../lib/engine';
 import {
   cn, compactUsd, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls,
@@ -60,8 +60,8 @@ interface HistRow {
 
 export function Income() {
   const {
-    parked, parkedLots, parkedLotAdjustments, dividendTaxRates, deleteParkedLot,
-    allocateRocDividends, reclassifyDividends, loading, error,
+    parked, parkedLots, parkedLotAdjustments, parkedSales, dividendTaxRates, deleteParkedLot,
+    allocateRocDividends, reclassifyDividends, ltTaxRate, stTaxRate, loading, error,
   } = useData();
   const today = todayISO();
 
@@ -90,6 +90,30 @@ export function Income() {
     () => dividendTaxYTD(parkedLots, today, dividendTaxRates),
     [parkedLots, today, dividendTaxRates],
   );
+
+  // The pile's own tax picture, per year — sales cap gains + dividend income.
+  // Estimate only, walled off from the challenge: the 30% quarterly skim
+  // never covers the pile, so this number is the owner's to set aside.
+  const [pileYear, setPileYear] = useState(taxYearOf(today));
+  const pileYearOptions = useMemo(() => {
+    const years = new Set<number>([taxYearOf(today)]);
+    for (const s of parkedSales) years.add(taxYearOf(s.date));
+    for (const l of parkedLots) if (l.source === 'dividend' && l.date) years.add(taxYearOf(l.date));
+    return [...years].sort((a, b) => b - a);
+  }, [parkedSales, parkedLots, today]);
+  const pileCapGains = useMemo(
+    () => pileCapGainsYear(parkedSales, pileYear, ltTaxRate, stTaxRate),
+    [parkedSales, pileYear, ltTaxRate, stTaxRate],
+  );
+  const pileDivTax = useMemo(
+    () => dividendTaxForYear(parkedLots, pileYear, today, dividendTaxRates),
+    [parkedLots, pileYear, today, dividendTaxRates],
+  );
+  const pileDivAmount = useMemo(
+    () => Object.values(pileDivTax.byClassification).reduce((t, e) => t + e.amount, 0),
+    [pileDivTax],
+  );
+  const pileSetAside = roundCents(pileCapGains.estTax + pileDivTax.totalTax);
 
   // Portfolio yield on cost: only positions that project income AND have a
   // real cost basis count — in both the numerator and the denominator — so a
@@ -356,6 +380,67 @@ export function Income() {
                 No dated dividends and nothing to project yet — log a payment or set a manual rate.
               </p>
             )}
+          </div>
+
+          {/* The pile's yearly tax bill, sales + dividends in one place.
+              Deliberately NOT the Tax Reserve screen — that's the challenge's
+              non-negotiable 30% skim; this is context the owner acts on. */}
+          <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6 density-aware-card mb-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+                Pile taxes — set aside yourself, the skim never covers these
+              </p>
+              <select value={pileYear} onChange={(e) => setPileYear(Number(e.target.value))}
+                className={cn(inputCls, 'w-auto py-1 text-xs')} aria-label="Pile tax year">
+                {pileYearOptions.map((y) => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
+            <div className="grid sm:grid-cols-3 gap-4">
+              <div>
+                <p className="text-xs font-medium text-gray-500">Realized sales</p>
+                <p className="mt-0.5 text-lg font-bold tabular-nums">
+                  {pileCapGains.saleCount > 0 ? (
+                    <span className={pileCapGains.ltGain + pileCapGains.stGain >= 0 ? 'text-green-600' : 'text-red-600'}>
+                      {pileCapGains.ltGain + pileCapGains.stGain >= 0 ? '+' : '−'}
+                      {formatCurrency(Math.abs(roundCents(pileCapGains.ltGain + pileCapGains.stGain)))}
+                    </span>
+                  ) : '—'}
+                </p>
+                <p className="text-xs text-gray-400 mt-0.5 tabular-nums">
+                  {pileCapGains.saleCount > 0
+                    ? `LT ${formatCurrency(pileCapGains.ltGain)} · ST ${formatCurrency(pileCapGains.stGain)} · est. tax ${formatCurrency(pileCapGains.estTax)}`
+                    : 'no sales with basis this year'}
+                  {pileCapGains.unknownBasisCount > 0 &&
+                    ` · ${pileCapGains.unknownBasisCount} unknown-basis excluded`}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-gray-500">Dividends</p>
+                <p className="mt-0.5 text-lg font-bold tabular-nums">
+                  {pileDivAmount > 0 ? formatCurrency(roundCents(pileDivAmount)) : '—'}
+                </p>
+                <p className="text-xs text-gray-400 mt-0.5 tabular-nums">
+                  {pileDivAmount > 0 ? `est. tax ${formatCurrency(roundCents(pileDivTax.totalTax))}` : 'none this year'}
+                  {pileDivTax.unclassifiedAmount > 0 && (
+                    <span className="text-amber-700"> · {formatCurrency(roundCents(pileDivTax.unclassifiedAmount))} unclassified</span>
+                  )}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-gray-500">Set aside for {pileYear}</p>
+                <p className="mt-0.5 text-lg font-bold tabular-nums text-gray-900">
+                  {formatCurrency(pileSetAside)}
+                </p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  at ~{formatPercent(ltTaxRate, 0)} LT / ~{formatPercent(stTaxRate, 0)} ST — edit on Tax Reserve
+                </p>
+              </div>
+            </div>
+            <p className="text-xs text-gray-400 mt-3">
+              Estimate only. LT/ST split follows each sale's recorded long-term shares (undated
+              lots assume LT); a net loss owes nothing here — wash-sale disallowances and loss
+              carryover aren't modeled. Entirely separate from the challenge account's 30% reserve.
+            </p>
           </div>
 
           <div className="bg-white rounded-lg shadow-lg overflow-x-auto mb-4">
