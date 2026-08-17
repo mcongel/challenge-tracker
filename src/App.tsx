@@ -15,6 +15,7 @@ import { Benchmark } from './pages/Benchmark';
 import { ParkedPile } from './pages/ParkedPile';
 import { Activity } from './pages/Activity';
 import { Income } from './pages/Income';
+import { PileTaxes } from './pages/PileTaxes';
 import { Transition } from './pages/Transition';
 import { Rules } from './pages/Rules';
 import { Help } from './pages/Help';
@@ -59,6 +60,7 @@ function AppRoutes() {
         <Route path="/parked" element={<ParkedPile />} />
         <Route path="/activity" element={<Activity />} />
         <Route path="/income" element={<Income />} />
+        <Route path="/pile-taxes" element={<PileTaxes />} />
         <Route path="/transition" element={<Transition />} />
         <Route path="/rules" element={<Rules />} />
         <Route path="/help" element={<Help />} />

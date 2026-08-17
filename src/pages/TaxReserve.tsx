@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Landmark, Scale, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
@@ -72,6 +73,13 @@ export function TaxReserve() {
 
       {error && <ErrorCard message={error} />}
       {rowError && <ErrorCard message={rowError} />}
+
+      <p className="mb-4 -mt-2 text-xs text-gray-400">
+        This screen is the challenge account only.{' '}
+        <Link to="/pile-taxes" className="text-green-700 hover:underline">
+          Pile taxes have their own page →
+        </Link>
+      </p>
 
       {carryThisYear && (
         <div className="mb-4 bg-sky-50 text-sky-800 rounded-lg px-4 py-3 text-sm">
