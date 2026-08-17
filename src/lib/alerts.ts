@@ -2,8 +2,8 @@ import type {
   CashEvent, LossCarryforward, MilestoneRecord, ParkedPosition, PositionLot, Trade, WatchlistItem,
 } from './engine';
 import {
-  accountTotal, concentration, formatQuarterLabel, milestoneTable, quartersEnded, computeCheck,
-  skimDueNow, type PriceMap,
+  accountTotal, concentration, daysBetween, formatQuarterLabel, milestoneTable, quartersEnded,
+  computeCheck, skimDueNow, type PriceMap,
 } from './engine';
 import { formatCurrency } from './utils';
 
@@ -29,9 +29,34 @@ export function priceMapFor(
 }
 
 export interface AppAlert {
-  kind: 'MILESTONE' | 'TAX' | 'CAP' | 'TARGET' | 'ENTRY';
+  kind: 'MILESTONE' | 'TAX' | 'CAP' | 'TARGET' | 'ENTRY' | 'CALENDAR';
   message: string;
   to: string;
+}
+
+/** How many days before a lot's calendar exit the alert starts firing. */
+export const CALENDAR_ALERT_DAYS = 2;
+
+/** Calendar exits closing in (or blown past): earliest exit date per ticker
+ * within CALENDAR_ALERT_DAYS, plus anything overdue. Price-independent — the
+ * date is the rule. daysLeft can be negative (overdue). */
+export function calendarHits(
+  lots: PositionLot[],
+  today: string,
+): { ticker: string; exitDate: string; daysLeft: number }[] {
+  const byTicker = new Map<string, string>();
+  for (const lot of lots) {
+    if (!lot.exitDate) continue;
+    const cur = byTicker.get(lot.ticker);
+    if (!cur || lot.exitDate < cur) byTicker.set(lot.ticker, lot.exitDate);
+  }
+  return [...byTicker.entries()]
+    .map(([ticker, exitDate]) => ({
+      ticker,
+      exitDate,
+      daysLeft: daysBetween(today, exitDate),
+    }))
+    .filter((h) => h.daysLeft <= CALENDAR_ALERT_DAYS);
 }
 
 interface AlertInputs {
@@ -101,6 +126,19 @@ export function activeAlerts(d: AlertInputs): AppAlert[] {
     alerts.push({
       kind: 'TARGET',
       message: `${hit.ticker} crossed its ${formatCurrency(hit.target)} exit target (now ${formatCurrency(hit.price)}) — sell into strength, then rotate (Rule 8)`,
+      to: '/positions',
+    });
+  }
+
+  for (const hit of calendarHits(d.lots, d.today)) {
+    const when = hit.daysLeft < 0
+      ? `was ${hit.exitDate} — overdue, close it`
+      : hit.daysLeft === 0
+        ? 'is TODAY — out by the close'
+        : `is ${hit.exitDate} (${hit.daysLeft} session${hit.daysLeft > 1 ? 's' : ''} left)`;
+    alerts.push({
+      kind: 'CALENDAR',
+      message: `${hit.ticker} calendar exit ${when} — the plan says never hold through the print`,
       to: '/positions',
     });
   }

@@ -24,6 +24,7 @@ export const TABLE_NAMES = [
   'price_overrides',
   'app_settings',
   'watchlist',
+  'pile_tax_set_asides',
 ];
 
 /** Wipe order for --wipe restores: children before parents; accounts last. */
@@ -32,7 +33,7 @@ export const WIPE_ORDER = [
   'parked_lot_adjustments', 'parked_lots', 'parked_sales', 'parked_cash_events',
   'outside_sales', 'cash_events', 'position_lots', 'trades',
   'milestones', 'benchmark_deposits', 'snapshots', 'loss_carryforwards', 'price_overrides',
-  'watchlist', 'parked_positions', 'app_settings', 'accounts',
+  'watchlist', 'pile_tax_set_asides', 'parked_positions', 'app_settings', 'accounts',
 ];
 
 /** Primary key per table — 'id' except the natural-key tables. Used for

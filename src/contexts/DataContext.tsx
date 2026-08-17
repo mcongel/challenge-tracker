@@ -22,8 +22,8 @@ import {
 } from '../lib/engine';
 import type {
   AccountCashBreakdown, DividendClassification, DividendTaxRates, IncomeScenario, LotConsumption,
-  ParkedCashEvent, ParkedLot, ParkedLotAdjustment, ParkedSale, ParkedSaleSnapshot, ScenarioRotation,
-  WatchlistItem,
+  ParkedCashEvent, ParkedLot, ParkedLotAdjustment, ParkedSale, ParkedSaleSnapshot,
+  PileTaxSetAside, ScenarioRotation, WatchlistItem,
 } from '../lib/engine';
 import { priceMapFor } from '../lib/alerts';
 import { errorMessage, todayISO } from '../lib/utils';
@@ -53,6 +53,8 @@ import {
   mapParked,
   mapSnapshot,
   mapTrade,
+  mapPileTaxSetAside,
+  pileTaxSetAsidePayload,
   mapWatchlistItem,
   watchlistItemPayload,
   milestonePayload,
@@ -91,6 +93,7 @@ interface DataState {
   scenarioRotations: ScenarioRotation[];
   /** The bench: researched candidates for the next rotation. Context only. */
   watchlist: WatchlistItem[];
+  pileTaxSetAsides: PileTaxSetAside[];
 }
 
 const EMPTY: DataState = {
@@ -114,6 +117,7 @@ const EMPTY: DataState = {
   incomeScenarios: [],
   scenarioRotations: [],
   watchlist: [],
+  pileTaxSetAsides: [],
 };
 
 interface DataContextValue extends DataState {
@@ -137,6 +141,8 @@ interface DataContextValue extends DataState {
   addWatchlistItem: (w: Omit<WatchlistItem, 'id' | 'createdAt'>) => Promise<void>;
   updateWatchlistItem: (id: string, w: Omit<WatchlistItem, 'id' | 'createdAt'>) => Promise<void>;
   deleteWatchlistItem: (id: string) => Promise<void>;
+  addPileTaxSetAside: (s: Omit<PileTaxSetAside, 'id'>) => Promise<void>;
+  deletePileTaxSetAside: (id: string) => Promise<void>;
   /** Delayed API quotes (override-free). Merged view: overrides win. */
   quotes: Record<string, number>;
   /** The day's move per ticker, straight from the quote feed. */
@@ -158,10 +164,10 @@ interface DataContextValue extends DataState {
   addLot: (lot: Omit<PositionLot, 'id'>) => Promise<void>;
   /** Deletes the lot; takes the Buy cash event too when exactly one matches. */
   deleteLot: (id: string) => Promise<{ buyEventDeleted: boolean }>;
-  /** Non-monetary corrections: exit target, buy date, thesis. */
+  /** Non-monetary corrections: exit target, calendar exit, buy date, thesis. */
   updateLotDetails: (
     id: string,
-    patch: { exitTarget?: number; buyDate?: string; thesis?: string | null },
+    patch: { exitTarget?: number; exitDate?: string | null; buyDate?: string; thesis?: string | null },
   ) => Promise<void>;
   /** Removes the record only — MilestoneBank row and VOO lot stay. */
   deleteMilestone: (id: string) => Promise<void>;
@@ -302,7 +308,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const [
         cash, lots, trades, milestones, bench, parked, snaps, carry, overrides, settings,
         accounts, outsideSales, parkedLots, parkedSales, parkedCashEvents, parkedLotAdjustments,
-        incomeScenarios, scenarioRotations, watchlist,
+        incomeScenarios, scenarioRotations, watchlist, pileTaxSetAsides,
       ] = await Promise.all([
         client.from('cash_events').select('*').order('date').order('created_at'),
         client.from('position_lots').select('*').order('buy_date'),
@@ -323,13 +329,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         client.from('income_scenarios').select('*').order('created_at'),
         client.from('scenario_rotations').select('*').order('rotation_date'),
         client.from('watchlist').select('*').order('catalyst_date', { nullsFirst: false }),
+        client.from('pile_tax_set_asides').select('*').order('date'),
       ]);
       const firstError =
         cash.error ?? lots.error ?? trades.error ?? milestones.error ?? bench.error ??
         parked.error ?? snaps.error ?? carry.error ?? overrides.error ?? settings.error ??
         accounts.error ?? outsideSales.error ?? parkedLots.error ?? parkedSales.error ??
         parkedCashEvents.error ?? parkedLotAdjustments.error ?? incomeScenarios.error ??
-        scenarioRotations.error ?? watchlist.error;
+        scenarioRotations.error ?? watchlist.error ?? pileTaxSetAsides.error;
       if (firstError) throw firstError;
       setState({
         cashEvents: (cash.data ?? []).map(mapCashEvent),
@@ -356,6 +363,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         incomeScenarios: (incomeScenarios.data ?? []).map(mapIncomeScenario),
         scenarioRotations: (scenarioRotations.data ?? []).map(mapScenarioRotation),
         watchlist: (watchlist.data ?? []).map(mapWatchlistItem),
+        pileTaxSetAsides: (pileTaxSetAsides.data ?? []).map(mapPileTaxSetAside),
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -2095,12 +2103,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const updateLotDetails = useCallback(
     async (
       id: string,
-      patch: { exitTarget?: number; buyDate?: string; thesis?: string | null },
+      patch: { exitTarget?: number; exitDate?: string | null; buyDate?: string; thesis?: string | null },
     ) => {
       const client = db();
       const lot = state.lots.find((l) => l.id === id);
       const payload: Record<string, unknown> = {};
       if (patch.exitTarget !== undefined) payload.exit_target = patch.exitTarget;
+      if (patch.exitDate !== undefined) payload.exit_date = patch.exitDate;
       if (patch.buyDate !== undefined) payload.buy_date = patch.buyDate;
       if (patch.thesis !== undefined) payload.thesis = patch.thesis;
       if (Object.keys(payload).length === 0) return;
@@ -2230,6 +2239,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     async (id: string, w: Omit<WatchlistItem, 'id' | 'createdAt'>) => {
       const { error: err } = await db()
         .from('watchlist').update(watchlistItemPayload(w)).eq('id', id);
+      if (err) throw err;
+      await refresh();
+    },
+    [refresh],
+  );
+
+  const addPileTaxSetAside = useCallback(
+    async (s: Omit<PileTaxSetAside, 'id'>) => {
+      const { error: err } = await db().from('pile_tax_set_asides').insert(pileTaxSetAsidePayload(s));
+      if (err) throw err;
+      await refresh();
+    },
+    [refresh],
+  );
+
+  const deletePileTaxSetAside = useCallback(
+    async (id: string) => {
+      const { error: err } = await db().from('pile_tax_set_asides').delete().eq('id', id);
       if (err) throw err;
       await refresh();
     },
@@ -2434,6 +2461,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       addWatchlistItem,
       updateWatchlistItem,
       deleteWatchlistItem,
+      addPileTaxSetAside,
+      deletePileTaxSetAside,
       loading,
       error,
       refresh,
@@ -2486,7 +2515,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       state, mergedParked, quotes, dayChange, quotesAsOf, quotesError, refreshQuotes, tickerNames,
       contributionCap,
       concentrationCap, ltTaxRate, stTaxRate, dividendTaxRates, updateSetting, updateSettings,
-      setCarryforward, addWatchlistItem, updateWatchlistItem, deleteWatchlistItem, loading, error,
+      setCarryforward, addWatchlistItem, updateWatchlistItem, deleteWatchlistItem,
+      addPileTaxSetAside, deletePileTaxSetAside, loading, error,
       refresh, addCashEvent, updateCashEvent, deleteCashEvent, addLot, deleteLot, updateLotDetails,
       closePosition, recordSplit,
       setTradeWashSale, deleteTrade, updateParked, recordMilestone, deleteMilestone,

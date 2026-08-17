@@ -60,7 +60,7 @@ Deno.serve(async (req) => {
   });
 
   const [lotsRes, watchRes, overridesRes, openRes] = await Promise.all([
-    supabase.from("position_lots").select("ticker, exit_target"),
+    supabase.from("position_lots").select("ticker, exit_target, exit_date"),
     supabase.from("watchlist").select("ticker, entry_trigger").not("entry_trigger", "is", null),
     supabase.from("price_overrides").select("ticker, price"),
     supabase.from("alert_state").select("id, key").is("cleared_at", null),
@@ -74,48 +74,84 @@ Deno.serve(async (req) => {
   const open = openRes.data ?? [];
 
   const tickers = [...new Set([...lots.map((l) => l.ticker), ...watch.map((w) => w.ticker)])];
-  if (tickers.length === 0) return json({ checked: 0, fired: [], cleared: [] });
 
+  // Quotes are best-effort: a feed outage must not silence the calendar
+  // alerts (date-only) or wrongly CLEAR open price alerts.
   let quotes = new Map<string, number>();
-  try {
-    const res = await fetch(`${QUOTES_BASE}/api/quotes?tickers=${tickers.join(",")}`);
-    if (!res.ok) return json({ skipped: `quote fetch ${res.status}` });
-    const body = await res.json();
-    quotes = new Map(
-      Object.entries(body.quotes ?? {}).map(([t, q]) => [t, (q as { price: number }).price]),
-    );
-  } catch (e) {
-    return json({ skipped: `quote fetch failed: ${e}` });
+  let quotesOk = tickers.length > 0;
+  if (quotesOk) {
+    try {
+      const res = await fetch(`${QUOTES_BASE}/api/quotes?tickers=${tickers.join(",")}`);
+      if (res.ok) {
+        const body = await res.json();
+        quotes = new Map(
+          Object.entries(body.quotes ?? {}).map(([t, q]) => [t, (q as { price: number }).price]),
+        );
+      } else {
+        quotesOk = false;
+      }
+    } catch {
+      quotesOk = false;
+    }
   }
   const priceOf = (t: string) => overrides.get(t) ?? quotes.get(t);
 
   // What's firing right now. Exit side: the lowest crossed target per ticker
   // (the first tripwire). Entry side: price at/below the bench trigger.
-  const firing = new Map<string, { title: string; price: number }>();
-  const lowestTarget = new Map<string, number>();
+  // Calendar side: the earliest exit date per ticker, once it's within
+  // CALENDAR_ALERT_DAYS (or blown past) — no price involved, the date is
+  // the rule.
+  const firing = new Map<string, { title: string; price: number | null }>();
+  if (quotesOk) {
+    const lowestTarget = new Map<string, number>();
+    for (const l of lots) {
+      const t = Number(l.exit_target);
+      const cur = lowestTarget.get(l.ticker);
+      if (cur === undefined || t < cur) lowestTarget.set(l.ticker, t);
+    }
+    for (const [ticker, target] of lowestTarget) {
+      const price = priceOf(ticker);
+      if (price !== undefined && price >= target) {
+        firing.set(`target-${ticker}`, {
+          title: `🎯 ${ticker} crossed its ${usd(target)} exit target (now ${usd(price)}) — sell into strength (Rule 8)`,
+          price,
+        });
+      }
+    }
+    for (const w of watch) {
+      const trigger = Number(w.entry_trigger);
+      const price = priceOf(w.ticker);
+      if (price !== undefined && trigger > 0 && price <= trigger) {
+        firing.set(`entry-${w.ticker}`, {
+          title: `📊 ${w.ticker} hit your ${usd(trigger)} entry trigger (now ${usd(price)}) — the bench setup is live`,
+          price,
+        });
+      }
+    }
+  }
+
+  const CALENDAR_ALERT_DAYS = 2;
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const daysUntil = (iso: string) =>
+    Math.round((Date.parse(iso) - Date.parse(todayISO)) / 86_400_000);
+  const earliestExit = new Map<string, string>();
   for (const l of lots) {
-    const t = Number(l.exit_target);
-    const cur = lowestTarget.get(l.ticker);
-    if (cur === undefined || t < cur) lowestTarget.set(l.ticker, t);
+    if (!l.exit_date) continue;
+    const cur = earliestExit.get(l.ticker);
+    if (!cur || l.exit_date < cur) earliestExit.set(l.ticker, l.exit_date);
   }
-  for (const [ticker, target] of lowestTarget) {
-    const price = priceOf(ticker);
-    if (price !== undefined && price >= target) {
-      firing.set(`target-${ticker}`, {
-        title: `🎯 ${ticker} crossed its ${usd(target)} exit target (now ${usd(price)}) — sell into strength (Rule 8)`,
-        price,
-      });
-    }
-  }
-  for (const w of watch) {
-    const trigger = Number(w.entry_trigger);
-    const price = priceOf(w.ticker);
-    if (price !== undefined && trigger > 0 && price <= trigger) {
-      firing.set(`entry-${w.ticker}`, {
-        title: `📊 ${w.ticker} hit your ${usd(trigger)} entry trigger (now ${usd(price)}) — the bench setup is live`,
-        price,
-      });
-    }
+  for (const [ticker, exitDate] of earliestExit) {
+    const days = daysUntil(exitDate);
+    if (days > CALENDAR_ALERT_DAYS) continue;
+    const when = days < 0
+      ? `was ${exitDate} — overdue, close it`
+      : days === 0
+        ? "is TODAY — out by the close"
+        : `is ${exitDate} (${days} day${days > 1 ? "s" : ""} out)`;
+    firing.set(`calendar-${ticker}`, {
+      title: `⏰ ${ticker} calendar exit ${when} — never hold through the print`,
+      price: null,
+    });
   }
 
   const openKeys = new Set(open.map((o) => o.key));
@@ -158,9 +194,12 @@ Deno.serve(async (req) => {
     }
   }
 
-  // Clears: open state rows whose condition stopped firing.
+  // Clears: open state rows whose condition stopped firing. With the quote
+  // feed down, price-alert states are unknowable — leave them open rather
+  // than "clearing" on missing data; calendar states always resolve.
   for (const o of open) {
     if (firing.has(o.key)) continue;
+    if (!quotesOk && (o.key.startsWith("target-") || o.key.startsWith("entry-"))) continue;
     const { error } = await supabase
       .from("alert_state")
       .update({ cleared_at: new Date().toISOString() })
@@ -169,5 +208,5 @@ Deno.serve(async (req) => {
     else cleared.push(o.key);
   }
 
-  return json({ checked: tickers.length, fired, cleared, errors: emailErrors });
+  return json({ checked: tickers.length, quotesOk, fired, cleared, errors: emailErrors });
 });

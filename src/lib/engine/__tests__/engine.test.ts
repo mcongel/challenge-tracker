@@ -364,6 +364,27 @@ describe('parked cash — tracked balance with auto-flows', () => {
   });
 });
 
+describe('calendar exits — the date-side tripwire', () => {
+  const lot = (over: Partial<import('../types').PositionLot>): import('../types').PositionLot => ({
+    id: 'x', ticker: 'AFRM', buyDate: '2026-08-05', shares: 1, avgCost: 73, exitTarget: 90, ...over,
+  });
+
+  it('fires within the window, earliest date per ticker, negative when overdue', async () => {
+    const { calendarHits } = await import('../../alerts');
+    const hits = calendarHits([
+      lot({ id: '1', exitDate: '2026-08-26' }),                       // 12 days out — quiet
+      lot({ id: '2', ticker: 'MU', exitDate: '2026-08-16' }),         // 2 days — fires
+      lot({ id: '3', ticker: 'MU', exitDate: '2026-08-15' }),         // earlier lot wins
+      lot({ id: '4', ticker: 'OLD', exitDate: '2026-08-10' }),        // overdue
+      lot({ id: '5', ticker: 'NONE' }),                               // no date
+    ], '2026-08-14');
+    expect(hits).toEqual([
+      { ticker: 'MU', exitDate: '2026-08-15', daysLeft: 1 },
+      { ticker: 'OLD', exitDate: '2026-08-10', daysLeft: -4 },
+    ]);
+  });
+});
+
 describe('pile taxes — yearly capital-gains estimate', () => {
   const sale = (over: Partial<import('../types').ParkedSale>): import('../types').ParkedSale => ({
     id: 'x', ticker: 'MU', accountId: 'a', date: '2026-08-14', shares: 1, pricePerShare: 100,

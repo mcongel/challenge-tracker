@@ -57,6 +57,9 @@ export interface PositionLot {
   avgCost: number;
   /** The Xu exit: the catalyst move you're selling into. Required at entry. */
   exitTarget: number;
+  /** Calendar exit: out by this date's close no matter the price (e.g. the
+   * session before an earnings print). Optional; fires the CALENDAR alert. */
+  exitDate?: string | null;
   /** Legacy — the pre-Xu downside exit. Optional since Rules v3 (2026-08-05). */
   bailPoint?: number | null;
   thesis?: string | null;
@@ -219,6 +222,17 @@ export interface ParkedSale {
   consumed?: ParkedSaleSnapshot | null;
   /** Row insert time — gates which ROC allocations postdate the sale. */
   createdAt?: string | null;
+  notes?: string | null;
+}
+
+/** Real dollars actually moved aside for the pile's tax bill — the action
+ * the Income screen's estimate asks for. Record-keeping only; notes say
+ * where the money physically sits. Never the challenge's 30% reserve. */
+export interface PileTaxSetAside {
+  id: string;
+  taxYear: number;
+  date: string;
+  amount: number;
   notes?: string | null;
 }
 

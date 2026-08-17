@@ -108,7 +108,7 @@ function ExportModal({ onClose }: { onClose: () => void }) {
   const {
     cashEvents, lots, trades, milestones, benchmarkDeposits, parked, parkedLots, parkedSales,
     parkedCashEvents, parkedLotAdjustments, incomeScenarios, scenarioRotations, accounts,
-    outsideSales, snapshots, carryforwards, overrides, settings, watchlist,
+    outsideSales, snapshots, carryforwards, overrides, settings, watchlist, pileTaxSetAsides,
   } = useData();
   const stamp = todayISO();
 
@@ -130,6 +130,7 @@ function ExportModal({ onClose }: { onClose: () => void }) {
     ['snapshots', snapshots as unknown as Record<string, unknown>[]],
     ['loss-carryforwards', carryforwards as unknown as Record<string, unknown>[]],
     ['watchlist', watchlist as unknown as Record<string, unknown>[]],
+    ['pile-tax-set-asides', pileTaxSetAsides as unknown as Record<string, unknown>[]],
     ['price-overrides', Object.entries(overrides).map(([ticker, price]) => ({ ticker, price }))],
     ['app-settings', Object.entries(settings).map(([key, value]) => ({ key, value }))],
   ];

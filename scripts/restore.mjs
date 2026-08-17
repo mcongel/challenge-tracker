@@ -85,8 +85,8 @@ const TABLES = [
   })), 'id'],
   ['position_lots', get('position_lots').map((l) => ({
     id: l.id, ticker: l.ticker, buy_date: l.buyDate, shares: l.shares, avg_cost: l.avgCost,
-    exit_target: l.exitTarget, bail_point: l.bailPoint ?? null, thesis: l.thesis ?? null,
-    buy_event_id: l.buyEventId ?? null,
+    exit_target: l.exitTarget, exit_date: l.exitDate ?? null, bail_point: l.bailPoint ?? null,
+    thesis: l.thesis ?? null, buy_event_id: l.buyEventId ?? null,
   })), 'id'],
   ['trades', get('trades').map((t) => ({
     id: t.id, ticker: t.ticker, open_date: t.openDate, close_date: t.closeDate,
@@ -117,6 +117,9 @@ const TABLES = [
   ['app_settings', get('app_settings').map((s) => ({
     key: s.key, value: s.value, updated_at: s.updatedAt ?? undefined,
   })), 'key'],
+  ['pile_tax_set_asides', get('pile_tax_set_asides').map((s) => ({
+    id: s.id, tax_year: s.taxYear, date: s.date, amount: s.amount, notes: s.notes ?? null,
+  })), 'id'],
   ['watchlist', get('watchlist').map((w) => ({
     id: w.id, ticker: w.ticker, catalyst: w.catalyst ?? null,
     catalyst_date: w.catalystDate ?? null, entry_note: w.entryNote ?? null,

@@ -12,7 +12,8 @@ import { CLASSIFICATION_LABELS, classificationPillCls, SortHeader } from '../com
 import type { SortState } from '../components/parked/shared';
 import { useData } from '../contexts/DataContext';
 import type {
-  DividendClassification, DividendFrequency, ParkedLot, ParkedPosition, PositionIncomeSummary,
+  DividendClassification, DividendFrequency, ParkedLot, ParkedPosition, PileTaxSetAside,
+  PositionIncomeSummary,
 } from '../lib/engine';
 import {
   dividendTaxForYear, dividendTaxYTD, isArchivedPosition, isUnallocatedRoc, pileCapGainsYear,
@@ -62,7 +63,8 @@ interface HistRow {
 export function Income() {
   const {
     parked, parkedLots, parkedLotAdjustments, parkedSales, dividendTaxRates, deleteParkedLot,
-    allocateRocDividends, reclassifyDividends, ltTaxRate, stTaxRate, loading, error,
+    allocateRocDividends, reclassifyDividends, ltTaxRate, stTaxRate,
+    pileTaxSetAsides, addPileTaxSetAside, deletePileTaxSetAside, loading, error,
   } = useData();
   const today = todayISO();
 
@@ -115,6 +117,14 @@ export function Income() {
     [pileDivTax],
   );
   const pileSetAside = roundCents(pileCapGains.estTax + pileDivTax.totalTax);
+  // What's actually been moved aside for this year, against that estimate.
+  const yearSetAsides = useMemo(
+    () => pileTaxSetAsides.filter((s) => s.taxYear === pileYear),
+    [pileTaxSetAsides, pileYear],
+  );
+  const recordedSetAside = roundCents(yearSetAsides.reduce((t, s) => t + s.amount, 0));
+  const setAsideRemaining = roundCents(pileSetAside - recordedSetAside);
+  const [setAsideOpen, setSetAsideOpen] = useState(false);
 
   // Portfolio yield on cost: only positions that project income AND have a
   // real cost basis count — in both the numerator and the denominator — so a
@@ -431,9 +441,22 @@ export function Income() {
                 <p className="text-xs font-medium text-gray-500">Set aside for {pileYear}</p>
                 <p className="mt-0.5 text-lg font-bold tabular-nums text-gray-900">
                   {formatCurrency(pileSetAside)}
+                  {recordedSetAside > 0 && (
+                    <span className={cn('ml-2 text-sm font-medium',
+                      setAsideRemaining <= 0.005 ? 'text-green-600' : 'text-amber-700')}>
+                      {setAsideRemaining <= 0.005
+                        ? `✓ ${formatCurrency(recordedSetAside)} parked`
+                        : `${formatCurrency(recordedSetAside)} parked · ${formatCurrency(setAsideRemaining)} short`}
+                    </span>
+                  )}
                 </p>
                 <p className="text-xs text-gray-400 mt-0.5">
                   at ~{formatPercent(ltTaxRate, 0)} LT / ~{formatPercent(stTaxRate, 0)} ST — edit on Tax Reserve
+                  {' · '}
+                  <button type="button" onClick={() => setSetAsideOpen(true)}
+                    className="font-medium text-indigo-600 hover:text-indigo-800">
+                    record set-aside
+                  </button>
                 </p>
               </div>
             </div>
@@ -638,7 +661,120 @@ export function Income() {
       {editingRate && (
         <RateModal position={editingRate} onClose={() => setEditingRate(null)} />
       )}
+      {setAsideOpen && (
+        <SetAsideModal
+          taxYear={pileYear}
+          target={pileSetAside}
+          remaining={setAsideRemaining}
+          rows={yearSetAsides}
+          onAdd={addPileTaxSetAside}
+          onDelete={deletePileTaxSetAside}
+          onClose={() => setSetAsideOpen(false)}
+        />
+      )}
     </div>
+  );
+}
+
+/** Recording the ACTION the estimate asks for: real dollars moved somewhere
+ * safe for the pile's tax bill. Notes say where. Never the challenge's
+ * reserve — that money has its own screen and its own rules. */
+function SetAsideModal({
+  taxYear, target, remaining, rows, onAdd, onDelete, onClose,
+}: {
+  taxYear: number;
+  target: number;
+  remaining: number;
+  rows: PileTaxSetAside[];
+  onAdd: (s: Omit<PileTaxSetAside, 'id'>) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [date, setDate] = useState(todayISO());
+  const [amount, setAmount] = useState(remaining > 0 ? String(remaining) : '');
+  const [notes, setNotes] = useState('');
+  const [deleting, setDeleting] = useState<PileTaxSetAside | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    const amt = Number(amount);
+    if (!amt || amt <= 0) return setFormError('Enter the dollars you moved aside.');
+    setBusy(true);
+    try {
+      await onAdd({ taxYear, date, amount: roundCents(amt), notes: notes || null });
+      setAmount(''); setNotes('');
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal isOpen onClose={onClose} title={`Pile tax set-asides — ${taxYear}`}>
+      <div className="space-y-4">
+        <p className="text-sm text-gray-600 tabular-nums">
+          Estimated bill <span className="font-medium">{formatCurrency(target)}</span>
+          {remaining > 0.005
+            ? <> · still to park <span className="font-medium text-amber-700">{formatCurrency(remaining)}</span></>
+            : rows.length > 0 && <> · <span className="font-medium text-green-600">covered ✓</span></>}
+        </p>
+
+        {rows.length > 0 && (
+          <div className="max-h-40 overflow-y-auto rounded-md border border-gray-200">
+            <table className="w-full text-sm">
+              <tbody className="divide-y divide-gray-100">
+                {rows.map((s) => (
+                  <tr key={s.id} className="hover:bg-gray-50">
+                    <td className="px-3 py-1.5 tabular-nums text-gray-500 w-24">{s.date}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums font-medium text-green-600">
+                      {formatCurrency(s.amount)}
+                    </td>
+                    <td className="px-3 py-1.5 text-gray-400 text-xs max-w-[12rem] truncate">{s.notes}</td>
+                    <td className="px-1 py-1.5 w-8">
+                      <button onClick={() => setDeleting(s)} className="p-1 rounded hover:bg-red-50" aria-label="Delete set-aside">
+                        <Trash2 className="h-3.5 w-3.5 text-gray-300 hover:text-red-600" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <form onSubmit={submit} className="space-y-2 border-t border-gray-100 pt-3">
+          <p className="text-xs font-medium text-gray-500">Record a set-aside</p>
+          <div className="grid grid-cols-2 gap-2">
+            <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
+            <input type="number" step="0.01" min="0.01" required value={amount} placeholder="$"
+              onChange={(e) => setAmount(e.target.value)} className={inputCls} />
+          </div>
+          <div className="flex gap-2">
+            <input value={notes} onChange={(e) => setNotes(e.target.value)}
+              placeholder="where it's parked (e.g. Key Bank savings)" className={inputCls} />
+            <button type="submit" disabled={busy} className={secondaryBtnCls}>Add</button>
+          </div>
+        </form>
+        <p className="text-xs text-gray-400">
+          A record of money you actually moved — nothing transfers automatically, and this never
+          touches the challenge account's reserve.
+        </p>
+        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
+      </div>
+
+      {deleting && (
+        <ConfirmModal
+          title="Delete set-aside record"
+          message={`Delete the ${deleting.date} set-aside (${formatCurrency(deleting.amount)})? Only the record goes — move the real money back yourself if it shouldn't be parked.`}
+          onConfirm={() => onDelete(deleting.id)}
+          onClose={() => setDeleting(null)}
+        />
+      )}
+    </Modal>
   );
 }
 

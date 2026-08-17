@@ -32,6 +32,7 @@ const ALERT_STYLES: Record<string, string> = {
   TAX: 'bg-yellow-50 text-yellow-800 border-amber-300 border',
   CAP: 'bg-red-50 text-red-700 border-red-200',
   ENTRY: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+  CALENDAR: 'bg-amber-50 text-amber-800 border-amber-200',
 };
 
 export function Dashboard() {

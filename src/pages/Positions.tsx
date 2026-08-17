@@ -202,6 +202,7 @@ export function Positions() {
 function EditLotModal({ lot, onClose }: { lot: PositionLot; onClose: () => void }) {
   const { updateLotDetails } = useData();
   const [exitTarget, setExitTarget] = useState(String(lot.exitTarget));
+  const [exitDate, setExitDate] = useState(lot.exitDate ?? '');
   const [buyDate, setBuyDate] = useState(lot.buyDate);
   const [thesis, setThesis] = useState(lot.thesis ?? '');
   const [formError, setFormError] = useState<string | null>(null);
@@ -217,6 +218,7 @@ function EditLotModal({ lot, onClose }: { lot: PositionLot; onClose: () => void 
     try {
       await updateLotDetails(lot.id, {
         exitTarget: Number(exitTarget),
+        exitDate: exitDate || null,
         buyDate,
         thesis: thesis || null,
       });
@@ -241,6 +243,12 @@ function EditLotModal({ lot, onClose }: { lot: PositionLot; onClose: () => void 
             <label className={labelCls}>Buy date</label>
             <input type="date" required value={buyDate}
               onChange={(e) => setBuyDate(e.target.value)} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Out by (date, optional)</label>
+            <input type="date" value={exitDate}
+              onChange={(e) => setExitDate(e.target.value)} className={inputCls} />
+            <p className="mt-0.5 text-xs text-gray-400">calendar exit — alerts as it closes in</p>
           </div>
         </div>
         <div>
@@ -306,6 +314,7 @@ function AddPositionModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
   const [buyDate, setBuyDate] = useState(todayISO());
   const { shares, price: avgCost, total, setShares, setPrice, setTotal, reset } = useNotional();
   const [exitTarget, setExitTarget] = useState('');
+  const [exitDate, setExitDate] = useState('');
   const [thesis, setThesis] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -343,10 +352,11 @@ function AddPositionModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
         shares: Number(shares),
         avgCost: Number(avgCost),
         exitTarget: Number(exitTarget),
+        exitDate: exitDate || null,
         bailPoint: null,
         thesis: thesis || null,
       });
-      setTicker(''); reset(); setExitTarget(''); setThesis('');
+      setTicker(''); reset(); setExitTarget(''); setExitDate(''); setThesis('');
       onClose();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : String(err));
@@ -393,11 +403,19 @@ function AddPositionModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
           </div>
           <TotalField value={total} onChange={setTotal} label="Total cost ($)" />
         </div>
-        <div>
-          <label className={labelCls}>Exit target ($) — required</label>
-          <input type="number" step="0.01" min="0.01" required value={exitTarget}
-            onChange={(e) => setExitTarget(e.target.value)} className={inputCls}
-            placeholder="the catalyst move you're selling into" />
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={labelCls}>Exit target ($) — required</label>
+            <input type="number" step="0.01" min="0.01" required value={exitTarget}
+              onChange={(e) => setExitTarget(e.target.value)} className={inputCls}
+              placeholder="the catalyst move you're selling into" />
+          </div>
+          <div>
+            <label className={labelCls}>Out by (date, optional)</label>
+            <input type="date" value={exitDate}
+              onChange={(e) => setExitDate(e.target.value)} className={inputCls} />
+            <p className="mt-0.5 text-xs text-gray-400">e.g. the session before the print</p>
+          </div>
         </div>
 
         {otherOpenTickers.length > 0 && (

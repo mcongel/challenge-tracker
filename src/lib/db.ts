@@ -14,6 +14,7 @@ import type {
   ParkedLotAdjustment,
   ParkedPosition,
   ParkedSale,
+  PileTaxSetAside,
   PositionLot,
   ScenarioRotation,
   Snapshot,
@@ -81,6 +82,7 @@ export const mapLot = (r: any): PositionLot => ({
   shares: Number(r.shares),
   avgCost: Number(r.avg_cost),
   exitTarget: Number(r.exit_target),
+  exitDate: r.exit_date ?? null,
   bailPoint: r.bail_point === null ? null : Number(r.bail_point),
   thesis: r.thesis,
   buyEventId: r.buy_event_id ?? null,
@@ -92,6 +94,7 @@ export const lotPayload = (l: Omit<PositionLot, 'id'>) => ({
   shares: l.shares,
   avg_cost: l.avgCost,
   exit_target: l.exitTarget,
+  exit_date: l.exitDate ?? null,
   bail_point: l.bailPoint ?? null,
   thesis: l.thesis ?? null,
   buy_event_id: l.buyEventId ?? null,
@@ -252,6 +255,21 @@ export const parkedSalePayload = (s: Omit<ParkedSale, 'id' | 'createdAt'>) => ({
   funded_challenge: s.fundedChallenge,
   consumed_basis: s.consumedBasis ?? null,
   consumed: s.consumed ?? null,
+  notes: s.notes ?? null,
+});
+
+export const mapPileTaxSetAside = (r: any): PileTaxSetAside => ({
+  id: r.id,
+  taxYear: r.tax_year,
+  date: r.date,
+  amount: Number(r.amount),
+  notes: r.notes,
+});
+
+export const pileTaxSetAsidePayload = (s: Omit<PileTaxSetAside, 'id'>) => ({
+  tax_year: s.taxYear,
+  date: s.date,
+  amount: s.amount,
   notes: s.notes ?? null,
 });
 
