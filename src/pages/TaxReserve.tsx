@@ -105,7 +105,7 @@ export function TaxReserve() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {ended.map((c) => {
+              {[...ended].reverse().map((c) => {
                 const label = formatQuarterLabel(c);
                 const due = c.moveOutNow > 0;
                 return (

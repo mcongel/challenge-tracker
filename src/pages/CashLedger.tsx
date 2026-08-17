@@ -66,7 +66,8 @@ export function CashLedger() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editing, setEditing] = useState<CashEvent | null>(null);
 
-  const rows = withRunningBalance(cashEvents);
+  // Balance walks forward chronologically; the table reads newest-first.
+  const rows = withRunningBalance(cashEvents).slice().reverse();
   const summary = cashSummary(cashEvents);
 
   return (

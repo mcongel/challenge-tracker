@@ -175,7 +175,9 @@ export function LotPanel({ position: p, summary }: { position: ParkedPosition; s
         <div className="max-h-64 overflow-y-auto rounded-md border border-gray-200 bg-white">
           <table className="w-full text-sm">
             <tbody className="divide-y divide-gray-100">
-              {lots.map((l) => (
+              {/* Computation stays chronological (FIFO, last-dividend); the
+                  list reads newest-first like every other history table. */}
+              {[...lots].reverse().map((l) => (
                 <tr key={l.id} className="hover:bg-gray-50">
                   <td className={cn('px-3 py-2 tabular-nums w-28', l.date ? 'text-gray-600' : 'text-amber-800')}>
                     {l.date ?? 'no date'}

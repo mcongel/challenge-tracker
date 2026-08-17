@@ -114,7 +114,7 @@ export function Benchmark() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {benchmarkDeposits.map((d) => (
+              {[...benchmarkDeposits].reverse().map((d) => (
                 <tr key={d.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 tabular-nums text-gray-600">{d.date}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(d.amount)}</td>
