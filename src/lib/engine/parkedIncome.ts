@@ -223,13 +223,14 @@ export function projectPositionIncome(args: {
     source = 'manual';
     const annual = position.dividendRate * position.shares;
     const freq = position.dividendFrequency;
-    if (freq === 'daily' || freq === 'semimonthly') {
+    if (freq === 'daily' || freq === 'weekly' || freq === 'semimonthly') {
       // Sub-monthly cadences project as monthly aggregates (the buckets are
       // calendar months anyway); the next-payment hint keeps the true cadence.
       intervalMonths = 1;
       perPayment = annual / 12;
-      subMonthlyNext = freq === 'daily'
-        ? { date: addDays(today, 1), amount: annual / 365 }
+      subMonthlyNext =
+        freq === 'daily' ? { date: addDays(today, 1), amount: annual / 365 }
+        : freq === 'weekly' ? { date: addDays(today, 7), amount: annual / 52 }
         : { date: addDays(today, 15), amount: annual / 24 };
     } else {
       intervalMonths = MONTHS_PER[freq]!;

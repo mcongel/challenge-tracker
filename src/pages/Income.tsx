@@ -36,6 +36,7 @@ const monthLabel = (m: string) => `${MONTH_NAMES[Number(m.slice(5, 7)) - 1]} '${
 
 const FREQUENCY_LABELS: Record<DividendFrequency, string> = {
   daily: 'daily',
+  weekly: 'weekly',
   semimonthly: 'twice a month',
   monthly: 'monthly',
   quarterly: 'quarterly',

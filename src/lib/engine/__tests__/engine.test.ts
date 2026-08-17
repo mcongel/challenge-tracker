@@ -534,6 +534,14 @@ describe('parked income — trailing, projection, yield, dividend tax', () => {
     expect(daily?.annualGross).toBeCloseTo(36.5, 9);
     expect(daily?.nextPayment?.date).toBe('2026-08-11'); // tomorrow
     expect(daily?.nextPayment?.amount).toBeCloseTo(0.1, 9);
+    // Weekly-payer ETF style: $5.20/sh/yr weekly, 10 sh → $52/yr, $1/week.
+    const weekly = projectPositionIncome({
+      position: pos({ dividendRate: 5.2, dividendFrequency: 'weekly' }),
+      lots: [], today: TODAY, rates: RATES,
+    });
+    expect(weekly?.annualGross).toBeCloseTo(52, 9);
+    expect(weekly?.monthly[0].amount).toBeCloseTo(52 / 12, 9);
+    expect(weekly?.nextPayment).toEqual({ date: '2026-08-17', amount: 1 }); // today + 7d, annual/52
   });
 
   it('semimonthly actuals merge per month: cadence reads monthly, annual total right', async () => {

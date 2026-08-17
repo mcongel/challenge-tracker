@@ -115,6 +115,7 @@ export type ParkedCategory = string;
 
 export type DividendFrequency =
   | 'daily'        // e.g. SATA
+  | 'weekly'
   | 'semimonthly'  // twice a month, e.g. STRC
   | 'monthly'
   | 'quarterly'
