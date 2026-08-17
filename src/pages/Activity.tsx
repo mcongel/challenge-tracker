@@ -331,7 +331,7 @@ export function Activity() {
             <tbody className="divide-y divide-gray-100">
               {visible.map((r) => (
                 <tr key={r.key} className="hover:bg-gray-50">
-                  <td className={cn('px-4 py-2 tabular-nums', r.date ? 'text-gray-500' : 'text-amber-800')}>
+                  <td className={cn('px-4 py-2 tabular-nums whitespace-nowrap', r.date ? 'text-gray-500' : 'text-amber-800')}>
                     {r.date ?? 'no date'}
                   </td>
                   <td className="px-4 py-2">
