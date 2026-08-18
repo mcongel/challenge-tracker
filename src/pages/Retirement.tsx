@@ -1,5 +1,5 @@
 import { Fragment, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, Pencil, PiggyBank, Plus, RefreshCw } from 'lucide-react';
+import { ChevronDown, ChevronRight, Pencil, PiggyBank, Plus, RefreshCw, Scale } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
@@ -27,6 +27,7 @@ export function Retirement() {
   } = useData();
 
   const [addOpen, setAddOpen] = useState(false);
+  const [balancesOpen, setBalancesOpen] = useState(false);
   const [pricesOpen, setPricesOpen] = useState(false);
   const [editing, setEditing] = useState<ParkedPosition | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -72,10 +73,16 @@ export function Retirement() {
         subtitle="The third pot. Same lot machinery as the pile, behind its own wall — never in the pile's total, cap, taxes, or the score."
         actions={
           <div className="flex gap-2">
+            <button onClick={() => setBalancesOpen(true)}
+              className={cn(secondaryBtnCls, 'flex items-center gap-1.5')}
+              disabled={live.length === 0}
+              title="The daily routine: one balance per account — holdings scale to match">
+              <Scale className="h-4 w-4" /> Update balances
+            </button>
             <button onClick={() => setPricesOpen(true)}
               className={cn(secondaryBtnCls, 'flex items-center gap-1.5')}
               disabled={live.length === 0}
-              title="Bulk-update pinned prices — the Voya-unit-value routine">
+              title="Exact unit values per holding — the monthly true-up">
               <RefreshCw className="h-4 w-4" /> Update prices
             </button>
             <button onClick={() => setAddOpen(true)}
@@ -249,6 +256,11 @@ export function Retirement() {
       )}
 
       {addOpen && <AddHoldingModal kinds={['retirement']} onClose={() => setAddOpen(false)} />}
+      {balancesOpen && (
+        <UpdateBalancesModal
+          accounts={retirementAccounts.filter((a) => live.some((p) => p.accountId === a.id))}
+          positions={live} quotes={quotes} onClose={() => setBalancesOpen(false)} />
+      )}
       {pricesOpen && (
         <UpdatePricesModal positions={live} quotes={quotes} onClose={() => setPricesOpen(false)} />
       )}
@@ -260,10 +272,117 @@ export function Retirement() {
   );
 }
 
-/** The monthly Voya routine in one form: every manually-priced holding (no
- * live quote, or already pinned), current value prefilled — type the fresh
- * unit values from the statement, save once. Pins beat quotes until cleared,
- * so live-quoted tickers stay OUT of this list unless already pinned. */
+/** The daily routine, matched to how the owner actually checks: one balance
+ * per account, straight off the Voya screen. The delta lands on the
+ * manually-priced holdings by scaling their prices proportionally — weights
+ * hold, the total lands exact, and live-quoted holdings (BTC) are left
+ * alone: their value is subtracted before scaling. Weights drift between
+ * true-ups; the Update-prices form corrects them with real unit values. */
+function UpdateBalancesModal({
+  accounts, positions, quotes, onClose,
+}: {
+  accounts: { id: string; name: string; retirementFlavor?: string | null }[];
+  positions: ParkedPosition[];
+  quotes: Record<string, number>;
+  onClose: () => void;
+}) {
+  const { overrides, updateParkedPrices } = useData();
+  const perAccount = useMemo(
+    () =>
+      accounts.map((a) => {
+        const holdings = positions.filter((p) => p.accountId === a.id);
+        const isLive = (p: ParkedPosition) =>
+          quotes[p.ticker] !== undefined || overrides[p.ticker] !== undefined;
+        const liveValue = holdings.filter(isLive).reduce((s, p) => s + parkedMarketValue(p), 0);
+        const manual = holdings.filter((p) => !isLive(p));
+        const manualValue = manual.reduce((s, p) => s + parkedMarketValue(p), 0);
+        return { account: a, total: liveValue + manualValue, liveValue, manual, manualValue };
+      }),
+    [accounts, positions, quotes, overrides],
+  );
+  const [balances, setBalances] = useState<Record<string, string>>(() =>
+    Object.fromEntries(perAccount.map((r) => [r.account.id, String(roundCents(r.total))])),
+  );
+  const [formError, setFormError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    const priceUpdates: { id: string; price: number }[] = [];
+    for (const r of perAccount) {
+      const entered = Number(balances[r.account.id]);
+      if (!entered || Math.abs(entered - r.total) < 0.005) continue; // unchanged
+      if (r.manual.length === 0) {
+        return setFormError(
+          `${r.account.name} is fully live-priced — its balance follows the quotes and can't be set by hand.`,
+        );
+      }
+      const targetManual = entered - r.liveValue;
+      if (targetManual <= 0 || r.manualValue <= 0) {
+        return setFormError(
+          `${r.account.name}: the entered balance is below its live-priced holdings' value (${formatCurrency(roundCents(r.liveValue))}) — check the number.`,
+        );
+      }
+      const factor = targetManual / r.manualValue;
+      for (const p of r.manual) {
+        priceUpdates.push({ id: p.id, price: Number((p.currentPrice * factor).toFixed(4)) });
+      }
+    }
+    if (priceUpdates.length === 0) return onClose();
+    setBusy(true);
+    try {
+      await updateParkedPrices(priceUpdates);
+      onClose();
+    } catch (err) {
+      setFormError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal isOpen onClose={onClose} title="Update balances">
+      <form onSubmit={submit} className="space-y-3">
+        <p className="text-xs text-gray-400">
+          Type each account's balance straight off its app. Manually-priced holdings scale
+          proportionally so the total lands exact; live-quoted holdings (like BTC) are left to
+          the feed. Weights drift a little between true-ups — Update prices fixes them with real
+          unit values whenever you care to.
+        </p>
+        <div className="space-y-2">
+          {perAccount.map((r) => (
+            <div key={r.account.id} className="flex items-center gap-3">
+              <span className="w-40 flex-shrink-0">
+                <span className="text-sm font-medium">{r.account.name}</span>
+                <span className="block text-[11px] text-gray-400 tabular-nums">
+                  now {formatCurrency(roundCents(r.total))}
+                  {r.liveValue > 0 && r.manual.length > 0 &&
+                    ` · ${formatCurrency(roundCents(r.liveValue))} live`}
+                  {r.manual.length === 0 && ' · fully live-priced'}
+                </span>
+              </span>
+              <input type="number" step="0.01" min="0" value={balances[r.account.id] ?? ''}
+                onChange={(e) => setBalances((m) => ({ ...m, [r.account.id]: e.target.value }))}
+                className={inputCls} disabled={r.manual.length === 0} />
+            </div>
+          ))}
+        </div>
+        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
+        <div className="flex justify-end">
+          <button type="submit" disabled={busy} className={primaryBtnCls}>
+            {busy ? 'Saving…' : 'Save balances'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/** The true-up: exact unit values per manually-priced holding (no live
+ * quote, no pin), written to the POSITION rows — the same store the daily
+ * balance-scaler adjusts, so the two routines never fight. Pins (the
+ * override table) stay reserved for misquoted real tickers via Edit. */
 function UpdatePricesModal({
   positions, quotes, onClose,
 }: {
@@ -271,17 +390,16 @@ function UpdatePricesModal({
   quotes: Record<string, number>;
   onClose: () => void;
 }) {
-  const { overrides, overrideSetAt, setOverrides } = useData();
-  const rows = useMemo(() => {
-    const byTicker = new Map<string, ParkedPosition>();
-    for (const p of positions) {
-      if (quotes[p.ticker] !== undefined && overrides[p.ticker] === undefined) continue;
-      if (!byTicker.has(p.ticker)) byTicker.set(p.ticker, p);
-    }
-    return [...byTicker.values()].sort((a, b) => a.ticker.localeCompare(b.ticker));
-  }, [positions, quotes, overrides]);
+  const { overrides, updateParkedPrices } = useData();
+  const rows = useMemo(
+    () =>
+      positions
+        .filter((p) => quotes[p.ticker] === undefined && overrides[p.ticker] === undefined)
+        .sort((a, b) => a.ticker.localeCompare(b.ticker)),
+    [positions, quotes, overrides],
+  );
   const [prices, setPrices] = useState<Record<string, string>>(() =>
-    Object.fromEntries(rows.map((p) => [p.ticker, String(overrides[p.ticker] ?? (p.currentPrice || ''))])),
+    Object.fromEntries(rows.map((p) => [p.id, String(p.currentPrice || '')])),
   );
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -290,12 +408,12 @@ function UpdatePricesModal({
     e.preventDefault();
     setFormError(null);
     const entries = rows
-      .map((p) => ({ ticker: p.ticker, price: Number(prices[p.ticker]) }))
+      .map((p) => ({ id: p.id, price: Number(prices[p.id]) }))
       .filter((e2) => e2.price > 0);
     if (entries.length === 0) return setFormError('Nothing to update.');
     setBusy(true);
     try {
-      await setOverrides(entries);
+      await updateParkedPrices(entries);
       onClose();
     } catch (err) {
       setFormError(errorMessage(err));
@@ -308,28 +426,23 @@ function UpdatePricesModal({
     <Modal isOpen onClose={onClose} title="Update prices">
       {rows.length === 0 ? (
         <p className="text-sm text-gray-500">
-          Every holding here has a live quote — nothing needs a manual price. Pins set from a
-          holding's Edit modal would show up in this list.
+          Every holding here has a live quote — nothing needs a manual price.
         </p>
       ) : (
         <form onSubmit={submit} className="space-y-3">
           <p className="text-xs text-gray-400">
-            Manually-priced holdings only (no live quote, or already pinned). Type the fresh unit
-            values from the statement — one save pins them all with today's stamp.
+            Exact unit values for the holdings no feed can price. This is the true-up that
+            corrects any weight drift from the daily balance updates.
           </p>
           <div className="space-y-2">
             {rows.map((p) => (
-              <div key={p.ticker} className="flex items-center gap-3">
-                <span className="w-28 flex-shrink-0">
+              <div key={p.id} className="flex items-center gap-3">
+                <span className="w-40 flex-shrink-0">
                   <span className="text-sm font-medium">{p.ticker}</span>
-                  <span className="block text-[11px] text-gray-400">
-                    {overrideSetAt[p.ticker]
-                      ? `pinned ${overrideSetAt[p.ticker].slice(0, 10)}`
-                      : 'no live quote'}
-                  </span>
+                  <span className="block text-[11px] text-gray-400 truncate">{p.account}</span>
                 </span>
-                <input type="number" step="any" min="0.0001" value={prices[p.ticker] ?? ''}
-                  onChange={(e) => setPrices((m) => ({ ...m, [p.ticker]: e.target.value }))}
+                <input type="number" step="any" min="0.0001" value={prices[p.id] ?? ''}
+                  onChange={(e) => setPrices((m) => ({ ...m, [p.id]: e.target.value }))}
                   className={inputCls} placeholder="unit value ($)" />
               </div>
             ))}
@@ -337,7 +450,7 @@ function UpdatePricesModal({
           {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
           <div className="flex justify-end">
             <button type="submit" disabled={busy} className={primaryBtnCls}>
-              {busy ? 'Saving…' : `Pin ${rows.length} price${rows.length > 1 ? 's' : ''}`}
+              {busy ? 'Saving…' : `Save ${rows.length} price${rows.length > 1 ? 's' : ''}`}
             </button>
           </div>
         </form>

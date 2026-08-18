@@ -285,6 +285,9 @@ interface DataContextValue extends DataState {
   /** Bulk pin update (the Retirement page's unit-value refresh) — one write,
    * one refresh, one shared set_at stamp. */
   setOverrides: (entries: { ticker: string; price: number }[]) => Promise<void>;
+  /** Bulk per-POSITION price update (the daily balance-scaling routine) —
+   * position rows only, never the global override table. One refresh. */
+  updateParkedPrices: (entries: { id: string; price: number }[]) => Promise<void>;
   clearOverride: (ticker: string) => Promise<void>;
   /** Transition modeler — pure pile context, never score math. */
   addScenario: (s: Omit<IncomeScenario, 'id' | 'createdAt'>) => Promise<void>;
@@ -2433,6 +2436,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [refresh],
   );
 
+  const updateParkedPrices = useCallback(
+    async (entries: { id: string; price: number }[]) => {
+      if (entries.length === 0) return;
+      const client = db();
+      for (const e of entries) {
+        const { error: err } = await client
+          .from('parked_positions').update({ current_price: e.price }).eq('id', e.id);
+        if (err) throw err;
+      }
+      await refresh();
+    },
+    [refresh],
+  );
+
   const setOverrides = useCallback(
     async (entries: { ticker: string; price: number }[]) => {
       if (entries.length === 0) return;
@@ -2544,6 +2561,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       clearExampleData,
       setOverride,
       setOverrides,
+      updateParkedPrices,
       clearOverride,
       addScenario,
       updateScenario,
@@ -2570,7 +2588,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       deleteParkedSale, updateParkedSale, undoParkedSale, editParkedSaleAmounts, transferParked,
       accountCash, addParkedCashEvent,
       deleteParkedCashEvent, reconcileAccountCash, exampleData, clearExampleData,
-      setOverride, setOverrides, clearOverride, addScenario, updateScenario, deleteScenario, duplicateScenario,
+      setOverride, setOverrides, updateParkedPrices, clearOverride, addScenario, updateScenario,
+      deleteScenario, duplicateScenario,
       addRotation, updateRotation, deleteRotation,
     ],
   );
