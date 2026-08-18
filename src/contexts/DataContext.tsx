@@ -570,6 +570,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       net_contributed: roundCents(netContributed(state.cashEvents)),
       parked_pile_value: roundCents(pileTotal(pileParked)),
       semi_ai_pct: Number(concentration(pileParked).semiPct.toFixed(6)),
+      retirement_value: roundCents(pileTotal(retirementParked)),
     };
     void db()
       .from('snapshots')
@@ -577,7 +578,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       .then(({ error: err }) => {
         if (!err) void refresh();
       });
-  }, [loading, error, state, quotes, pileParked, refresh]);
+  }, [loading, error, state, quotes, pileParked, retirementParked, refresh]);
 
   /** Insert a Deposit cash event and its shadow-VOO twin as one converging
    * unit. Never leave a deposit without its twin — the benchmark would

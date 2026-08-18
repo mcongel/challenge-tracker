@@ -1,5 +1,11 @@
 import { Fragment, useMemo, useState } from 'react';
+import {
+  Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis,
+} from 'recharts';
 import { ChevronDown, ChevronRight, Pencil, PiggyBank, Plus, RefreshCw, Scale } from 'lucide-react';
+import type { Snapshot } from '../lib/engine';
+import { useIsDark } from '../lib/useIsDark';
+import { compactUsd } from '../lib/utils';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
@@ -23,8 +29,13 @@ import { unlockSummary } from '../lib/engine';
  * trim fuel, income projections, or taxes, and never in the score. */
 export function Retirement() {
   const {
-    retirementParked, parkedLots, accounts, tickerNames, overrides, quotes, loading, error,
+    retirementParked, parkedLots, accounts, tickerNames, overrides, quotes, snapshots,
+    loading, error,
   } = useData();
+  const chartSnapshots = useMemo(
+    () => snapshots.filter((s) => s.retirementValue != null && s.retirementValue > 0),
+    [snapshots],
+  );
 
   const [addOpen, setAddOpen] = useState(false);
   const [balancesOpen, setBalancesOpen] = useState(false);
@@ -139,6 +150,8 @@ export function Retirement() {
               </p>
             </div>
           </div>
+
+          {chartSnapshots.length >= 2 && <RetirementValueChart snapshots={chartSnapshots} />}
 
           <div className="bg-white rounded-lg shadow-lg overflow-x-auto">
             <table className="w-full text-sm compact-table">
@@ -268,6 +281,44 @@ export function Retirement() {
         <EditParkedModal position={editing} accountKinds={['retirement']}
           onClose={() => setEditing(null)} />
       )}
+    </div>
+  );
+}
+
+/** Same house chart contract as the pile's value chart — VALUE, not return:
+ * contributions move this line too. Captured by the daily snapshot from
+ * whatever the balances were that day. */
+function RetirementValueChart({ snapshots }: { snapshots: Snapshot[] }) {
+  const isDark = useIsDark();
+  const gridColor = isDark ? '#334155' : '#e5e7eb';
+  const axisColor = isDark ? '#94a3b8' : '#6b7280';
+  const green = isDark ? '#22c55e' : '#16a34a';
+  const data = snapshots.map((s) => ({
+    date: s.date.slice(5),
+    Value: roundCents(s.retirementValue ?? 0),
+  }));
+  return (
+    <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6 mb-4">
+      <p className="text-sm font-medium text-gray-700 mb-1">
+        Retirement value over time
+        <span className="ml-2 text-xs font-normal text-gray-400">
+          value, not return — contributions move this line too
+        </span>
+      </p>
+      <div className="h-40">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 4 }}>
+            <CartesianGrid stroke={gridColor} vertical={false} />
+            <XAxis dataKey="date" stroke={axisColor} tickLine={false} axisLine={false}
+              tick={{ fontSize: 11 }} minTickGap={32} />
+            <YAxis stroke={axisColor} tickLine={false} axisLine={false}
+              tick={{ fontSize: 11 }} tickFormatter={compactUsd} width={52} domain={['auto', 'auto']} />
+            <Tooltip formatter={(v) => formatCurrency(Number(v))} />
+            <Area type="monotone" dataKey="Value" stroke={green} strokeWidth={2}
+              fill={green} fillOpacity={0.12} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }

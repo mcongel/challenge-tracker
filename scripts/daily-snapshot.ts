@@ -127,11 +127,15 @@ async function main(): Promise<void> {
     );
   }
 
-  const parked: ParkedPosition[] = parkedRows.map((r) => ({
+  const toPosition = (r: Record<string, any>): ParkedPosition => ({
     id: r.id, ticker: r.ticker, accountId: r.account_id, account: '', category: r.category,
     shares: num(r.shares), avgCost: num(r.avg_cost),
     currentPrice: overrides[r.ticker] ?? quotes[r.ticker] ?? num(r.current_price),
-  }));
+  });
+  const parked: ParkedPosition[] = parkedRows.map(toPosition);
+  const retirementParked: ParkedPosition[] = allParkedRows
+    .filter((r) => retirementIds.has(r.account_id))
+    .map(toPosition);
 
   const priceMap = priceMapFor(lots, overrides, quotes);
   const account = accountTotal(lots, priceMap, cashEvents);
@@ -145,6 +149,7 @@ async function main(): Promise<void> {
     net_contributed: roundCents(netContributed(cashEvents)),
     parked_pile_value: roundCents(pileTotal(parked)),
     semi_ai_pct: Number(concentration(parked).semiPct.toFixed(6)),
+    retirement_value: roundCents(pileTotal(retirementParked)),
   };
 
   const { error } = await supabase

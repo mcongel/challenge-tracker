@@ -287,4 +287,6 @@ export interface Snapshot {
   netContributed: number;
   parkedPileValue: number;
   semiAiPct: number;
+  /** The third pot's daily value; null before the retirement feature. */
+  retirementValue?: number | null;
 }

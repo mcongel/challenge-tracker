@@ -106,6 +106,7 @@ const TABLES = [
     reserved_total: s.reservedTotal, total_score: s.totalScore,
     shadow_voo_value: s.shadowVooValue, net_contributed: s.netContributed,
     parked_pile_value: s.parkedPileValue, semi_ai_pct: s.semiAiPct,
+    retirement_value: s.retirementValue ?? null,
   })), 'date'],
   ['loss_carryforwards', get('loss_carryforwards').map((c) => ({
     tax_year: c.taxYear, amount: c.amount, notes: c.notes ?? null,

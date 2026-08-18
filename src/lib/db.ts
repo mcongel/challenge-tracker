@@ -354,6 +354,8 @@ export const mapSnapshot = (r: any): Snapshot => ({
   netContributed: Number(r.net_contributed),
   parkedPileValue: Number(r.parked_pile_value),
   semiAiPct: Number(r.semi_ai_pct),
+  retirementValue: r.retirement_value === null || r.retirement_value === undefined
+    ? null : Number(r.retirement_value),
 });
 
 export const mapCarryforward = (r: any): LossCarryforward => ({
