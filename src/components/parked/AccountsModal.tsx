@@ -156,7 +156,9 @@ export function AccountsModal({ onClose }: { onClose: () => void }) {
                 placeholder="Roth IRA" list="retirement-flavors" />
               <datalist id="retirement-flavors">
                 <option value="Roth IRA" /><option value="Traditional IRA" />
-                <option value="401k" /><option value="Roth 401k" /><option value="HSA" />
+                <option value="401k" /><option value="Roth 401k" />
+                <option value="403b" /><option value="457b" /><option value="457b Roth" />
+                <option value="ORP" /><option value="HSA" />
               </datalist>
               <p className="mt-0.5 text-xs text-gray-400">
                 Retirement holdings get their own page — never in the pile's total, cap, or taxes.
