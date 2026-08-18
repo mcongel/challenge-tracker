@@ -51,7 +51,8 @@ const SORT_KEYS = Object.keys(NATURAL_DIR) as SortKey[];
 
 export function ParkedPile() {
   const {
-    parked: allParked, parkedLots, parkedLotAdjustments, parkedSales, snapshots, accounts,
+    // Pile positions only — retirement reuses the machinery on its own page.
+    pileParked: allParked, parkedLots, parkedLotAdjustments, parkedSales, snapshots, accounts,
     tickerNames, concentrationCap, updateSetting, accountCash, dayChange, cashEvents,
     contributionCap, ltTaxRate, stTaxRate, overrides, overrideSetAt, loading, error,
   } = useData();

@@ -27,13 +27,16 @@ export interface CashEvent {
   notes?: string | null;
 }
 
-export type AccountKind = 'challenge' | 'outside' | 'bank';
+export type AccountKind = 'challenge' | 'outside' | 'bank' | 'retirement';
 
 export interface Account {
   id: string;
   name: string;
   broker?: string | null;
   kind: AccountKind;
+  /** Tax-treatment label for retirement accounts (roth / traditional /
+   * 401k…). Display only — the wall, not the flavor, drives the math. */
+  retirementFlavor?: string | null;
   notes?: string | null;
 }
 

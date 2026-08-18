@@ -58,7 +58,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const [cashRows, lotRows, milestoneRows, benchRows, parkedRows, overrideRows] =
+  const [cashRows, lotRows, milestoneRows, benchRows, allParkedRows, overrideRows, accountRows] =
     await Promise.all([
       load('cash_events'),
       load('position_lots'),
@@ -66,7 +66,14 @@ async function main(): Promise<void> {
       load('benchmark_deposits'),
       load('parked_positions'),
       load('price_overrides'),
+      load('accounts'),
     ]);
+  // The third wall: retirement positions never enter parked_pile_value or the
+  // concentration figure — the day a 401k is added must not jump pile history.
+  const retirementIds = new Set(
+    accountRows.filter((a) => a.kind === 'retirement').map((a) => a.id),
+  );
+  const parkedRows = allParkedRows.filter((r) => !retirementIds.has(r.account_id));
 
   const cashEvents: CashEvent[] = cashRows.map((r) => ({
     id: r.id, date: r.date, type: r.type, amount: num(r.amount),

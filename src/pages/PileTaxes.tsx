@@ -16,10 +16,21 @@ import { cn, formatCurrency, formatPercent, inputCls, secondaryBtnCls, todayISO 
  * challenge account's non-negotiable 30% skim, and the two never mix. */
 export function PileTaxes() {
   const {
-    parkedLots, parkedSales, dividendTaxRates, ltTaxRate, stTaxRate,
+    pileParked, retirementAccountIds, parkedLots: allLots, parkedSales: allSales,
+    dividendTaxRates, ltTaxRate, stTaxRate,
     pileTaxSetAsides, addPileTaxSetAside, deletePileTaxSetAside, loading, error,
   } = useData();
   const today = todayISO();
+  // Pile only: retirement sales and dividends are tax-sheltered — they never
+  // belong in this estimate.
+  const parkedSales = useMemo(
+    () => allSales.filter((s) => !retirementAccountIds.has(s.accountId)),
+    [allSales, retirementAccountIds],
+  );
+  const parkedLots = useMemo(() => {
+    const pileIds = new Set(pileParked.map((p) => p.id));
+    return allLots.filter((l) => pileIds.has(l.parkedPositionId));
+  }, [allLots, pileParked]);
 
   const [pileYear, setPileYear] = useState(taxYearOf(today));
   const pileYearOptions = useMemo(() => {

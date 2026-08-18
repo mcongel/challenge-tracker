@@ -123,6 +123,12 @@ const EMPTY: DataState = {
 interface DataContextValue extends DataState {
   loading: boolean;
   error: string | null;
+  /** The third wall: `parked` holds every position; these split it. Pile
+   * screens and pile math use pileParked; the Retirement page uses the rest.
+   * Mutations keep using `parked` — ids are ids. */
+  pileParked: ParkedPosition[];
+  retirementParked: ParkedPosition[];
+  retirementAccountIds: Set<string>;
   /** Rule 12 cap from app_settings; null (feature off) if the row is missing. */
   contributionCap: number | null;
   /** Semiconductor concentration cap (editable, default 50%). */
@@ -191,7 +197,7 @@ interface DataContextValue extends DataState {
     m: MilestoneRecord,
     voo?: { accountId: string; price: number },
   ) => Promise<void>;
-  addAccount: (name: string, kind: AccountKind, broker?: string) => Promise<void>;
+  addAccount: (name: string, kind: AccountKind, broker?: string, retirementFlavor?: string) => Promise<void>;
   /** Rename/relabel only — kind is immutable (it steers ledger/pile logic). */
   updateAccount: (id: string, patch: { name?: string; broker?: string | null; notes?: string | null }) => Promise<void>;
   addOutsideSale: (sale: Omit<OutsideSale, 'id'>) => Promise<void>;
@@ -511,9 +517,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // Daily snapshot: one row per calendar day, written on first load. Skipped
-  // until a VOO price exists — recording shadowValue = 0 would poison the
-  // rolling-12-month verdict. The date PK makes concurrent writes harmless.
+  // Live-priced view of every position — the context's `parked`.
   const mergedParked = useMemo(
     () =>
       state.parked.map((p) => {
@@ -521,6 +525,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         return effective !== undefined ? { ...p, currentPrice: effective } : p;
       }),
     [state.parked, state.overrides, quotes],
+  );
+
+  // The third wall: retirement positions reuse all the parked machinery but
+  // never enter pile math (total, cap, trim fuel, income, taxes, snapshots).
+  const retirementAccountIds = useMemo(
+    () => new Set(state.accounts.filter((a) => a.kind === 'retirement').map((a) => a.id)),
+    [state.accounts],
+  );
+  const pileParked = useMemo(
+    () => mergedParked.filter((p) => !retirementAccountIds.has(p.accountId)),
+    [mergedParked, retirementAccountIds],
+  );
+  const retirementParked = useMemo(
+    () => mergedParked.filter((p) => retirementAccountIds.has(p.accountId)),
+    [mergedParked, retirementAccountIds],
   );
 
   const snapshotAttempted = useRef(false);
@@ -543,8 +562,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       ),
       shadow_voo_value: roundCents(shadowValue(state.benchmarkDeposits, voo)),
       net_contributed: roundCents(netContributed(state.cashEvents)),
-      parked_pile_value: roundCents(pileTotal(mergedParked)),
-      semi_ai_pct: Number(concentration(mergedParked).semiPct.toFixed(6)),
+      parked_pile_value: roundCents(pileTotal(pileParked)),
+      semi_ai_pct: Number(concentration(pileParked).semiPct.toFixed(6)),
     };
     void db()
       .from('snapshots')
@@ -552,7 +571,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       .then(({ error: err }) => {
         if (!err) void refresh();
       });
-  }, [loading, error, state, quotes, mergedParked, refresh]);
+  }, [loading, error, state, quotes, pileParked, refresh]);
 
   /** Insert a Deposit cash event and its shadow-VOO twin as one converging
    * unit. Never leave a deposit without its twin — the benchmark would
@@ -852,10 +871,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   );
 
   const addAccount = useCallback(
-    async (name: string, kind: AccountKind, broker?: string) => {
+    async (name: string, kind: AccountKind, broker?: string, retirementFlavor?: string) => {
       const { error: err } = await db()
         .from('accounts')
-        .insert({ name, kind, broker: broker || null });
+        .insert({
+          name, kind, broker: broker || null,
+          retirement_flavor: kind === 'retirement' ? retirementFlavor || null : null,
+        });
       if (err) throw err;
       await refresh();
     },
@@ -2444,6 +2466,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     () => ({
       ...state,
       parked: mergedParked,
+      pileParked,
+      retirementParked,
+      retirementAccountIds,
       quotes,
       dayChange,
       quotesAsOf,
@@ -2512,7 +2537,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       deleteRotation,
     }),
     [
-      state, mergedParked, quotes, dayChange, quotesAsOf, quotesError, refreshQuotes, tickerNames,
+      state, mergedParked, pileParked, retirementParked, retirementAccountIds,
+      quotes, dayChange, quotesAsOf, quotesError, refreshQuotes, tickerNames,
       contributionCap,
       concentrationCap, ltTaxRate, stTaxRate, dividendTaxRates, updateSetting, updateSettings,
       setCarryforward, addWatchlistItem, updateWatchlistItem, deleteWatchlistItem,

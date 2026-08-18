@@ -48,7 +48,7 @@ const WARNING_LABELS: Record<string, { label: string; cls: string; title: string
 
 export function Transition() {
   const {
-    incomeScenarios, scenarioRotations, parked, parkedLots, parkedLotAdjustments,
+    incomeScenarios, scenarioRotations, pileParked: parked, parkedLots, parkedLotAdjustments,
     dividendTaxRates, ltTaxRate, stTaxRate,
     addScenario, updateScenario, deleteScenario, duplicateScenario, deleteRotation,
     loading, error,
@@ -604,7 +604,7 @@ function RotationFormModal({
   rotation: ScenarioRotation | null;
   onClose: () => void;
 }) {
-  const { parked, addRotation, updateRotation } = useData();
+  const { pileParked: parked, addRotation, updateRotation } = useData();
   const live = parked.filter((p) => !isArchivedPosition(p));
   // An existing rotation may reference a holding that has since been archived
   // — keep it selectable (labeled) so editing doesn't silently blank the source.

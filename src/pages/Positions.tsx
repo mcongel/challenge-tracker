@@ -297,13 +297,15 @@ function DeleteLotConfirm({
 }
 
 function AddPositionModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
-  const { addLot, lots, trades, outsideSales, parkedSales, accounts } = useData();
+  const { addLot, lots, trades, outsideSales, parkedSales, accounts, retirementAccountIds } = useData();
   // Pile sales at a loss count for Rule 9 too — merge them into the radar.
   // Unknown-basis (legacy) sales can't prove a loss, so they warn as
   // POTENTIAL losses rather than slipping through the window silently.
+  // Retirement-account sales carry no deductible loss — never on the radar.
   const saleRadar = [
     ...outsideSales.map((s) => ({ ...s, basisUnknown: false })),
     ...parkedSales
+      .filter((s) => !retirementAccountIds.has(s.accountId))
       .filter((s) => s.costBasis == null || s.proceeds < s.costBasis)
       .map((s) => ({
         id: s.id, accountId: s.accountId, ticker: s.ticker, saleDate: s.date,

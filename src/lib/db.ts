@@ -55,6 +55,7 @@ export const mapAccount = (r: any): Account => ({
   name: r.name,
   broker: r.broker,
   kind: r.kind,
+  retirementFlavor: r.retirement_flavor ?? null,
   notes: r.notes,
 });
 

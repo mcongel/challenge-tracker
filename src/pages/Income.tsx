@@ -62,10 +62,16 @@ interface HistRow {
 
 export function Income() {
   const {
-    parked, parkedLots, parkedLotAdjustments, dividendTaxRates, deleteParkedLot,
-    allocateRocDividends, reclassifyDividends, loading, error,
+    // Pile positions only — a Roth's dividends are nobody's 1099.
+    pileParked: parked, parkedLots: allLots, parkedLotAdjustments, dividendTaxRates,
+    deleteParkedLot, allocateRocDividends, reclassifyDividends, loading, error,
   } = useData();
   const today = todayISO();
+  // Lots scoped to pile positions — retirement lots stay on their page.
+  const parkedLots = useMemo(() => {
+    const pileIds = new Set(parked.map((p) => p.id));
+    return allLots.filter((l) => pileIds.has(l.parkedPositionId));
+  }, [allLots, parked]);
 
   const lotsByPosition = useMemo(() => {
     const m = new Map<string, ParkedLot[]>();

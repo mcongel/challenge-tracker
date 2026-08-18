@@ -10,11 +10,17 @@ import { fetchProfile } from '../../lib/quotes';
 import { cn, inputCls, labelCls, primaryBtnCls } from '../../lib/utils';
 import { CATEGORY_SUGGESTIONS, fmtSh } from './shared';
 
-export function AddHoldingModal({ onClose }: { onClose: () => void }) {
+export function AddHoldingModal({
+  onClose, kinds = ['outside'],
+}: {
+  onClose: () => void;
+  /** Which account kinds the Buy can land in — ['retirement'] on that page. */
+  kinds?: ('outside' | 'retirement')[];
+}) {
   const { accounts, parked, addParkedPosition, addParkedLot } = useData();
-  const outside = accounts.filter((a) => a.kind === 'outside');
+  const eligible = accounts.filter((a) => (kinds as string[]).includes(a.kind));
   const [ticker, setTicker] = useState('');
-  const [accountId, setAccountId] = useState(outside[0]?.id ?? '');
+  const [accountId, setAccountId] = useState(eligible[0]?.id ?? '');
   const [category, setCategory] = useState<ParkedPosition['category']>('Other');
   const [date, setDate] = useState('');
   const { shares, price, total, setShares, setPrice, setTotal } = useNotional();
@@ -135,7 +141,7 @@ export function AddHoldingModal({ onClose }: { onClose: () => void }) {
           </p>
         )}
         <AccountSelect accounts={accounts} value={accountId} onChange={setAccountId}
-          label="Account" kinds={['outside']} allowNone={false} />
+          label="Account" kinds={kinds} allowNone={false} />
         <div className="grid grid-cols-3 gap-3">
           <div>
             <label className={labelCls}>Shares</label>

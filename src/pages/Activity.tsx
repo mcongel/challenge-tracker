@@ -73,9 +73,19 @@ function SaleDetail({ sale: s }: { sale: ParkedSale }) {
 
 export function Activity() {
   const {
-    parked: allParked, parkedLots, parkedSales, parkedCashEvents, accounts,
+    // Pile stream only — retirement history lives on the Retirement page.
+    pileParked: allParked, parkedLots, parkedSales: allSales,
+    parkedCashEvents: allCashEvents, accounts, retirementAccountIds,
     deleteParkedSale, undoParkedSale, accountCash, ltTaxRate, stTaxRate, loading, error,
   } = useData();
+  const parkedSales = useMemo(
+    () => allSales.filter((s) => !retirementAccountIds.has(s.accountId)),
+    [allSales, retirementAccountIds],
+  );
+  const parkedCashEvents = useMemo(
+    () => allCashEvents.filter((e) => !retirementAccountIds.has(e.accountId)),
+    [allCashEvents, retirementAccountIds],
+  );
 
   const [showAll, setShowAll] = useState(false);
   const [editingSale, setEditingSale] = useState<ParkedSale | null>(null);

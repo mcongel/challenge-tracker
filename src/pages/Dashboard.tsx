@@ -37,8 +37,11 @@ const ALERT_STYLES: Record<string, string> = {
 
 export function Dashboard() {
   const {
-    lots, cashEvents, trades, milestones, benchmarkDeposits, parked, parkedLots, snapshots,
-    carryforwards, overrides, quotes, contributionCap, concentrationCap, watchlist, loading, error,
+    // pileParked: the pile tile, CAP alert, and unlock line are pile rules —
+    // retirement money never moves them.
+    lots, cashEvents, trades, milestones, benchmarkDeposits, pileParked: parked, parkedLots,
+    snapshots, carryforwards, overrides, quotes, contributionCap, concentrationCap, watchlist,
+    loading, error,
   } = useData();
   const isDark = useIsDark();
   const today = todayISO();

@@ -7,7 +7,14 @@ import { fetchProfile } from '../../lib/quotes';
 import { errorMessage, formatCurrency, inputCls, labelCls, primaryBtnCls } from '../../lib/utils';
 import { CATEGORY_SUGGESTIONS } from './shared';
 
-export function EditParkedModal({ position: p, onClose }: { position: ParkedPosition; onClose: () => void }) {
+export function EditParkedModal({
+  position: p, onClose, accountKinds = ['outside', 'challenge'],
+}: {
+  position: ParkedPosition;
+  onClose: () => void;
+  /** Which kinds the account picker offers — ['retirement'] on that page. */
+  accountKinds?: ('outside' | 'challenge' | 'retirement')[];
+}) {
   const { updateParked, accounts, overrides, overrideSetAt, setOverride, clearOverride } = useData();
   const pinned = overrides[p.ticker];
   const pinnedAt = overrideSetAt[p.ticker];
@@ -114,7 +121,7 @@ export function EditParkedModal({ position: p, onClose }: { position: ParkedPosi
           </span>
         </div>
         <AccountSelect accounts={accounts} value={accountId} onChange={setAccountId}
-          label="Account (e.g. after an ACATS transfer)" kinds={['outside', 'challenge']} allowNone={false} />
+          label="Account (e.g. after an ACATS transfer)" kinds={accountKinds} allowNone={false} />
         <p className="text-xs text-gray-400">
           Shares, cost, and dates live in the lots (click the row to open them) — they recompute from there.
         </p>

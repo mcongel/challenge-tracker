@@ -13,6 +13,7 @@ const KIND_STYLES: Record<AccountKind, string> = {
   challenge: 'bg-green-50 text-green-700',
   outside: 'bg-indigo-50 text-indigo-700',
   bank: 'bg-sky-50 text-sky-700',
+  retirement: 'bg-purple-50 text-purple-700',
 };
 
 export function AccountsModal({ onClose }: { onClose: () => void }) {
@@ -31,6 +32,7 @@ export function AccountsModal({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('');
   const [kind, setKind] = useState<AccountKind>('bank');
   const [broker, setBroker] = useState('');
+  const [flavor, setFlavor] = useState('');
   const [cashFor, setCashFor] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<Account | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -45,8 +47,8 @@ export function AccountsModal({ onClose }: { onClose: () => void }) {
     }
     setBusy(true);
     try {
-      await addAccount(trimmed, kind, broker.trim() || undefined);
-      setName(''); setBroker('');
+      await addAccount(trimmed, kind, broker.trim() || undefined, flavor.trim() || undefined);
+      setName(''); setBroker(''); setFlavor('');
     } catch (err) {
       // 23505 = unique violation — races past the client-side check.
       const isDuplicate = typeof err === 'object' && err !== null && 'code' in err && (err as { code?: string }).code === '23505';
@@ -139,6 +141,7 @@ export function AccountsModal({ onClose }: { onClose: () => void }) {
               <select value={kind} onChange={(e) => setKind(e.target.value as AccountKind)} className={inputCls}>
                 <option value="bank">bank</option>
                 <option value="outside">outside</option>
+                <option value="retirement">retirement</option>
               </select>
             </div>
           </div>
@@ -146,6 +149,20 @@ export function AccountsModal({ onClose }: { onClose: () => void }) {
             <label className={labelCls}>Broker / institution (optional)</label>
             <input value={broker} onChange={(e) => setBroker(e.target.value)} className={inputCls} />
           </div>
+          {kind === 'retirement' && (
+            <div>
+              <label className={labelCls}>Flavor (Roth / traditional / 401k…)</label>
+              <input value={flavor} onChange={(e) => setFlavor(e.target.value)} className={inputCls}
+                placeholder="Roth IRA" list="retirement-flavors" />
+              <datalist id="retirement-flavors">
+                <option value="Roth IRA" /><option value="Traditional IRA" />
+                <option value="401k" /><option value="Roth 401k" /><option value="HSA" />
+              </datalist>
+              <p className="mt-0.5 text-xs text-gray-400">
+                Retirement holdings get their own page — never in the pile's total, cap, or taxes.
+              </p>
+            </div>
+          )}
           {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
           <div className="flex justify-end">
             <button type="submit" disabled={busy} className={primaryBtnCls}>

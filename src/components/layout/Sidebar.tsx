@@ -11,6 +11,7 @@ import {
   History,
   Telescope,
   HandCoins,
+  PiggyBank,
   Receipt,
   Sunrise,
   BookOpen,
@@ -50,6 +51,10 @@ export const NAV_SECTIONS: {
       { to: '/pile-taxes', label: 'Pile Taxes', icon: Receipt },
       { to: '/transition', label: 'Transition', icon: Sunrise },
     ],
+  },
+  {
+    label: 'Retirement',
+    items: [{ to: '/retirement', label: 'Retirement', icon: PiggyBank }],
   },
   {
     label: null,
