@@ -17,6 +17,11 @@
  */
 const CACHE_TTL_SECONDS = 900; // 15 min — Yahoo costs no quota, so stay fresher
 const MAX_TICKERS = 40;
+
+/** App tickers → Yahoo symbols. The app says BTC; Yahoo says BTC-USD. Keyed
+ * here (server-side) so every consumer — app, alerts function — gets the
+ * alias for free. */
+const YAHOO_ALIASES = { BTC: 'BTC-USD', ETH: 'ETH-USD' };
 const RETRY_DELAY_MS = 1300;
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36';
@@ -77,8 +82,9 @@ export async function onRequestGet(context) {
 
 async function fromYahoo(ticker) {
   try {
+    const symbol = YAHOO_ALIASES[ticker] ?? ticker;
     const res = await fetch(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`,
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`,
       { headers: { 'User-Agent': UA, Accept: 'application/json' } },
     );
     if (!res.ok) return null;

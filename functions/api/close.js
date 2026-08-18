@@ -15,6 +15,8 @@ const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36';
 const CACHE_TTL_SECONDS = 604800; // 7 days — history doesn't change
 const LOOKBACK_DAYS = 10; // buffer across weekends + holiday clusters
+// Same alias table as quotes.js: the app says BTC, Yahoo says BTC-USD.
+const YAHOO_ALIASES = { BTC: 'BTC-USD', ETH: 'ETH-USD' };
 
 export async function onRequestGet(context) {
   const { request } = context;
@@ -35,7 +37,7 @@ export async function onRequestGet(context) {
   const start = end - 86400 * LOOKBACK_DAYS;
   try {
     const res = await fetch(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?period1=${start}&period2=${end}&interval=1d`,
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(YAHOO_ALIASES[ticker] ?? ticker)}?period1=${start}&period2=${end}&interval=1d`,
       { headers: { 'User-Agent': UA, Accept: 'application/json' } },
     );
     if (!res.ok) return json({ error: 'quote source unavailable' }, 502);

@@ -35,7 +35,10 @@ export const CATEGORY_SUGGESTIONS = [
 ];
 
 
-export const fmtSh = (n: number) => String(Number(n.toFixed(4)));
+/** 4 decimals normally; tiny quantities (satoshi-scale BTC) get 8 so
+ * 0.00052 BTC never displays as 0.0005-rounded-to-nothing. */
+export const fmtSh = (n: number) =>
+  String(Number(n.toFixed(Math.abs(n) > 0 && Math.abs(n) < 0.01 ? 8 : 4)));
 /** Reused by other sortable tables (Income) — the thead needs `group/head`
  * for the idle-arrow hover reveal. */
 export interface SortState<K extends string = string> {

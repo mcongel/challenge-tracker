@@ -5,8 +5,8 @@ import { TotalField } from '../ui/TotalField';
 import { useData } from '../../contexts/DataContext';
 import type { ParkedPosition } from '../../lib/engine';
 import {
-  adjustmentsForLots, contributionStatus, depositExceedsCap, estimatedPileTax, isNeverTrimFuel,
-  netContributed, roundCents, trimPreview, unlockSummary,
+  adjustmentsForLots, contributionStatus, depositExceedsCap, estimatedPileTax, isCryptoTicker,
+  isNeverTrimFuel, netContributed, roundCents, trimPreview, unlockSummary,
 } from '../../lib/engine';
 import { useNotional } from '../../lib/useNotional';
 import { fetchClose } from '../../lib/quotes';
@@ -243,7 +243,8 @@ export function TrimModal({
                     {' '}· est. tax {formatCurrency(roundCents(estimatedPileTax(preview.gain - feeNum, numShares, preview.ltShares + preview.unknownShares, ltTaxRate, stTaxRate)))}
                   </span>
                 )}
-                {isLoss && <span className="text-red-600 font-medium"> · loss — arms the 31-day wash-sale window</span>}
+                {isLoss && !isCryptoTicker(p.ticker) && <span className="text-red-600 font-medium"> · loss — arms the 31-day wash-sale window</span>}
+                {isLoss && isCryptoTicker(p.ticker) && <span className="text-gray-400"> · loss — crypto is exempt from wash-sale rules</span>}
               </p>
             )}
             <p className="text-xs text-gray-400">

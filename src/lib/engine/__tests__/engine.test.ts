@@ -364,6 +364,22 @@ describe('parked cash — tracked balance with auto-flows', () => {
   });
 });
 
+describe('wash sale — crypto exemption', () => {
+  it('BTC never fires Rule 9; equities still do', async () => {
+    const { washSaleConflicts, washSaleWarnings } = await import('../washSale');
+    const lossTrade = {
+      id: 't1', ticker: 'BTC', openDate: '2026-08-01', closeDate: '2026-08-10',
+      costBasis: 1000, proceeds: 900, washSale: false,
+    };
+    const outside = [{ id: 'o1', accountId: 'a', ticker: 'BTC', saleDate: '2026-08-10', loss: true, notes: null }];
+    expect(washSaleWarnings([lossTrade], 'BTC', '2026-08-15')).toEqual([]);
+    expect(washSaleConflicts([lossTrade], outside, 'BTC', '2026-08-15')).toEqual({ trades: [], outside: [] });
+    // Control: the same shape under an equity ticker still warns.
+    const mu = { ...lossTrade, ticker: 'MU' };
+    expect(washSaleWarnings([mu], 'MU', '2026-08-15')).toHaveLength(1);
+  });
+});
+
 describe('calendar exits — the date-side tripwire', () => {
   const lot = (over: Partial<import('../types').PositionLot>): import('../types').PositionLot => ({
     id: 'x', ticker: 'AFRM', buyDate: '2026-08-05', shares: 1, avgCost: 73, exitTarget: 90, ...over,

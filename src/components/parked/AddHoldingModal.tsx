@@ -4,7 +4,7 @@ import { AccountSelect } from '../ui/AccountSelect';
 import { TotalField } from '../ui/TotalField';
 import { useData } from '../../contexts/DataContext';
 import type { ParkedPosition } from '../../lib/engine';
-import { isArchivedPosition, roundCents, suggestCategory } from '../../lib/engine';
+import { isArchivedPosition, isCryptoTicker, roundCents, suggestCategory } from '../../lib/engine';
 import { useNotional } from '../../lib/useNotional';
 import { fetchProfile } from '../../lib/quotes';
 import { cn, inputCls, labelCls, primaryBtnCls } from '../../lib/utils';
@@ -30,6 +30,11 @@ export function AddHoldingModal({ onClose }: { onClose: () => void }) {
   const profileFetchedFor = useRef<string | null>(null);
   useEffect(() => {
     const t = ticker.trim().toUpperCase();
+    // Crypto never resolves a vendor profile — categorize it directly.
+    if (isCryptoTicker(t)) {
+      if (!categoryTouched.current) setCategory('BTC');
+      return;
+    }
     if (!/^[A-Z.\-]{1,10}$/.test(t) || profileFetchedFor.current === t) return;
     const timer = setTimeout(() => {
       profileFetchedFor.current = t;
