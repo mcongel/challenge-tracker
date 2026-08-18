@@ -1,14 +1,17 @@
 import { Fragment, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, Pencil, PiggyBank, Plus } from 'lucide-react';
+import { ChevronDown, ChevronRight, Pencil, PiggyBank, Plus, RefreshCw } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
+import { Modal } from '../components/ui/Modal';
 import { ErrorCard, SkeletonTable } from './CashLedger';
 import { useData } from '../contexts/DataContext';
 import type { ParkedPosition } from '../lib/engine';
 import {
   isArchivedPosition, parkedCostBasis, parkedMarketValue, roundCents,
 } from '../lib/engine';
-import { cn, formatCurrency, formatPercent, primaryBtnCls } from '../lib/utils';
+import {
+  cn, errorMessage, formatCurrency, formatPercent, inputCls, primaryBtnCls, secondaryBtnCls,
+} from '../lib/utils';
 import { categoryPillCls, fmtSh } from '../components/parked/shared';
 import { AddHoldingModal } from '../components/parked/AddHoldingModal';
 import { EditParkedModal } from '../components/parked/EditParkedModal';
@@ -20,10 +23,11 @@ import { unlockSummary } from '../lib/engine';
  * trim fuel, income projections, or taxes, and never in the score. */
 export function Retirement() {
   const {
-    retirementParked, parkedLots, accounts, tickerNames, overrides, loading, error,
+    retirementParked, parkedLots, accounts, tickerNames, overrides, quotes, loading, error,
   } = useData();
 
   const [addOpen, setAddOpen] = useState(false);
+  const [pricesOpen, setPricesOpen] = useState(false);
   const [editing, setEditing] = useState<ParkedPosition | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -67,12 +71,20 @@ export function Retirement() {
         title="Retirement"
         subtitle="The third pot. Same lot machinery as the pile, behind its own wall — never in the pile's total, cap, taxes, or the score."
         actions={
-          <button onClick={() => setAddOpen(true)}
-            className={cn(primaryBtnCls, 'flex items-center gap-1.5')}
-            disabled={retirementAccounts.length === 0}
-            title={retirementAccounts.length === 0 ? 'Add a retirement account first (Parked Pile → Accounts)' : undefined}>
-            <Plus className="h-4 w-4" /> Buy
-          </button>
+          <div className="flex gap-2">
+            <button onClick={() => setPricesOpen(true)}
+              className={cn(secondaryBtnCls, 'flex items-center gap-1.5')}
+              disabled={live.length === 0}
+              title="Bulk-update pinned prices — the Voya-unit-value routine">
+              <RefreshCw className="h-4 w-4" /> Update prices
+            </button>
+            <button onClick={() => setAddOpen(true)}
+              className={cn(primaryBtnCls, 'flex items-center gap-1.5')}
+              disabled={retirementAccounts.length === 0}
+              title={retirementAccounts.length === 0 ? 'Add a retirement account first (Parked Pile → Accounts)' : undefined}>
+              <Plus className="h-4 w-4" /> Buy
+            </button>
+          </div>
         }
       />
 
@@ -237,10 +249,99 @@ export function Retirement() {
       )}
 
       {addOpen && <AddHoldingModal kinds={['retirement']} onClose={() => setAddOpen(false)} />}
+      {pricesOpen && (
+        <UpdatePricesModal positions={live} quotes={quotes} onClose={() => setPricesOpen(false)} />
+      )}
       {editing && (
         <EditParkedModal position={editing} accountKinds={['retirement']}
           onClose={() => setEditing(null)} />
       )}
     </div>
+  );
+}
+
+/** The monthly Voya routine in one form: every manually-priced holding (no
+ * live quote, or already pinned), current value prefilled — type the fresh
+ * unit values from the statement, save once. Pins beat quotes until cleared,
+ * so live-quoted tickers stay OUT of this list unless already pinned. */
+function UpdatePricesModal({
+  positions, quotes, onClose,
+}: {
+  positions: ParkedPosition[];
+  quotes: Record<string, number>;
+  onClose: () => void;
+}) {
+  const { overrides, overrideSetAt, setOverrides } = useData();
+  const rows = useMemo(() => {
+    const byTicker = new Map<string, ParkedPosition>();
+    for (const p of positions) {
+      if (quotes[p.ticker] !== undefined && overrides[p.ticker] === undefined) continue;
+      if (!byTicker.has(p.ticker)) byTicker.set(p.ticker, p);
+    }
+    return [...byTicker.values()].sort((a, b) => a.ticker.localeCompare(b.ticker));
+  }, [positions, quotes, overrides]);
+  const [prices, setPrices] = useState<Record<string, string>>(() =>
+    Object.fromEntries(rows.map((p) => [p.ticker, String(overrides[p.ticker] ?? (p.currentPrice || ''))])),
+  );
+  const [formError, setFormError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    const entries = rows
+      .map((p) => ({ ticker: p.ticker, price: Number(prices[p.ticker]) }))
+      .filter((e2) => e2.price > 0);
+    if (entries.length === 0) return setFormError('Nothing to update.');
+    setBusy(true);
+    try {
+      await setOverrides(entries);
+      onClose();
+    } catch (err) {
+      setFormError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal isOpen onClose={onClose} title="Update prices">
+      {rows.length === 0 ? (
+        <p className="text-sm text-gray-500">
+          Every holding here has a live quote — nothing needs a manual price. Pins set from a
+          holding's Edit modal would show up in this list.
+        </p>
+      ) : (
+        <form onSubmit={submit} className="space-y-3">
+          <p className="text-xs text-gray-400">
+            Manually-priced holdings only (no live quote, or already pinned). Type the fresh unit
+            values from the statement — one save pins them all with today's stamp.
+          </p>
+          <div className="space-y-2">
+            {rows.map((p) => (
+              <div key={p.ticker} className="flex items-center gap-3">
+                <span className="w-28 flex-shrink-0">
+                  <span className="text-sm font-medium">{p.ticker}</span>
+                  <span className="block text-[11px] text-gray-400">
+                    {overrideSetAt[p.ticker]
+                      ? `pinned ${overrideSetAt[p.ticker].slice(0, 10)}`
+                      : 'no live quote'}
+                  </span>
+                </span>
+                <input type="number" step="any" min="0.0001" value={prices[p.ticker] ?? ''}
+                  onChange={(e) => setPrices((m) => ({ ...m, [p.ticker]: e.target.value }))}
+                  className={inputCls} placeholder="unit value ($)" />
+              </div>
+            ))}
+          </div>
+          {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
+          <div className="flex justify-end">
+            <button type="submit" disabled={busy} className={primaryBtnCls}>
+              {busy ? 'Saving…' : `Pin ${rows.length} price${rows.length > 1 ? 's' : ''}`}
+            </button>
+          </div>
+        </form>
+      )}
+    </Modal>
   );
 }
