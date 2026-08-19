@@ -2,6 +2,13 @@
  * Workbook parity — every expected value here is read straight from
  * Challenge_Account_Tracker.xlsx's example rows. The workbook wins: if these
  * fail, the engine is wrong, not the test.
+ *
+ * Scope note: the workbook governs the surfaces it has tabs for — the cash
+ * ledger, positions/trades, milestones, the 30% reserve, the shadow-VOO
+ * benchmark, and the parked-pile totals (via __fixtures__/parked-pile.json).
+ * Everything built after 2026-08-11 (ROC basis, reversible sales, transition
+ * scenarios, dividend projections, pile taxes) has no workbook tab and is
+ * pinned to hand-computed expectations in engine.test.ts instead.
  */
 import { describe, expect, it } from 'vitest';
 import type { BenchmarkDeposit, CashEvent, ParkedPosition, PositionLot, Trade } from '../types';

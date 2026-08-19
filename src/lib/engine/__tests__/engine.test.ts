@@ -412,6 +412,75 @@ describe('parked cash — tracked balance with auto-flows', () => {
     expect(signedParkedCash({ id: 'x', accountId: 'a', date: 'd', type: 'adjustment', amount: -90 })).toBe(-90);
   });
 
+  it('gaps from the review: leadPct, isNeverTrimFuel, contribution thresholds, dividendTaxForYear', async () => {
+    const { leadPct } = await import('../benchmark');
+    expect(leadPct(110, 100)).toBeCloseTo(0.1, 9);
+    expect(leadPct(90, 100)).toBeCloseTo(-0.1, 9);
+    expect(leadPct(50, 0)).toBe(0); // no shadow yet — no fake infinity
+
+    // Rule 5's never-trim gate: named tickers AND the whole BTC bucket.
+    const { isNeverTrimFuel } = await import('../parked');
+    expect(isNeverTrimFuel({ ticker: 'NVDA', category: 'Semiconductors' })).toBe(true);
+    expect(isNeverTrimFuel({ ticker: 'BTCI', category: 'BTC' })).toBe(true);
+    expect(isNeverTrimFuel({ ticker: 'GLW', category: 'Other' })).toBe(false);
+
+    const { contributionStatus } = await import('../contribution');
+    expect(contributionStatus(1000, 10_000).state).toBe('OK');
+    expect(contributionStatus(8_000, 10_000).state).toBe('NEARING');   // exactly 80%
+    expect(contributionStatus(10_000, 10_000).state).toBe('REACHED');
+    expect(contributionStatus(12_000, 10_000).remaining).toBe(0);      // never negative
+
+    // The Pile Taxes year picker path: buckets by the SALE year, not YTD.
+    const { dividendTaxForYear } = await import('../parkedIncome');
+    const rates = { qualified: 0.15, ordinary: 0.3, capitalGainDist: 0.15 };
+    const div = (id: string, date: string, amount: number, classification: string) => ({
+      id, parkedPositionId: 'p', date, source: 'dividend' as const, shares: 0,
+      amount, classification: classification as import('../parkedLots').DividendClassification,
+    });
+    const lots = [
+      div('a', '2025-06-01', 100, 'qualified'),
+      div('b', '2026-06-01', 100, 'qualified'),
+      div('c', '2026-07-01', 100, 'ordinary'),
+    ];
+    const y2026 = dividendTaxForYear(lots, 2026, '2026-12-31', rates);
+    expect(y2026.totalTax).toBeCloseTo(100 * 0.15 + 100 * 0.3, 9);
+    const y2025 = dividendTaxForYear(lots, 2025, '2026-12-31', rates);
+    expect(y2025.totalTax).toBeCloseTo(15, 9);
+  });
+
+  it('splitParkedPots: live-price merge respects the quotable wall; four pots partition', async () => {
+    const { splitParkedPots } = await import('../parkedWalls');
+    const pos = (id: string, over: Record<string, unknown>) => ({
+      id, ticker: 'X', accountId: 'a', account: 'A', category: 'Other',
+      shares: 1, avgCost: 10, currentPrice: 10, ...over,
+    }) as import('../types').ParkedPosition;
+    const parked = [
+      pos('pile', { ticker: 'GLW' }),
+      pos('btc', { ticker: 'MSTR', category: 'BTC' }),
+      pos('ret', { ticker: 'JLGMX', accountId: 'ira' }),           // hand-priced retirement
+      pos('retLive', { ticker: 'BTC', accountId: 'ira', liveQuotes: true }),
+    ];
+    const retirementAccountIds = new Set(['ira']);
+    const isQuotable = (p: import('../types').ParkedPosition) =>
+      p.liveQuotes ?? !retirementAccountIds.has(p.accountId);
+    const pots = splitParkedPots({
+      parked,
+      overrides: { GLW: 99 },
+      quotes: { GLW: 50, MSTR: 60, JLGMX: 70, BTC: 80 },
+      retirementAccountIds,
+      isQuotable,
+    });
+    const price = (id: string) => pots.mergedParked.find((p) => p.id === id)!.currentPrice;
+    expect(price('pile')).toBe(99);      // override beats quote
+    expect(price('btc')).toBe(60);       // quote applies
+    expect(price('ret')).toBe(10);       // hand-priced: market number never applies
+    expect(price('retLive')).toBe(80);   // live_quotes opt-in wins over the retirement wall
+    expect(pots.pileParked.map((p) => p.id)).toEqual(['pile']);
+    expect(pots.btcParked.map((p) => p.id)).toEqual(['btc']);
+    expect(pots.retirementParked.map((p) => p.id).sort()).toEqual(['ret', 'retLive']);
+    expect(pots.taxableParked.map((p) => p.id).sort()).toEqual(['btc', 'pile']);
+  });
+
   it('a transfer plus its compensating adjustment leaves source cash unchanged', async () => {
     const { computeAccountCash } = await import('../parkedCash');
     const acct = 'src';
