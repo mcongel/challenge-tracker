@@ -92,6 +92,13 @@ async function fromYahoo(ticker) {
     const meta = body?.chart?.result?.[0]?.meta;
     const price = meta?.regularMarketPrice;
     if (typeof price !== 'number' || price <= 0) return null;
+    // Dead listings: Yahoo serves years-old "quotes" for delisted share
+    // classes (PRDIX: $9.84, last traded 2019). A quote older than 10 days
+    // is worse than none — treat the symbol as unquoted so the app's
+    // manual-price machinery owns it instead.
+    if (meta.regularMarketTime && Date.now() - meta.regularMarketTime * 1000 > 10 * 86400_000) {
+      return null;
+    }
     const prev = typeof meta.chartPreviousClose === 'number' ? meta.chartPreviousClose : null;
     const change = prev !== null ? price - prev : null;
     return {
