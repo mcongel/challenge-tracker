@@ -66,7 +66,8 @@ export function EditParkedModal({
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className={labelCls}>Price ($)</label>
-            <input type="number" step="0.01" min="0" value={price}
+            {/* step=any: unit values carry 4 decimals (75.8888) */}
+            <input type="number" step="any" min="0" value={price}
               onChange={(e) => setPrice(e.target.value)} className={inputCls} />
           </div>
           <div>
