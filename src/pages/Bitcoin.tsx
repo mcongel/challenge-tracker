@@ -7,7 +7,8 @@ import type { ParkedPosition, Snapshot } from '../lib/engine';
 import { useIsDark } from '../lib/useIsDark';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
-import { ErrorCard, SkeletonTable } from './CashLedger';
+import { ErrorCard } from '../components/ui/ErrorCard';
+import { SkeletonTable } from '../components/ui/SkeletonTable';
 import { useData } from '../contexts/DataContext';
 import {
   isArchivedPosition, parkedCostBasis, parkedMarketValue, roundCents, unlockSummary,

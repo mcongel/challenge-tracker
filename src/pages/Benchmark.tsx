@@ -8,7 +8,8 @@ import { useIsDark } from '../lib/useIsDark';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
-import { ErrorCard, SkeletonTable } from './CashLedger';
+import { ErrorCard } from '../components/ui/ErrorCard';
+import { SkeletonTable } from '../components/ui/SkeletonTable';
 import { useData } from '../contexts/DataContext';
 import { priceMapFor } from '../lib/alerts';
 import {

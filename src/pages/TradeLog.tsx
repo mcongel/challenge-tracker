@@ -10,7 +10,8 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
 import { AccountSelect } from '../components/ui/AccountSelect';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
-import { ErrorCard, SkeletonTable } from './CashLedger';
+import { ErrorCard } from '../components/ui/ErrorCard';
+import { SkeletonTable } from '../components/ui/SkeletonTable';
 import { useData } from '../contexts/DataContext';
 import {
   netRealizedYTD, realizedGain, realizedPct, roundCents, stLt, taxYearOf, tradeDaysHeld,

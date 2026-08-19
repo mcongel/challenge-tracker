@@ -11,7 +11,7 @@ import {
   netRealizedYTD, nextMilestone, pileTotal, reservedTotal, roundCents, shadowValue, taxYearOf,
   totalScore, unlockSummary,
 } from '../lib/engine';
-import { ErrorCard } from './CashLedger';
+import { ErrorCard } from '../components/ui/ErrorCard';
 import { ContributionCapBadge } from '../components/ui/ContributionCapBadge';
 import { GettingStarted } from '../components/GettingStarted';
 import { cn, compactUsd, formatCurrency, formatCurrencyWhole, todayISO } from '../lib/utils';

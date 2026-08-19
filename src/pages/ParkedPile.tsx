@@ -7,8 +7,9 @@ import {
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
-import { ErrorCard, SkeletonTable } from './CashLedger';
-import { SplitModal } from './Positions';
+import { ErrorCard } from '../components/ui/ErrorCard';
+import { SkeletonTable } from '../components/ui/SkeletonTable';
+import { SplitModal } from '../components/SplitModal';
 import { useData } from '../contexts/DataContext';
 import type { ParkedLot, ParkedPosition, UnlockSummary } from '../lib/engine';
 import {

@@ -6,6 +6,8 @@ import { Modal } from '../components/ui/Modal';
 import { useData } from '../contexts/DataContext';
 import { AccountSelect } from '../components/ui/AccountSelect';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
+import { ErrorCard } from '../components/ui/ErrorCard';
+import { SkeletonTable } from '../components/ui/SkeletonTable';
 import { ContributionCapBadge } from '../components/ui/ContributionCapBadge';
 import type { CashEvent, CashEventType } from '../lib/engine';
 import {
@@ -433,21 +435,5 @@ function EditEventModal({ event, onClose }: { event: CashEvent; onClose: () => v
         </div>
       </form>
     </Modal>
-  );
-}
-
-export function ErrorCard({ message }: { message: string }) {
-  return (
-    <div className="mb-4 bg-red-50 text-red-700 rounded-lg px-4 py-3 text-sm">{message}</div>
-  );
-}
-
-export function SkeletonTable() {
-  return (
-    <div className="bg-white rounded-lg shadow-lg p-4 space-y-3">
-      {[...Array(5)].map((_, i) => (
-        <div key={i} className="h-8 rounded bg-gray-100 animate-pulse" />
-      ))}
-    </div>
   );
 }

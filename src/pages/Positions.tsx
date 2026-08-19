@@ -4,7 +4,9 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
-import { ErrorCard, SkeletonTable } from './CashLedger';
+import { ErrorCard } from '../components/ui/ErrorCard';
+import { SplitModal } from '../components/SplitModal';
+import { SkeletonTable } from '../components/ui/SkeletonTable';
 import { useData } from '../contexts/DataContext';
 import { priceMapFor } from '../lib/alerts';
 import type { CloseAllocation, PositionLot } from '../lib/engine';
@@ -626,47 +628,6 @@ function ClosePositionModal({ ticker, onClose }: { ticker: string; onClose: () =
 
 /** Shared with the Parked Pile — a split is per-ticker and adjusts challenge
  * lots AND parked holdings in one action, whichever screen opens it. */
-export function SplitModal({ ticker, onClose }: { ticker: string; onClose: () => void }) {
-  const { recordSplit } = useData();
-  const [ratio, setRatio] = useState('');
-  const [formError, setFormError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const r = Number(ratio);
-    if (!r || r <= 0) return setFormError('Ratio must be positive — e.g. 2 for a 2:1 split.');
-    setBusy(true);
-    try {
-      await recordSplit(ticker, r, todayISO());
-      onClose();
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Modal isOpen onClose={onClose} title={`Record split — ${ticker}`}>
-      <form onSubmit={submit} className="space-y-3">
-        <div>
-          <label className={labelCls}>Ratio (shares multiply, cost divides)</label>
-          <input type="number" step="any" min="0.01" required value={ratio}
-            onChange={(e) => setRatio(e.target.value)} className={inputCls} placeholder="2 = 2:1 split" />
-        </div>
-        <p className="text-xs text-gray-400">
-          Applies to all open {ticker} lots and any parked {ticker} position; logs the event in notes.
-        </p>
-        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
-        <div className="flex justify-end">
-          <button type="submit" disabled={busy} className={primaryBtnCls}>{busy ? 'Recording…' : 'Record split'}</button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
 function PriceModal({ ticker, onClose }: { ticker: string; onClose: () => void }) {
   const { overrides, setOverride, clearOverride } = useData();
   const [price, setPrice] = useState(overrides[ticker] ? String(overrides[ticker]) : '');

@@ -3,7 +3,8 @@ import { Receipt, Trash2 } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
-import { ErrorCard, SkeletonTable } from './CashLedger';
+import { ErrorCard } from '../components/ui/ErrorCard';
+import { SkeletonTable } from '../components/ui/SkeletonTable';
 import { useData } from '../contexts/DataContext';
 import type { PileTaxSetAside } from '../lib/engine';
 import {
