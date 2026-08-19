@@ -267,6 +267,12 @@ export function Dashboard() {
             <p className="text-xs text-gray-400 mt-0.5">behind its own wall — tax-sheltered</p>
           </Link>
         </div>
+        {potsData.length === 1 && (
+          <p className="mt-3 text-xs text-gray-400 text-center">
+            The stacked history draws after two daily snapshots with all three pots tracked —
+            day one is on the books.
+          </p>
+        )}
         {potsData.length >= 2 && (
           <div className="h-48 mt-4">
             <ResponsiveContainer width="100%" height="100%">
