@@ -27,6 +27,25 @@ export function db() {
   return supabase;
 }
 
+/** PostgREST enforces max-rows (default 1000) SERVER-side — a bare select on
+ * a grown table silently truncates and every score computes from a partial
+ * ledger. All full-table reads page until a short page. `build` must return a
+ * FRESH query per call (builders are single-use) with a total order — ties
+ * broken by a unique column — so pages can't skip or duplicate rows. */
+const PAGE = 1000;
+type Paged<Row> = { data: Row[] | null; error: { message: string } | null };
+export async function fetchAll<Row = any>(
+  build: () => { range(from: number, to: number): PromiseLike<Paged<Row>> },
+): Promise<Paged<Row>> {
+  const rows: Row[] = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await build().range(offset, offset + PAGE - 1);
+    if (error) return { data: null, error };
+    rows.push(...(data ?? []));
+    if ((data ?? []).length < PAGE) return { data: rows, error: null };
+  }
+}
+
 export const mapCashEvent = (r: any): CashEvent => ({
   id: r.id,
   date: r.date,

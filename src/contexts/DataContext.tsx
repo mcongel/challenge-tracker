@@ -61,6 +61,7 @@ import {
   milestonePayload,
   outsideSalePayload,
   tradePayload,
+  fetchAll,
 } from '../lib/db';
 
 interface DataState {
@@ -348,27 +349,31 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         cash, lots, trades, milestones, bench, parked, snaps, carry, overrides, settings,
         accounts, outsideSales, parkedLots, parkedSales, parkedCashEvents, parkedLotAdjustments,
         incomeScenarios, scenarioRotations, watchlist, pileTaxSetAsides,
+      // Every read pages via fetchAll — PostgREST truncates at 1000 rows
+      // server-side, and a partial ledger means a silently wrong score. The
+      // trailing .order('id') makes each ordering total so pages can't skip
+      // or duplicate rows on ties.
       ] = await Promise.all([
-        client.from('cash_events').select('*').order('date').order('created_at'),
-        client.from('position_lots').select('*').order('buy_date'),
-        client.from('trades').select('*').order('close_date'),
-        client.from('milestones').select('*').order('level'),
-        client.from('benchmark_deposits').select('*').order('date'),
-        client.from('parked_positions').select('*, account:accounts(name)').order('ticker'),
-        client.from('snapshots').select('*').order('date'),
-        client.from('loss_carryforwards').select('*'),
-        client.from('price_overrides').select('*'),
-        client.from('app_settings').select('*'),
-        client.from('accounts').select('*').order('name'),
-        client.from('outside_sales').select('*').order('sale_date'),
-        client.from('parked_lots').select('*').order('date', { nullsFirst: true }),
-        client.from('parked_sales').select('*').order('date'),
-        client.from('parked_cash_events').select('*').order('date'),
-        client.from('parked_lot_adjustments').select('*'),
-        client.from('income_scenarios').select('*').order('created_at'),
-        client.from('scenario_rotations').select('*').order('rotation_date'),
-        client.from('watchlist').select('*').order('catalyst_date', { nullsFirst: false }),
-        client.from('pile_tax_set_asides').select('*').order('date'),
+        fetchAll(() => client.from('cash_events').select('*').order('date').order('created_at').order('id')),
+        fetchAll(() => client.from('position_lots').select('*').order('buy_date').order('id')),
+        fetchAll(() => client.from('trades').select('*').order('close_date').order('id')),
+        fetchAll(() => client.from('milestones').select('*').order('level')),
+        fetchAll(() => client.from('benchmark_deposits').select('*').order('date').order('id')),
+        fetchAll(() => client.from('parked_positions').select('*, account:accounts(name)').order('ticker').order('id')),
+        fetchAll(() => client.from('snapshots').select('*').order('date')),
+        fetchAll(() => client.from('loss_carryforwards').select('*').order('tax_year')),
+        fetchAll(() => client.from('price_overrides').select('*').order('ticker')),
+        fetchAll(() => client.from('app_settings').select('*').order('key')),
+        fetchAll(() => client.from('accounts').select('*').order('name').order('id')),
+        fetchAll(() => client.from('outside_sales').select('*').order('sale_date').order('id')),
+        fetchAll(() => client.from('parked_lots').select('*').order('date', { nullsFirst: true }).order('id')),
+        fetchAll(() => client.from('parked_sales').select('*').order('date').order('id')),
+        fetchAll(() => client.from('parked_cash_events').select('*').order('date').order('id')),
+        fetchAll(() => client.from('parked_lot_adjustments').select('*').order('id')),
+        fetchAll(() => client.from('income_scenarios').select('*').order('created_at').order('id')),
+        fetchAll(() => client.from('scenario_rotations').select('*').order('rotation_date').order('id')),
+        fetchAll(() => client.from('watchlist').select('*').order('catalyst_date', { nullsFirst: false }).order('id')),
+        fetchAll(() => client.from('pile_tax_set_asides').select('*').order('date').order('id')),
       ]);
       const firstError =
         cash.error ?? lots.error ?? trades.error ?? milestones.error ?? bench.error ??
@@ -2108,7 +2113,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           }
           // All lots, not just the position's — snapshot stamps for carried
           // (cross-position) ROC rows need the wide lookup.
-          const { data: allLotRows, error: lotsErr } = await client.from('parked_lots').select('*');
+          const { data: allLotRows, error: lotsErr } = await fetchAll(
+            () => client.from('parked_lots').select('*').order('id'),
+          );
           if (lotsErr) throw lotsErr;
           const allLots = (allLotRows ?? []).map(mapParkedLot);
           const lots = allLots.filter((l) => l.parkedPositionId === position.id);
@@ -2180,10 +2187,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     await wipe('benchmark_deposits', benchIds);
     // Snapshots recorded while example data was loaded are fiction — the race
     // chart would keep drawing the fake numbers forever. Reset history; the
-    // next app open writes a fresh snapshot from real data.
-    const { error: snapErr } = await client.from('snapshots').delete().gte('date', '1900-01-01');
-    if (snapErr) throw snapErr;
-    snapshotAttempted.current = false;
+    // next app open writes a fresh snapshot from real data. GUARD: only when
+    // example rows actually existed — with nothing to clear this must be a
+    // no-op, never a wipe of real, unreconstructable history.
+    if (exampleData.total > 0) {
+      const { error: snapErr } = await client.from('snapshots').delete().gte('date', '1900-01-01');
+      if (snapErr) throw snapErr;
+      snapshotAttempted.current = false;
+    }
     await refresh();
   }, [refresh, state.benchmarkDeposits, exampleData]);
 
@@ -2433,8 +2444,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const refreshScenarios = useCallback(async () => {
     const client = db();
     const [scen, rots] = await Promise.all([
-      client.from('income_scenarios').select('*').order('created_at'),
-      client.from('scenario_rotations').select('*').order('rotation_date'),
+      fetchAll(() => client.from('income_scenarios').select('*').order('created_at').order('id')),
+      fetchAll(() => client.from('scenario_rotations').select('*').order('rotation_date').order('id')),
     ]);
     if (scen.error) throw scen.error;
     if (rots.error) throw rots.error;
