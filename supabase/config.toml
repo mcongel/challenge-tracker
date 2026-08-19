@@ -1,0 +1,6 @@
+# Deploy-time function config. Without this pinned, the platform default
+# verify_jwt = true makes the gateway reject the cron's x-cron-secret call
+# (no Authorization header) before the function's own auth ever runs — it
+# previously worked only because of an unrecorded `--no-verify-jwt` deploy.
+[functions.challenge-market-alerts]
+verify_jwt = false

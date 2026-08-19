@@ -9,6 +9,11 @@
  * when it stops firing, the row gets cleared_at so a later re-cross emails
  * again. State rows double as in-app alert history.
  *
+ * notified_at stamps the CONFIRMED send. A row whose email failed keeps
+ * notified_at null and the send retries on every run while it still fires —
+ * one Resend hiccup must not swallow the crossing the feature exists for.
+ * Any email error also returns non-200 so a failing run is visible.
+ *
  * Callers: the pg_cron scheduler (x-cron-secret) or the service role key
  * as a bearer token (manual runs / testing). Quote-feed downtime skips the
  * run — that is not an alert-worthy failure every 30 minutes.
@@ -63,7 +68,7 @@ Deno.serve(async (req) => {
     supabase.from("position_lots").select("ticker, exit_target, exit_date"),
     supabase.from("watchlist").select("ticker, entry_trigger").not("entry_trigger", "is", null),
     supabase.from("price_overrides").select("ticker, price"),
-    supabase.from("alert_state").select("id, key").is("cleared_at", null),
+    supabase.from("alert_state").select("id, key, notified_at").is("cleared_at", null),
   ]);
   for (const r of [lotsRes, watchRes, overridesRes, openRes]) {
     if (r.error) return json({ error: r.error.message }, 500);
@@ -154,43 +159,71 @@ Deno.serve(async (req) => {
     });
   }
 
-  const openKeys = new Set(open.map((o) => o.key));
+  const openByKey = new Map(open.map((o) => [o.key, o]));
   const fired: string[] = [];
   const cleared: string[] = [];
   const emailErrors: string[] = [];
 
-  // New fires: insert state + one email each.
   const resendKey = Deno.env.get("RESEND_API_KEY");
-  for (const [key, f] of firing) {
-    if (openKeys.has(key)) continue;
+  /** Returns null on a confirmed send, else the error to surface. */
+  const sendEmail = async (title: string): Promise<string | null> => {
+    if (!resendKey) return "RESEND_API_KEY not configured";
+    const send = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: EMAIL_FROM,
+        to: [EMAIL_TO],
+        subject: title,
+        html:
+          `<p style="font-size:16px">${title}</p>` +
+          `<p><a href="https://challenge-tracker.pages.dev">Open the tracker</a></p>` +
+          `<p style="color:#888;font-size:12px">Delayed quotes, checked every 30 minutes during market hours. ` +
+          `One email per crossing — you'll be re-alerted only if it clears and crosses again.</p>`,
+      }),
+    });
+    return send.ok ? null : `resend ${send.status} ${await send.text()}`;
+  };
+  const markNotified = async (id: string) => {
     const { error } = await supabase
       .from("alert_state")
-      .insert({ key, title: f.title, price: f.price });
-    if (error) {
-      // A unique-violation race with a concurrent run means the other run
-      // owns the email — skip quietly. Anything else is worth surfacing.
-      if (error.code !== "23505") emailErrors.push(`${key}: ${error.message}`);
+      .update({ notified_at: new Date().toISOString() })
+      .eq("id", id);
+    if (error) emailErrors.push(`notify-stamp: ${error.message}`);
+  };
+
+  // New fires insert state THEN email, stamping notified_at only on a
+  // confirmed send; an open row whose email never confirmed retries here
+  // on every run while it still fires.
+  for (const [key, f] of firing) {
+    const existing = openByKey.get(key);
+    if (existing) {
+      if (existing.notified_at == null) {
+        const sendErr = await sendEmail(f.title);
+        if (sendErr) emailErrors.push(`${key}: ${sendErr}`);
+        else {
+          await markNotified(existing.id);
+          fired.push(`${key} (retried)`);
+        }
+      }
       continue;
     }
-    fired.push(key);
-    if (resendKey) {
-      const send = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          from: EMAIL_FROM,
-          to: [EMAIL_TO],
-          subject: f.title,
-          html:
-            `<p style="font-size:16px">${f.title}</p>` +
-            `<p><a href="https://challenge-tracker.pages.dev">Open the tracker</a></p>` +
-            `<p style="color:#888;font-size:12px">Delayed quotes, checked every 30 minutes during market hours. ` +
-            `One email per crossing — you'll be re-alerted only if it clears and crosses again.</p>`,
-        }),
-      });
-      if (!send.ok) emailErrors.push(`${key}: resend ${send.status} ${await send.text()}`);
-    } else {
-      emailErrors.push(`${key}: RESEND_API_KEY not configured`);
+    const { data: inserted, error } = await supabase
+      .from("alert_state")
+      .insert({ key, title: f.title, price: f.price })
+      .select("id")
+      .single();
+    if (error || !inserted) {
+      // A unique-violation race with a concurrent run means the other run
+      // owns the email — skip quietly. Anything else is worth surfacing.
+      if (error && error.code !== "23505") emailErrors.push(`${key}: ${error.message}`);
+      continue;
+    }
+    const sendErr = await sendEmail(f.title);
+    if (sendErr) emailErrors.push(`${key}: ${sendErr}`);
+    else {
+      await markNotified(inserted.id);
+      fired.push(key);
     }
   }
 
@@ -208,5 +241,10 @@ Deno.serve(async (req) => {
     else cleared.push(o.key);
   }
 
-  return json({ checked: tickers.length, quotesOk, fired, cleared, errors: emailErrors });
+  // Non-200 on any email/stamp error — a failing alert pipeline must look
+  // like a failure, not a quiet success with errors buried in the body.
+  return json(
+    { checked: tickers.length, quotesOk, fired, cleared, errors: emailErrors },
+    emailErrors.length > 0 ? 500 : 200,
+  );
 });
