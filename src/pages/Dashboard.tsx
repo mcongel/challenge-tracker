@@ -5,6 +5,7 @@ import {
   Tooltip, XAxis, YAxis,
 } from 'recharts';
 import { useData } from '../contexts/DataContext';
+import { lotsByPositionId } from '../lib/engine';
 import { activeAlerts, priceMapFor } from '../lib/alerts';
 import {
   accountTotal, cumulativeFloor, isArchivedPosition, isNeverTrimFuel, lead, netContributed,
@@ -15,7 +16,7 @@ import { ErrorCard } from '../components/ui/ErrorCard';
 import { ContributionCapBadge } from '../components/ui/ContributionCapBadge';
 import { GettingStarted } from '../components/GettingStarted';
 import { cn, compactUsd, formatCurrency, formatCurrencyWhole, todayISO } from '../lib/utils';
-import { useIsDark } from '../lib/useIsDark';
+import { useChartColors } from '../lib/useIsDark';
 
 /** Chart palette — validated (dataviz six checks) for both surfaces.
  * You = brand green (green-600 both modes); Shadow VOO = indigo 600/500.
@@ -44,7 +45,7 @@ export function Dashboard() {
     snapshots, carryforwards, overrides, quotes, contributionCap, concentrationCap, watchlist,
     loading, error, quotesSettled,
   } = useData();
-  const isDark = useIsDark();
+  const { isDark, gridColor, axisColor } = useChartColors();
   const today = todayISO();
 
   // Until the first quote pass lands, position prices are cost/stale
@@ -69,12 +70,7 @@ export function Dashboard() {
   // Soonest unlock across the pile — the trim calendar at a glance. Rule 5's
   // never-trim holds are excluded: their unlocks are not trim fuel.
   const nextUnlock = useMemo(() => {
-    const lotsByPosition = new Map<string, typeof parkedLots>();
-    for (const l of parkedLots) {
-      const list = lotsByPosition.get(l.parkedPositionId);
-      if (list) list.push(l);
-      else lotsByPosition.set(l.parkedPositionId, [l]);
-    }
+    const lotsByPosition = lotsByPositionId(parkedLots);
     return parked
       .filter((p) => !isArchivedPosition(p) && !isNeverTrimFuel(p))
       .map((p) => ({
@@ -108,8 +104,6 @@ export function Dashboard() {
   const youColor = isDark ? SERIES.you.dark : SERIES.you.light;
   const shadowColor = isDark ? SERIES.shadow.dark : SERIES.shadow.light;
   const floorColor = isDark ? SERIES.floor.dark : SERIES.floor.light;
-  const gridColor = isDark ? '#334155' : '#e5e7eb';
-  const axisColor = isDark ? '#94a3b8' : '#6b7280';
 
   return (
     <div className="space-y-4 sm:space-y-6">

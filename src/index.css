@@ -124,8 +124,16 @@ html.dark body {
 .dark .bg-rose-50 { background-color: rgb(136 19 55 / 0.25); }
 .dark .bg-indigo-50 { background-color: rgb(49 46 129 / 0.25); }
 .dark .bg-indigo-100 { background-color: rgb(49 46 129 / 0.45); }
+.dark .bg-purple-50 { background-color: rgb(88 28 135 / 0.25); }
+.dark .bg-purple-100 { background-color: rgb(88 28 135 / 0.45); }
+.dark .bg-emerald-200 { background-color: rgb(6 78 59 / 0.6); }
 
 .dark .border-amber-300 { border-color: rgb(180 83 9 / 0.6); }
+.dark .border-amber-200 { border-color: rgb(180 83 9 / 0.45); }
+.dark .border-emerald-200 { border-color: rgb(6 95 70 / 0.5); }
+.dark .border-green-200 { border-color: rgb(22 101 52 / 0.5); }
+.dark .border-red-200 { border-color: rgb(153 27 27 / 0.5); }
+.dark .border-indigo-200 { border-color: rgb(55 48 163 / 0.5); }
 
 .dark .hover\:bg-red-50:hover { background-color: rgb(127 29 29 / 0.45); }
 .dark .hover\:bg-red-100:hover { background-color: rgb(127 29 29 / 0.6); }
@@ -142,6 +150,11 @@ html.dark body {
 .dark .text-green-700 { color: rgb(134 239 172); }
 .dark .text-green-800 { color: rgb(187 247 208); }
 .dark .text-emerald-700 { color: rgb(110 231 183); }
+.dark .text-emerald-800 { color: rgb(167 243 208); }
+.dark .text-purple-700 { color: rgb(216 180 254); }
+.dark .text-amber-600 { color: rgb(251 191 36); }
+/* Idle row-action icons: gray-300 is near-invisible ink on slate-900 */
+.dark .text-gray-300 { color: rgb(100 116 139); }
 .dark .text-teal-600 { color: rgb(45 212 191); }
 .dark .text-teal-700 { color: rgb(94 234 212); }
 .dark .text-teal-800 { color: rgb(153 246 228); }

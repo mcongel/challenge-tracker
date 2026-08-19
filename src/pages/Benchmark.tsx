@@ -4,7 +4,7 @@ import {
   Tooltip, XAxis, YAxis,
 } from 'recharts';
 import { Pencil, Swords } from 'lucide-react';
-import { useIsDark } from '../lib/useIsDark';
+import { useChartColors } from '../lib/useIsDark';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
@@ -31,7 +31,7 @@ export function Benchmark() {
     setOverride, clearOverride, loading, error,
   } = useData();
   const [priceOpen, setPriceOpen] = useState(false);
-  const isDark = useIsDark();
+  const { gridColor, axisColor } = useChartColors();
 
   const vooPinned = overrides['VOO'];
   const vooToday = vooPinned ?? quotes['VOO'];
@@ -67,8 +67,6 @@ export function Benchmark() {
     [snapshots],
   );
 
-  const gridColor = isDark ? '#334155' : '#e5e7eb';
-  const axisColor = isDark ? '#94a3b8' : '#6b7280';
 
   return (
     <div>

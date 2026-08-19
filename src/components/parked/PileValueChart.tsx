@@ -3,15 +3,13 @@ import {
 } from 'recharts';
 import type { Snapshot } from '../../lib/engine';
 import { roundCents } from '../../lib/engine';
-import { useIsDark } from '../../lib/useIsDark';
+import { useChartColors } from '../../lib/useIsDark';
 import { compactUsd, formatCurrency } from '../../lib/utils';
 
 /** Pile value from the daily snapshots — house chart contract (green area,
  * CVD-validated palette). VALUE, not a return series: new money moves it. */
 export function PileValueChart({ snapshots }: { snapshots: Snapshot[] }) {
-  const isDark = useIsDark();
-  const gridColor = isDark ? '#334155' : '#e5e7eb';
-  const axisColor = isDark ? '#94a3b8' : '#6b7280';
+  const { isDark, gridColor, axisColor } = useChartColors();
   const green = isDark ? '#22c55e' : '#16a34a';
   const data = snapshots.map((s) => ({
     date: s.date.slice(5),

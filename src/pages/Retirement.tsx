@@ -4,7 +4,7 @@ import {
 } from 'recharts';
 import { ChevronDown, ChevronRight, Pencil, PiggyBank, Plus, RefreshCw, Scale } from 'lucide-react';
 import type { Snapshot } from '../lib/engine';
-import { useIsDark } from '../lib/useIsDark';
+import { useChartColors } from '../lib/useIsDark';
 import { compactUsd } from '../lib/utils';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
@@ -12,6 +12,7 @@ import { Modal } from '../components/ui/Modal';
 import { ErrorCard } from '../components/ui/ErrorCard';
 import { SkeletonTable } from '../components/ui/SkeletonTable';
 import { useData } from '../contexts/DataContext';
+import { lotsByPositionId } from '../lib/engine';
 import type { ParkedPosition } from '../lib/engine';
 import {
   isArchivedPosition, parkedCostBasis, parkedMarketValue, roundCents,
@@ -52,15 +53,7 @@ export function Retirement() {
     () => retirementParked.filter((p) => !isArchivedPosition(p)),
     [retirementParked],
   );
-  const lotsByPosition = useMemo(() => {
-    const m = new Map<string, typeof parkedLots>();
-    for (const l of parkedLots) {
-      const list = m.get(l.parkedPositionId);
-      if (list) list.push(l);
-      else m.set(l.parkedPositionId, [l]);
-    }
-    return m;
-  }, [parkedLots]);
+  const lotsByPosition = useMemo(() => lotsByPositionId(parkedLots), [parkedLots]);
 
   const total = live.reduce((s, p) => s + parkedMarketValue(p), 0);
   const totalBasis = live.reduce((s, p) => s + parkedCostBasis(p), 0);
@@ -290,9 +283,7 @@ export function Retirement() {
  * contributions move this line too. Captured by the daily snapshot from
  * whatever the balances were that day. */
 function RetirementValueChart({ snapshots }: { snapshots: Snapshot[] }) {
-  const isDark = useIsDark();
-  const gridColor = isDark ? '#334155' : '#e5e7eb';
-  const axisColor = isDark ? '#94a3b8' : '#6b7280';
+  const { isDark, gridColor, axisColor } = useChartColors();
   const green = isDark ? '#22c55e' : '#16a34a';
   const data = snapshots.map((s) => ({
     date: s.date.slice(5),

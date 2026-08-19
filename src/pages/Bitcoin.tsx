@@ -4,12 +4,13 @@ import {
 } from 'recharts';
 import { Bitcoin as BitcoinIcon, ChevronDown, ChevronRight, Pencil, Plus } from 'lucide-react';
 import type { ParkedPosition, Snapshot } from '../lib/engine';
-import { useIsDark } from '../lib/useIsDark';
+import { useChartColors } from '../lib/useIsDark';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorCard } from '../components/ui/ErrorCard';
 import { SkeletonTable } from '../components/ui/SkeletonTable';
 import { useData } from '../contexts/DataContext';
+import { lotsByPositionId } from '../lib/engine';
 import {
   isArchivedPosition, parkedCostBasis, parkedMarketValue, roundCents, unlockSummary,
 } from '../lib/engine';
@@ -39,15 +40,7 @@ export function Bitcoin() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const live = useMemo(() => btcParked.filter((p) => !isArchivedPosition(p)), [btcParked]);
-  const lotsByPosition = useMemo(() => {
-    const m = new Map<string, typeof parkedLots>();
-    for (const l of parkedLots) {
-      const list = m.get(l.parkedPositionId);
-      if (list) list.push(l);
-      else m.set(l.parkedPositionId, [l]);
-    }
-    return m;
-  }, [parkedLots]);
+  const lotsByPosition = useMemo(() => lotsByPositionId(parkedLots), [parkedLots]);
   const accountName = useMemo(
     () => new Map(accounts.map((a) => [a.id, a.name])),
     [accounts],
@@ -238,9 +231,7 @@ export function Bitcoin() {
  * VALUE, not return: buys move this line too. Days before the fourth-pot
  * split have no btcValue (bitcoin rode inside the pile's line back then). */
 function BtcValueChart({ snapshots }: { snapshots: Snapshot[] }) {
-  const isDark = useIsDark();
-  const gridColor = isDark ? '#334155' : '#e5e7eb';
-  const axisColor = isDark ? '#94a3b8' : '#6b7280';
+  const { isDark, gridColor, axisColor } = useChartColors();
   const green = isDark ? '#22c55e' : '#16a34a';
   const data = snapshots.map((s) => ({
     date: s.date.slice(5),

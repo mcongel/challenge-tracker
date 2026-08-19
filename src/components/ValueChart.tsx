@@ -1,7 +1,7 @@
 import {
   Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
-import { useIsDark } from '../lib/useIsDark';
+import { useChartColors } from '../lib/useIsDark';
 import { compactUsd, formatCurrency } from '../lib/utils';
 
 /** The house value-over-time chart — one green line, VALUE not return.
@@ -11,9 +11,7 @@ export function ValueChart({ title, note, data }: {
   note: string;
   data: { date: string; value: number }[];
 }) {
-  const isDark = useIsDark();
-  const gridColor = isDark ? '#334155' : '#e5e7eb';
-  const axisColor = isDark ? '#94a3b8' : '#6b7280';
+  const { isDark, gridColor, axisColor } = useChartColors();
   const green = isDark ? '#22c55e' : '#16a34a';
   const longSpan =
     data.length > 0 && data[data.length - 1].date.slice(0, 7) > addMonthsIso(data[0].date, 14);

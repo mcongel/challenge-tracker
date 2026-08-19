@@ -11,7 +11,8 @@ import { ErrorCard } from '../components/ui/ErrorCard';
 import { SkeletonTable } from '../components/ui/SkeletonTable';
 import { SplitModal } from '../components/SplitModal';
 import { useData } from '../contexts/DataContext';
-import type { ParkedLot, ParkedPosition, UnlockSummary } from '../lib/engine';
+import { lotsByPositionId } from '../lib/engine';
+import type { ParkedPosition, UnlockSummary } from '../lib/engine';
 import {
   adjustmentsForLots, concentration, contributionStatus, daysBetween, dividendsCollected,
   estimatedPileTax, isArchivedPosition, isNeverTrimFuel, netContributed, parkedCostBasis,
@@ -79,11 +80,7 @@ export function ParkedPile() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
 
-  const lotsByPosition = useMemo(() => {
-    const m = new Map<string, ParkedLot[]>();
-    for (const l of parkedLots) (m.get(l.parkedPositionId) ?? m.set(l.parkedPositionId, []).get(l.parkedPositionId)!).push(l);
-    return m;
-  }, [parkedLots]);
+  const lotsByPosition = useMemo(() => lotsByPositionId(parkedLots), [parkedLots]);
   const divTotal = dividendsCollected(parkedLots);
 
   // Total return per position (price + income + realized, ROC counted once)

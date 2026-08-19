@@ -4,7 +4,7 @@ import {
   Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import { Plus, ScrollText, Trash2 } from 'lucide-react';
-import { useIsDark } from '../lib/useIsDark';
+import { useChartColors } from '../lib/useIsDark';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
@@ -45,7 +45,7 @@ export function TradeLog() {
   const [deletingTradeId, setDeletingTradeId] = useState<string | null>(null);
   const [deletingOutsideId, setDeletingOutsideId] = useState<string | null>(null);
 
-  const isDark = useIsDark();
+  const { gridColor, axisColor } = useChartColors();
   const currentYear = taxYearOf(todayISO());
   const ytd = netRealizedYTD(trades, currentYear);
   const ordered = [...trades].sort((a, b) => b.closeDate.localeCompare(a.closeDate));
@@ -125,13 +125,13 @@ export function TradeLog() {
           <div className="h-40">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={byMonth} margin={{ top: 8, right: 12, bottom: 0, left: 4 }}>
-                <CartesianGrid stroke={isDark ? '#334155' : '#e5e7eb'} vertical={false} />
-                <XAxis dataKey="month" stroke={isDark ? '#94a3b8' : '#6b7280'} tickLine={false}
+                <CartesianGrid stroke={gridColor} vertical={false} />
+                <XAxis dataKey="month" stroke={axisColor} tickLine={false}
                   axisLine={false} tick={{ fontSize: 11 }} />
-                <YAxis stroke={isDark ? '#94a3b8' : '#6b7280'} tickLine={false} axisLine={false}
+                <YAxis stroke={axisColor} tickLine={false} axisLine={false}
                   tick={{ fontSize: 11 }} tickFormatter={compactUsd} width={52} />
                 <Tooltip formatter={(v) => formatCurrency(Number(v))} cursor={{ fill: 'transparent' }} />
-                <ReferenceLine y={0} stroke={isDark ? '#94a3b8' : '#6b7280'} />
+                <ReferenceLine y={0} stroke={axisColor} />
                 <Bar dataKey="net" name="Net realized">
                   {byMonth.map((q) => (
                     <Cell key={q.month} fill={q.net >= 0 ? GAIN : LOSS} />

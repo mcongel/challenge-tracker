@@ -12,6 +12,7 @@ import { SkeletonTable } from '../components/ui/SkeletonTable';
 import { CLASSIFICATION_LABELS, classificationPillCls, SortHeader } from '../components/parked/shared';
 import type { SortState } from '../components/parked/shared';
 import { useData } from '../contexts/DataContext';
+import { lotsByPositionId } from '../lib/engine';
 import { Link } from 'react-router-dom';
 import type {
   DividendClassification, DividendFrequency, ParkedLot, ParkedPosition, PositionIncomeSummary,
@@ -24,7 +25,7 @@ import {
   cn, compactUsd, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls,
   safeStorage, secondaryBtnCls, todayISO,
 } from '../lib/utils';
-import { useIsDark } from '../lib/useIsDark';
+import { useChartColors } from '../lib/useIsDark';
 
 /** Same CVD-validated pair as the Dashboard chart: actuals in brand green,
  * projections in indigo. No new hues. */
@@ -75,11 +76,7 @@ export function Income() {
     return allLots.filter((l) => pileIds.has(l.parkedPositionId));
   }, [allLots, parked]);
 
-  const lotsByPosition = useMemo(() => {
-    const m = new Map<string, ParkedLot[]>();
-    for (const l of parkedLots) (m.get(l.parkedPositionId) ?? m.set(l.parkedPositionId, []).get(l.parkedPositionId)!).push(l);
-    return m;
-  }, [parkedLots]);
+  const lotsByPosition = useMemo(() => lotsByPositionId(parkedLots), [parkedLots]);
 
   const summaries = useMemo(
     () =>
@@ -120,9 +117,7 @@ export function Income() {
   }, [summaries]);
 
   // 24-month chart: trailing actuals then projected months.
-  const isDark = useIsDark();
-  const gridColor = isDark ? '#334155' : '#e5e7eb';
-  const axisColor = isDark ? '#94a3b8' : '#6b7280';
+  const { isDark, gridColor, axisColor } = useChartColors();
   const chartData = useMemo(() => {
     const projectedByMonth = new Map<string, number>();
     for (const s of summaries) {

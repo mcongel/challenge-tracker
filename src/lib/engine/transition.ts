@@ -17,7 +17,7 @@
 
 import { longTermDate, taxYearOf } from './dates';
 import { isArchivedPosition, parkedMarketValue } from './parked';
-import { consumeLotsFifo, trimPreview } from './parkedLots';
+import { consumeLotsFifo, lotsByPositionId, trimPreview } from './parkedLots';
 import { estimatedPileTax } from './pileTax';
 import type { ParkedLot } from './parkedLots';
 import { projectPositionIncome } from './parkedIncome';
@@ -151,12 +151,7 @@ export function projectScenario(args: {
 
   const live = positions.filter((p) => !isArchivedPosition(p));
   const posById = new Map(live.map((p) => [p.id, p]));
-  const lotsByPosition = new Map<string, ParkedLot[]>();
-  for (const l of lots) {
-    const arr = lotsByPosition.get(l.parkedPositionId);
-    if (arr) arr.push(l);
-    else lotsByPosition.set(l.parkedPositionId, [l]);
-  }
+  const lotsByPosition = lotsByPositionId(lots);
 
   // ---- Baseline income per live position ------------------------------------
   const excludedPositionIds: string[] = [];

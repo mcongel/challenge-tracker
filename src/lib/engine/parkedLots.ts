@@ -91,6 +91,18 @@ export function dividendsCollected(lots: ParkedLot[]): number {
   return sum(lots.filter((l) => l.source === 'dividend').map((l) => l.amount));
 }
 
+/** Lots grouped by position id — previously hand-rolled (four different
+ * ways) on every page that renders lot detail. */
+export function lotsByPositionId(lots: ParkedLot[]): Map<string, ParkedLot[]> {
+  const m = new Map<string, ParkedLot[]>();
+  for (const l of lots) {
+    const list = m.get(l.parkedPositionId);
+    if (list) list.push(l);
+    else m.set(l.parkedPositionId, [l]);
+  }
+  return m;
+}
+
 export interface LotConsumption {
   updates: { id: string; shares: number; amount: number }[];
   deletes: string[];
