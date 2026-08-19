@@ -455,17 +455,37 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       });
       if (stale.length === 0) return;
       const client = db();
+      // All rows of a ticker share the price, so batch one UPDATE per ticker
+      // and run them concurrently. Best-effort (live quotes still drive the
+      // UI) — a failed batch just stays stale and retries next poll. Only
+      // what persisted gets patched into state; NO full refresh here: this
+      // runs on every 30-minute poll and every tab refocus.
+      const byTicker = new Map<string, { price: number; ids: string[] }>();
       for (const p of stale) {
-        const price = fresh[p.ticker].price;
-        const { error: err } = await client
-          .from('parked_positions')
-          .update({ current_price: Math.round(price * 10000) / 10000 })
-          .eq('id', p.id);
-        if (err) return; // best-effort; live quotes still drive the UI
+        const price = Math.round(fresh[p.ticker].price * 10000) / 10000;
+        const g = byTicker.get(p.ticker);
+        if (g) g.ids.push(p.id);
+        else byTicker.set(p.ticker, { price, ids: [p.id] });
       }
-      await refresh();
+      const persisted = new Map<string, number>();
+      await Promise.all(
+        [...byTicker.values()].map(async (g) => {
+          const { error: err } = await client
+            .from('parked_positions')
+            .update({ current_price: g.price })
+            .in('id', g.ids);
+          if (!err) for (const id of g.ids) persisted.set(id, g.price);
+        }),
+      );
+      if (persisted.size === 0) return;
+      setState((prev) => ({
+        ...prev,
+        parked: prev.parked.map((p) =>
+          persisted.has(p.id) ? { ...p, currentPrice: persisted.get(p.id)! } : p,
+        ),
+      }));
     },
-    [state.parked, refresh, isQuotable],
+    [state.parked, isQuotable],
   );
 
   const lastQuoteFetchAt = useRef(0);
@@ -1589,16 +1609,28 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [refresh, state.parked, state.parkedLots, state.parkedLotAdjustments, state.accounts, recomputeParkedAggregate],
   );
 
+  // The O(accounts × ledger) walk runs ONCE per data change, not per call —
+  // Accounts, ParkedPile, and Activity all invoke accountCash inside render
+  // loops, and the un-memoized version recomputed five array scans each time.
+  const accountCashById = useMemo(() => {
+    const args = {
+      parkedCashEvents: state.parkedCashEvents,
+      parkedSales: state.parkedSales,
+      parkedLots: state.parkedLots,
+      parked: state.parked,
+      cashEvents: state.cashEvents,
+    };
+    const m = new Map<string, ReturnType<typeof computeAccountCash>>();
+    for (const a of state.accounts) m.set(a.id, computeAccountCash(a.id, args));
+    return { m, args };
+  }, [
+    state.accounts, state.parkedCashEvents, state.parkedSales, state.parkedLots,
+    state.parked, state.cashEvents,
+  ]);
   const accountCash = useCallback(
     (accountId: string) =>
-      computeAccountCash(accountId, {
-        parkedCashEvents: state.parkedCashEvents,
-        parkedSales: state.parkedSales,
-        parkedLots: state.parkedLots,
-        parked: state.parked,
-        cashEvents: state.cashEvents,
-      }),
-    [state.parkedCashEvents, state.parkedSales, state.parkedLots, state.parked, state.cashEvents],
+      accountCashById.m.get(accountId) ?? computeAccountCash(accountId, accountCashById.args),
+    [accountCashById],
   );
 
   const addParkedCashEvent = useCallback(
@@ -2355,15 +2387,39 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [refresh, state.parked, recomputeParkedAggregate],
   );
 
+  /** Targeted refetches for tables with zero cross-effects — a settings or
+   * watchlist edit must not re-pull the entire ledger (the full refresh is
+   * 20 paged reads). Same pattern as refreshScenarios. */
+  const refreshSettings = useCallback(async () => {
+    const client = db();
+    const { data, error: err } = await fetchAll(() =>
+      client.from('app_settings').select('*').order('key'),
+    );
+    if (err) throw err;
+    setState((prev) => ({
+      ...prev,
+      settings: Object.fromEntries((data ?? []).map((r: any) => [r.key, r.value])),
+    }));
+  }, []);
+
+  const refreshWatchlist = useCallback(async () => {
+    const client = db();
+    const { data, error: err } = await fetchAll(() =>
+      client.from('watchlist').select('*').order('catalyst_date', { nullsFirst: false }).order('id'),
+    );
+    if (err) throw err;
+    setState((prev) => ({ ...prev, watchlist: (data ?? []).map(mapWatchlistItem) }));
+  }, []);
+
   const updateSetting = useCallback(
     async (key: string, value: unknown) => {
       const { error: err } = await db()
         .from('app_settings')
         .upsert({ key, value, updated_at: new Date().toISOString() });
       if (err) throw err;
-      await refresh();
+      await refreshSettings();
     },
-    [refresh],
+    [refreshSettings],
   );
 
   /** Several settings in one atomic upsert + one refresh — a partial save
@@ -2374,9 +2430,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const rows = Object.entries(entries).map(([key, value]) => ({ key, value, updated_at }));
       const { error: err } = await db().from('app_settings').upsert(rows);
       if (err) throw err;
-      await refresh();
+      await refreshSettings();
     },
-    [refresh],
+    [refreshSettings],
   );
 
   /** Bench management — plain CRUD, context only. */
@@ -2384,9 +2440,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     async (w: Omit<WatchlistItem, 'id' | 'createdAt'>) => {
       const { error: err } = await db().from('watchlist').insert(watchlistItemPayload(w));
       if (err) throw err;
-      await refresh();
+      await refreshWatchlist();
     },
-    [refresh],
+    [refreshWatchlist],
   );
 
   const updateWatchlistItem = useCallback(
@@ -2394,9 +2450,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const { error: err } = await db()
         .from('watchlist').update(watchlistItemPayload(w)).eq('id', id);
       if (err) throw err;
-      await refresh();
+      await refreshWatchlist();
     },
-    [refresh],
+    [refreshWatchlist],
   );
 
   const addPileTaxSetAside = useCallback(
@@ -2421,9 +2477,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     async (id: string) => {
       const { error: err } = await db().from('watchlist').delete().eq('id', id);
       if (err) throw err;
-      await refresh();
+      await refreshWatchlist();
     },
-    [refresh],
+    [refreshWatchlist],
   );
 
   /** The January ritual: after the 1099 arrives, record (or correct) the
@@ -2553,25 +2609,44 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const setOverride = useCallback(
     async (ticker: string, price: number) => {
+      const set_at = new Date().toISOString();
       const { error: err } = await db()
         .from('price_overrides')
-        .upsert({ ticker, price, set_at: new Date().toISOString() });
+        .upsert({ ticker, price, set_at });
       if (err) throw err;
-      await refresh();
+      // Overrides live wholly in state.overrides — patch, don't re-pull 20 tables.
+      setState((prev) => ({
+        ...prev,
+        overrides: { ...prev.overrides, [ticker]: price },
+        overrideSetAt: { ...prev.overrideSetAt, [ticker]: set_at },
+      }));
     },
-    [refresh],
+    [],
   );
 
   const updateParkedPrices = useCallback(
     async (entries: { id: string; price: number }[]) => {
       if (entries.length === 0) return;
       const client = db();
-      for (const e of entries) {
-        const { error: err } = await client
-          .from('parked_positions').update({ current_price: e.price }).eq('id', e.id);
-        if (err) throw err;
+      // Concurrent single-row updates, then a local patch. On any failure,
+      // resync from the DB before surfacing — some rows may have written.
+      const results = await Promise.all(
+        entries.map((e) =>
+          client.from('parked_positions').update({ current_price: e.price }).eq('id', e.id),
+        ),
+      );
+      const firstErr = results.find((r) => r.error)?.error;
+      if (firstErr) {
+        await refresh();
+        throw firstErr;
       }
-      await refresh();
+      const byId = new Map(entries.map((e) => [e.id, e.price]));
+      setState((prev) => ({
+        ...prev,
+        parked: prev.parked.map((p) =>
+          byId.has(p.id) ? { ...p, currentPrice: byId.get(p.id)! } : p,
+        ),
+      }));
     },
     [refresh],
   );
@@ -2584,18 +2659,34 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         .from('price_overrides')
         .upsert(entries.map((e) => ({ ticker: e.ticker, price: e.price, set_at })));
       if (err) throw err;
-      await refresh();
+      setState((prev) => ({
+        ...prev,
+        overrides: {
+          ...prev.overrides,
+          ...Object.fromEntries(entries.map((e) => [e.ticker, e.price])),
+        },
+        overrideSetAt: {
+          ...prev.overrideSetAt,
+          ...Object.fromEntries(entries.map((e) => [e.ticker, set_at])),
+        },
+      }));
     },
-    [refresh],
+    [],
   );
 
   const clearOverride = useCallback(
     async (ticker: string) => {
       const { error: err } = await db().from('price_overrides').delete().eq('ticker', ticker);
       if (err) throw err;
-      await refresh();
+      setState((prev) => {
+        const overrides = { ...prev.overrides };
+        const overrideSetAt = { ...prev.overrideSetAt };
+        delete overrides[ticker];
+        delete overrideSetAt[ticker];
+        return { ...prev, overrides, overrideSetAt };
+      });
     },
-    [refresh],
+    [],
   );
 
   const contributionCap =
