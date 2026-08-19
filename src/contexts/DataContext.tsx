@@ -198,8 +198,23 @@ interface DataContextValue extends DataState {
     voo?: { accountId: string; price: number },
   ) => Promise<void>;
   addAccount: (name: string, kind: AccountKind, broker?: string, retirementFlavor?: string) => Promise<void>;
-  /** Rename/relabel only — kind is immutable (it steers ledger/pile logic). */
-  updateAccount: (id: string, patch: { name?: string; broker?: string | null; notes?: string | null }) => Promise<void>;
+  /** Renames/relabels are always safe (ids reference the account everywhere).
+   * Kind steers ledger/pile/retirement logic — callers may only pass it for
+   * an account nothing references yet (the Accounts screen enforces this). */
+  updateAccount: (
+    id: string,
+    patch: {
+      name?: string;
+      broker?: string | null;
+      notes?: string | null;
+      kind?: AccountKind;
+      retirementFlavor?: string | null;
+    },
+  ) => Promise<void>;
+  /** Only for unreferenced accounts (no holdings, sales, or ledger rows —
+   * the Accounts screen enforces this). Takes the account's own manual cash
+   * movements with it; they mean nothing without their account. */
+  deleteAccount: (id: string) => Promise<void>;
   addOutsideSale: (sale: Omit<OutsideSale, 'id'>) => Promise<void>;
   deleteOutsideSale: (id: string) => Promise<void>;
   /** The trim flow in one action: shrink (or remove) the parked position,
@@ -861,20 +876,51 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [refresh],
   );
 
-  /** Labels only — accounts are referenced by id everywhere, so a rename
-   * touches nothing else. Kind stays immutable; it steers real logic. */
+  /** Accounts are referenced by id everywhere, so renames/relabels touch
+   * nothing else. Kind steers real logic (pile vs retirement wall, ledger
+   * dropdowns) — the Accounts screen only offers it for empty accounts. */
   const updateAccount = useCallback(
-    async (id: string, patch: { name?: string; broker?: string | null; notes?: string | null }) => {
+    async (
+      id: string,
+      patch: {
+        name?: string;
+        broker?: string | null;
+        notes?: string | null;
+        kind?: AccountKind;
+        retirementFlavor?: string | null;
+      },
+    ) => {
       const payload: Record<string, unknown> = {};
       if (patch.name !== undefined) payload.name = patch.name;
       if (patch.broker !== undefined) payload.broker = patch.broker;
       if (patch.notes !== undefined) payload.notes = patch.notes;
+      if (patch.kind !== undefined) payload.kind = patch.kind;
+      if (patch.retirementFlavor !== undefined) payload.retirement_flavor = patch.retirementFlavor;
       if (Object.keys(payload).length === 0) return;
       const { error: err } = await db().from('accounts').update(payload).eq('id', id);
       if (err) throw err;
       await refresh();
     },
     [refresh],
+  );
+
+  const deleteAccount = useCallback(
+    async (id: string) => {
+      // Belt and suspenders under the screen's own empty check: refuse when
+      // anything besides the account's own manual cash movements points here.
+      const referenced =
+        state.parked.some((p) => p.accountId === id) ||
+        state.parkedSales.some((s) => s.accountId === id) ||
+        state.outsideSales.some((s) => s.accountId === id) ||
+        state.cashEvents.some((e) => e.accountId === id || e.destinationAccountId === id);
+      if (referenced) throw new Error('Account still has holdings, sales, or ledger history.');
+      const { error: cashErr } = await db().from('parked_cash_events').delete().eq('account_id', id);
+      if (cashErr) throw cashErr;
+      const { error: err } = await db().from('accounts').delete().eq('id', id);
+      if (err) throw err;
+      await refresh();
+    },
+    [refresh, state.parked, state.parkedSales, state.outsideSales, state.cashEvents],
   );
 
   const addAccount = useCallback(
@@ -2540,6 +2586,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       deleteMilestone,
       addAccount,
       updateAccount,
+      deleteAccount,
       addOutsideSale,
       deleteOutsideSale,
       recordTrim,
@@ -2582,7 +2629,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       refresh, addCashEvent, updateCashEvent, deleteCashEvent, addLot, deleteLot, updateLotDetails,
       closePosition, recordSplit,
       setTradeWashSale, deleteTrade, updateParked, recordMilestone, deleteMilestone,
-      addAccount, updateAccount, addOutsideSale,
+      addAccount, updateAccount, deleteAccount, addOutsideSale,
       deleteOutsideSale, recordTrim, addParkedLot, deleteParkedLot, reclassifyDividend,
       reclassifyDividends,
       allocateRocDividends, addParkedPosition,

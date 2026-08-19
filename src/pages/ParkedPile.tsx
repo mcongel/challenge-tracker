@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   AlertTriangle, Archive, ArrowLeftRight, ChevronDown, ChevronRight, Divide, Lock, Pencil, Plus,
   Scissors, Settings2, Unlock,
@@ -22,7 +23,6 @@ import {
 import { categoryPillCls, fmtSh, SortHeader, unlockSentence } from '../components/parked/shared';
 import type { SortState } from '../components/parked/shared';
 import { PileValueChart } from '../components/parked/PileValueChart';
-import { AccountsModal } from '../components/parked/AccountsModal';
 import { AddHoldingModal } from '../components/parked/AddHoldingModal';
 import { EditParkedModal } from '../components/parked/EditParkedModal';
 import { LotPanel } from '../components/parked/LotPanel';
@@ -73,7 +73,6 @@ export function ParkedPile() {
   };
   const [transferring, setTransferring] = useState<ParkedPosition | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [accountsOpen, setAccountsOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
 
   const lotsByPosition = useMemo(() => {
@@ -297,10 +296,10 @@ export function ParkedPile() {
         subtitle="The foundation — context only, never in the score. Funding source and skim destination; never refill fuel."
         actions={
           <div className="flex gap-2">
-            <button onClick={() => setAccountsOpen(true)}
+            <Link to="/accounts"
               className={cn(secondaryBtnCls, 'flex items-center gap-1.5')} title="Manage accounts">
               <Settings2 className="h-4 w-4" /> Accounts
-            </button>
+            </Link>
             <button onClick={() => setAddOpen(true)}
               className={cn(primaryBtnCls, 'flex items-center gap-1.5')}>
               <Plus className="h-4 w-4" /> Buy
@@ -530,7 +529,7 @@ export function ParkedPile() {
                                   {formatCurrency(Math.abs(roundCents(groupValue - groupBasis)))}
                                 </span>
                               )}
-                              <span className="tabular-nums" title="Tracked strategy cash — auto-flows from sales, dividends, buys, and challenge funding, plus your manual entries. Reconcile in the Accounts modal.">
+                              <span className="tabular-nums" title="Tracked strategy cash — auto-flows from sales, dividends, buys, and challenge funding, plus your manual entries. Reconcile on the Accounts screen.">
                                 {' '}· {formatCurrency(roundCents(accountCash(group.key).balance))} cash
                               </span>
                             </span>
@@ -694,7 +693,6 @@ export function ParkedPile() {
       )}
       {transferring && <TransferModal position={transferring} onClose={() => setTransferring(null)} />}
       {splitTicker && <SplitModal ticker={splitTicker} onClose={() => setSplitTicker(null)} />}
-      {accountsOpen && <AccountsModal onClose={() => setAccountsOpen(false)} />}
       {addOpen && <AddHoldingModal onClose={() => setAddOpen(false)} />}
       {capOpen && (
         <CapModal

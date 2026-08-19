@@ -99,7 +99,7 @@ export function Retirement() {
             <button onClick={() => setAddOpen(true)}
               className={cn(primaryBtnCls, 'flex items-center gap-1.5')}
               disabled={retirementAccounts.length === 0}
-              title={retirementAccounts.length === 0 ? 'Add a retirement account first (Parked Pile → Accounts)' : undefined}>
+              title={retirementAccounts.length === 0 ? 'Add a retirement account first (Accounts screen)' : undefined}>
               <Plus className="h-4 w-4" /> Buy
             </button>
           </div>
@@ -114,7 +114,7 @@ export function Retirement() {
         <EmptyState
           icon={PiggyBank}
           title="No retirement accounts yet"
-          hint="Add one under Parked Pile → Accounts with kind 'retirement' (and a flavor like Roth IRA), then Buy holdings into it here."
+          hint="Add one on the Accounts screen with kind 'retirement' (and a flavor like Roth IRA), then Buy holdings into it here."
         />
       ) : live.length === 0 ? (
         <EmptyState

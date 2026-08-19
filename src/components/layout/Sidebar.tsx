@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
+  Building2,
   Wallet,
   TrendingUp,
   ScrollText,
@@ -28,7 +29,10 @@ export const NAV_SECTIONS: {
 }[] = [
   {
     label: null,
-    items: [{ to: '/', label: 'Dashboard', icon: LayoutDashboard }],
+    items: [
+      { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+      { to: '/accounts', label: 'Accounts', icon: Building2 },
+    ],
   },
   {
     label: 'Challenge',

@@ -244,12 +244,13 @@ export function Help() {
             the concentration.
           </li>
           <li>
-            <strong className="text-gray-900">Accounts</strong> button: brokerages and bank
-            accounts live here, each showing <em>tracked strategy cash</em> — what the app has
+            <Screen to="/accounts">Accounts</Screen> screen: brokerages and bank
+            accounts live there, each showing <em>tracked strategy cash</em> — what the app has
             routed there, deliberately not your real balance.{' '}
             <strong className="text-gray-900">Reconcile monthly</strong>: type the brokerage's
             actual figure and an adjustment keeps the number true; each card shows how long since
-            the last reconcile. ACATS landed? Edit the position, change its account.
+            the last reconcile. Empty accounts can be deleted or re-kinded there. ACATS landed?
+            Edit the position, change its account.
           </li>
         </ul>
       </Card>
