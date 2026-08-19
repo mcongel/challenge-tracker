@@ -1,3 +1,5 @@
+import { roundCents } from './engine/money';
+
 const usd = new Intl.NumberFormat('en-US', {
   style: 'currency',
   currency: 'USD',
@@ -8,6 +10,14 @@ const usd = new Intl.NumberFormat('en-US', {
 export function formatCurrency(value: number): string {
   return usd.format(value);
 }
+
+/** Display money, ALWAYS rounded at the boundary — use this instead of
+ * remembering formatCurrency(roundCents(x)) at every call site. */
+export const money = (value: number): string => usd.format(roundCents(value));
+
+/** Signed display money with the house sign convention (real minus sign). */
+export const signedMoney = (value: number): string =>
+  `${value >= 0 ? '+' : '−'}${usd.format(Math.abs(roundCents(value)))}`;
 
 const usdWhole = new Intl.NumberFormat('en-US', {
   style: 'currency',

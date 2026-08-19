@@ -8,13 +8,16 @@ import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { AccountSelect } from '../components/ui/AccountSelect';
 import { ErrorCard } from '../components/ui/ErrorCard';
 import { SkeletonTable } from '../components/ui/SkeletonTable';
+import { TableCard, theadCls } from '../components/ui/Card';
+import { Field } from '../components/ui/Field';
+import { FormError, ModalFooter, useModalForm } from '../components/ui/useModalForm';
 import { useData } from '../contexts/DataContext';
 import {
   computeCheck, estimatedPileTax, formatQuarterLabel, quarterOf, quartersEnded,
   reservedByAccount, roundCents, taxYearOf,
 } from '../lib/engine';
 import {
-  cn, errorMessage, formatCurrency, inputCls, labelCls, primaryBtnCls, secondaryBtnCls, todayISO,
+  cn, errorMessage, inputCls, money, primaryBtnCls, secondaryBtnCls, todayISO,
 } from '../lib/utils';
 
 export function TaxReserve() {
@@ -53,7 +56,7 @@ export function TaxReserve() {
         title="Tax Reserve"
         subtitle="Every quarter: 30% of net realized gains YTD moves out of play. Non-negotiable — it's what makes a blown account a shrug instead of a debt."
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={() => setCarryOpen(true)}
               className={cn(secondaryBtnCls, 'flex items-center gap-1.5')}
@@ -84,7 +87,7 @@ export function TaxReserve() {
 
       {carryThisYear && (
         <div className="mb-4 bg-sky-50 text-sky-800 rounded-lg px-4 py-3 text-sm">
-          Loss carryforward into {carryThisYear.taxYear}: {formatCurrency(carryThisYear.amount)} —
+          Loss carryforward into {carryThisYear.taxYear}: {money(carryThisYear.amount)} —
           offsets gains before the 30% applies.{' '}
           <button onClick={() => setCarryOpen(true)} className="underline hover:no-underline">
             Edit
@@ -101,10 +104,34 @@ export function TaxReserve() {
           hint="The checklist starts once there's activity. Each quarter's number auto-computes from the Trade Log the day the quarter ends."
         />
       ) : (
-        <div className="bg-white rounded-lg shadow-lg overflow-x-auto">
+        <TableCard
+          footer={
+            <>
+              {heldIn.length > 0 && (
+                <p className="px-4 py-2 text-xs text-gray-500 border-t border-gray-100">
+                  Reserve held in:{' '}
+                  {heldIn
+                    .map(([accountId, amount]) =>
+                      `${accountId ? accounts.find((a) => a.id === accountId)?.name ?? 'unknown' : 'unassigned'} ${money(amount)}`)
+                    .join(' · ')}
+                </p>
+              )}
+              <p className="px-4 py-3 text-xs text-gray-400 border-t border-gray-100">
+                "Mark moved" writes the TaxSkim to the Cash Ledger — the money leaves the score's account
+                column and joins the reserved column. There is no off switch.
+              </p>
+              {pileEstTax > 0 && (
+                <p className="px-4 pb-3 text-xs text-gray-400">
+                  Separately: parked-pile sales carry est. tax of {money(pileEstTax)}{' '}
+                  — the skim never covers the pile; set that aside yourself.
+                </p>
+              )}
+            </>
+          }
+        >
           <table className="w-full text-sm compact-table">
             <thead className="bg-gray-50 sticky top-0">
-              <tr className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+              <tr className={theadCls}>
                 <th className="px-4 py-3">Quarter</th>
                 <th className="px-4 py-3 text-right">Net realized YTD</th>
                 <th className="px-4 py-3 text-right">Target (30%)</th>
@@ -123,11 +150,11 @@ export function TaxReserve() {
                       {label}
                       <span className="ml-2 text-xs font-normal text-gray-400">ended {c.endDate}</span>
                     </td>
-                    <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(roundCents(c.netRealizedYTD))}</td>
-                    <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(c.reserveTarget)}</td>
-                    <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(roundCents(c.alreadyReserved))}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">{money(c.netRealizedYTD)}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">{money(c.reserveTarget)}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">{money(c.alreadyReserved)}</td>
                     <td className={cn('px-4 py-3 text-right tabular-nums font-bold', due ? 'text-yellow-700' : 'text-gray-400')}>
-                      {formatCurrency(c.moveOutNow)}
+                      {money(c.moveOutNow)}
                     </td>
                     <td className="px-4 py-3">
                       {due ? (
@@ -135,7 +162,7 @@ export function TaxReserve() {
                           onClick={() => setPendingSkim({ label, amount: c.moveOutNow })}
                           className={cn(primaryBtnCls, 'py-1 px-2.5 text-xs')}
                         >
-                          {`Mark moved ${formatCurrency(c.moveOutNow)}`}
+                          {`Mark moved ${money(c.moveOutNow)}`}
                         </button>
                       ) : (
                         <span className="inline-block rounded-full bg-green-50 text-green-700 px-2 py-0.5 text-xs font-medium">
@@ -151,36 +178,17 @@ export function TaxReserve() {
                   {formatQuarterLabel(current)}
                   <span className="ml-2 text-xs font-normal text-gray-400">in progress</span>
                 </td>
-                <td className="px-4 py-3 text-right tabular-nums text-gray-500">{formatCurrency(roundCents(current.netRealizedYTD))}</td>
-                <td className="px-4 py-3 text-right tabular-nums text-gray-500">{formatCurrency(current.reserveTarget)}</td>
-                <td className="px-4 py-3 text-right tabular-nums text-gray-500">{formatCurrency(roundCents(current.alreadyReserved))}</td>
-                <td className="px-4 py-3 text-right tabular-nums text-gray-400">{formatCurrency(current.moveOutNow)}</td>
+                <td className="px-4 py-3 text-right tabular-nums text-gray-500">{money(current.netRealizedYTD)}</td>
+                <td className="px-4 py-3 text-right tabular-nums text-gray-500">{money(current.reserveTarget)}</td>
+                <td className="px-4 py-3 text-right tabular-nums text-gray-500">{money(current.alreadyReserved)}</td>
+                <td className="px-4 py-3 text-right tabular-nums text-gray-400">{money(current.moveOutNow)}</td>
                 <td className="px-4 py-3">
                   <span className="text-xs text-gray-400">due {current.endDate}</span>
                 </td>
               </tr>
             </tbody>
           </table>
-          {heldIn.length > 0 && (
-            <p className="px-4 py-2 text-xs text-gray-500 border-t border-gray-100">
-              Reserve held in:{' '}
-              {heldIn
-                .map(([accountId, amount]) =>
-                  `${accountId ? accounts.find((a) => a.id === accountId)?.name ?? 'unknown' : 'unassigned'} ${formatCurrency(roundCents(amount))}`)
-                .join(' · ')}
-            </p>
-          )}
-          <p className="px-4 py-3 text-xs text-gray-400 border-t border-gray-100">
-            "Mark moved" writes the TaxSkim to the Cash Ledger — the money leaves the score's account
-            column and joins the reserved column. There is no off switch.
-          </p>
-          {pileEstTax > 0 && (
-            <p className="px-4 pb-3 text-xs text-gray-400">
-              Separately: parked-pile sales carry est. tax of {formatCurrency(roundCents(pileEstTax))}{' '}
-              — the skim never covers the pile; set that aside yourself.
-            </p>
-          )}
-        </div>
+        </TableCard>
       )}
 
       {pendingSkim && (
@@ -217,32 +225,22 @@ function CarryforwardModal({ onClose }: { onClose: () => void }) {
   const { carryforwards, setCarryforward } = useData();
   const [year, setYear] = useState(String(taxYearOf(todayISO())));
   const [amount, setAmount] = useState('');
-  const [formError, setFormError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [removing, setRemoving] = useState<{ taxYear: number; amount: number } | null>(null);
   const rows = [...carryforwards].sort((a, b) => b.taxYear - a.taxYear);
 
-  const save = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError(null);
+  // Saving keeps the modal open (the list is the point) and clears the amount.
+  const { busy, formError, submit } = useModalForm(async () => {
     const y = Number(year);
     const amt = Number(amount);
     if (!Number.isInteger(y) || y < 2000 || y > 2100) {
-      return setFormError('Tax year looks wrong.');
+      throw new Error('Tax year looks wrong.');
     }
     if (Number.isNaN(amt) || amt <= 0) {
-      return setFormError('Amount must be a positive dollar figure (the loss you carried in).');
+      throw new Error('Amount must be a positive dollar figure (the loss you carried in).');
     }
-    setBusy(true);
-    try {
-      await setCarryforward(y, amt);
-      setAmount('');
-    } catch (err) {
-      setFormError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+    await setCarryforward(y, amt);
+    setAmount('');
+  });
 
   return (
     <Modal isOpen onClose={onClose} title="Loss carryforwards">
@@ -253,7 +251,7 @@ function CarryforwardModal({ onClose }: { onClose: () => void }) {
               <li key={c.taxYear} className="flex items-center justify-between px-3 py-2 text-sm">
                 <span>
                   Into <span className="font-medium">{c.taxYear}</span>:{' '}
-                  <span className="tabular-nums">{formatCurrency(c.amount)}</span>
+                  <span className="tabular-nums">{money(c.amount)}</span>
                 </span>
                 <button
                   onClick={() => setRemoving(c)}
@@ -272,34 +270,28 @@ function CarryforwardModal({ onClose }: { onClose: () => void }) {
             tax year — it offsets gains before the 30% skim applies.
           </p>
         )}
-        <form onSubmit={save} className="space-y-3">
+        <form onSubmit={submit} className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={labelCls}>Tax year</label>
+            <Field label="Tax year">
               <input type="number" min="2000" max="2100" step="1" required value={year}
                 onChange={(e) => setYear(e.target.value)} className={inputCls} />
-            </div>
-            <div>
-              <label className={labelCls}>Loss carried in ($)</label>
+            </Field>
+            <Field label="Loss carried in ($)">
               <input type="number" min="0" step="0.01" required value={amount}
                 onChange={(e) => setAmount(e.target.value)} className={inputCls} placeholder="4000" />
-            </div>
+            </Field>
           </div>
           <p className="text-xs text-gray-400">
             Enter the loss as a positive number. Saving a year that already has an entry replaces it.
           </p>
-          {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
-          <div className="flex justify-end">
-            <button type="submit" disabled={busy} className={primaryBtnCls}>
-              {busy ? 'Saving…' : 'Save carryforward'}
-            </button>
-          </div>
+          <FormError message={formError} />
+          <ModalFooter busy={busy} label="Save carryforward" />
         </form>
       </div>
       {removing && (
         <ConfirmModal
           title={`Remove the ${removing.taxYear} carryforward`}
-          message={`Remove the ${formatCurrency(removing.amount)} loss carried into ${removing.taxYear}? The 30% skim base for that year rises immediately — you'd need the 1099 to restore the figure.`}
+          message={`Remove the ${money(removing.amount)} loss carried into ${removing.taxYear}? The 30% skim base for that year rises immediately — you'd need the 1099 to restore the figure.`}
           confirmLabel="Remove"
           onConfirm={() => setCarryforward(removing.taxYear, null)}
           onClose={() => setRemoving(null)}
@@ -324,34 +316,23 @@ function RatesModal({
   const [st, setSt] = useState(toPct(stTaxRate));
   const [qualified, setQualified] = useState(toPct(qualifiedRate));
   const [ordinary, setOrdinary] = useState(toPct(ordinaryRate));
-  const [formError, setFormError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const { busy, formError, submit } = useModalForm(async () => {
     const parsed = [lt, st, qualified, ordinary].map(Number);
     if (parsed.some((v) => Number.isNaN(v) || v < 0 || v > 100)) {
-      return setFormError('Rates are percentages between 0 and 100.');
+      throw new Error('Rates are percentages between 0 and 100.');
     }
-    setBusy(true);
-    try {
-      await onSave({
-        lt: parsed[0] / 100, st: parsed[1] / 100, qualified: parsed[2] / 100, ordinary: parsed[3] / 100,
-      });
-      onClose();
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+    await onSave({
+      lt: parsed[0] / 100, st: parsed[1] / 100, qualified: parsed[2] / 100, ordinary: parsed[3] / 100,
+    });
+    onClose();
+  });
 
   const field = (label: string, value: string, set: (v: string) => void) => (
-    <div>
-      <label className={labelCls}>{label}</label>
+    <Field label={label}>
       <input type="number" min="0" max="100" step="0.1" required value={value}
         onChange={(e) => set(e.target.value)} className={inputCls} />
-    </div>
+    </Field>
   );
 
   return (
@@ -367,12 +348,8 @@ function RatesModal({
           Used only for informational estimates on pile sales and parked dividends. The quarterly
           30% skim is fixed and never touched by these.
         </p>
-        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
-        <div className="flex justify-end">
-          <button type="submit" disabled={busy} className={primaryBtnCls}>
-            {busy ? 'Saving…' : 'Save rates'}
-          </button>
-        </div>
+        <FormError message={formError} />
+        <ModalFooter busy={busy} label="Save rates" />
       </form>
     </Modal>
   );
@@ -394,6 +371,8 @@ function RecordSkimModal({ label, amount, onClose, onError }: RecordSkimProps) {
 
   const [formError, setFormError] = useState<string | null>(null);
 
+  // Deliberately NOT useModalForm: a write failure routes to the PAGE's
+  // ErrorCard (onError) and closes — the skim row was the whole modal.
   const confirm = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
@@ -420,10 +399,9 @@ function RecordSkimModal({ label, amount, onClose, onError }: RecordSkimProps) {
   };
 
   return (
-    <Modal isOpen onClose={onClose} title={`Move ${formatCurrency(amount)} out of play`}>
+    <Modal isOpen onClose={onClose} title={`Move ${money(amount)} out of play`}>
       <form onSubmit={confirm} className="space-y-3">
-        <div>
-          <label className={labelCls}>Date moved</label>
+        <Field label="Date moved">
           <input type="date" required value={date} onChange={(e) => setDate(e.target.value)}
             className={inputCls} />
           {date && taxYearOf(date) !== taxYearOf(todayISO()) && (
@@ -431,19 +409,15 @@ function RecordSkimModal({ label, amount, onClose, onError }: RecordSkimProps) {
               {taxYearOf(date)} date — this skim counts toward that tax year's quarters, not this one's.
             </p>
           )}
-        </div>
+        </Field>
         <AccountSelect accounts={accounts} value={destination} onChange={setDestination}
           label="Where is the reserve parked?" kinds={['bank']} />
         <p className="text-xs text-gray-400">
           {label} skim. The destination is bookkeeping only — the reserved amount counts toward
           Total Score either way.
         </p>
-        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
-        <div className="flex justify-end">
-          <button type="submit" disabled={busy} className={primaryBtnCls}>
-            {busy ? 'Recording…' : 'Mark moved'}
-          </button>
-        </div>
+        <FormError message={formError} />
+        <ModalFooter busy={busy} label="Mark moved" busyLabel="Recording…" />
       </form>
     </Modal>
   );
