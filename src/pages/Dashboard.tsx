@@ -40,7 +40,7 @@ export function Dashboard() {
     // pileParked: the pile tile, CAP alert, and unlock line are pile rules —
     // retirement and the bitcoin bucket never move them.
     lots, cashEvents, trades, milestones, benchmarkDeposits, pileParked: parked, btcParked,
-    parkedLots,
+    retirementParked, parkedLots,
     snapshots, carryforwards, overrides, quotes, contributionCap, concentrationCap, watchlist,
     loading, error, quotesSettled,
   } = useData();
@@ -208,24 +208,48 @@ export function Dashboard() {
           </p>
           <p className="text-xs text-gray-400 mt-0.5">drives the tax skim</p>
         </Link>
-        <Link to="/parked" className="bg-white rounded-lg shadow-lg p-4 density-aware-card block hover:bg-gray-50 transition-colors">
-          <p className="text-xs font-medium text-gray-500">Parked pile</p>
-          <p className="mt-0.5 text-xl font-bold tabular-nums text-gray-500">
-            {formatCurrency(roundCents(pileTotal(parked)))}
+      </div>
+
+      {/* The other book: three pots that share a card but never the score. */}
+      <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6">
+        <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+          <p className="text-sm font-medium text-gray-700">Beyond the challenge</p>
+          <p className="text-xl font-bold tabular-nums text-gray-900">
+            {formatCurrency(roundCents(
+              pileTotal(parked) + pileTotal(btcParked) + pileTotal(retirementParked),
+            ))}
           </p>
-          <p className="text-xs text-gray-400 mt-0.5">
-            {nextUnlock
-              ? `next unlock: ${String(Number(nextUnlock.next.shares.toFixed(4)))} sh ${nextUnlock.ticker} on ${nextUnlock.next.date}`
-              : 'context only — not in score'}
-          </p>
-        </Link>
-        <Link to="/bitcoin" className="bg-white rounded-lg shadow-lg p-4 density-aware-card block hover:bg-gray-50 transition-colors">
-          <p className="text-xs font-medium text-gray-500">Bitcoin</p>
-          <p className="mt-0.5 text-xl font-bold tabular-nums text-gray-500">
-            {formatCurrency(roundCents(pileTotal(btcParked)))}
-          </p>
-          <p className="text-xs text-gray-400 mt-0.5">the conviction bucket — held, not traded</p>
-        </Link>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Link to="/parked" className="rounded-lg border border-gray-200 p-4 hover:bg-gray-50 transition-colors">
+            <p className="text-xs font-medium text-gray-500">Parked pile</p>
+            <p className="mt-0.5 text-xl font-bold tabular-nums text-gray-700">
+              {formatCurrency(roundCents(pileTotal(parked)))}
+            </p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {nextUnlock
+                ? `next unlock: ${String(Number(nextUnlock.next.shares.toFixed(4)))} sh ${nextUnlock.ticker} on ${nextUnlock.next.date}`
+                : 'the foundation — funding source'}
+            </p>
+          </Link>
+          <Link to="/bitcoin" className="rounded-lg border border-gray-200 p-4 hover:bg-gray-50 transition-colors">
+            <p className="text-xs font-medium text-gray-500">Bitcoin</p>
+            <p className="mt-0.5 text-xl font-bold tabular-nums text-gray-700">
+              {formatCurrency(roundCents(pileTotal(btcParked)))}
+            </p>
+            <p className="text-xs text-gray-400 mt-0.5">the conviction bucket — held, not traded</p>
+          </Link>
+          <Link to="/retirement" className="rounded-lg border border-gray-200 p-4 hover:bg-gray-50 transition-colors">
+            <p className="text-xs font-medium text-gray-500">Retirement</p>
+            <p className="mt-0.5 text-xl font-bold tabular-nums text-gray-700">
+              {formatCurrency(roundCents(pileTotal(retirementParked)))}
+            </p>
+            <p className="text-xs text-gray-400 mt-0.5">behind its own wall — tax-sheltered</p>
+          </Link>
+        </div>
+        <p className="mt-2 text-xs text-gray-400">
+          context only — none of this is in the score or the benchmark
+        </p>
       </div>
 
       {/* The race: Total Score vs shadow VOO over time */}

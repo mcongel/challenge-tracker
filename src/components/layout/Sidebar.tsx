@@ -1,4 +1,5 @@
-import { NavLink } from 'react-router-dom';
+import { useState } from 'react';
+import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   Bitcoin,
@@ -16,16 +17,19 @@ import {
   PiggyBank,
   Receipt,
   Sunrise,
-  BookOpen,
-  HelpCircle,
+  ChevronDown,
+  ChevronRight,
   X,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
-/** Grouped by the app's own wall: score math vs pile context. The nav
- * teaches the architecture — a screen's section says whose book it keeps. */
+/** Grouped by the app's own walls: score math vs the other pots. The nav
+ * teaches the architecture — a screen's section says whose book it keeps.
+ * The two deep books collapse (state remembered); the pots stay one row
+ * each, and Rules/Help live in the header as reference icons. */
 export const NAV_SECTIONS: {
   label: string | null;
+  collapsible?: boolean;
   items: { to: string; label: string; icon: typeof LayoutDashboard }[];
 }[] = [
   {
@@ -37,6 +41,7 @@ export const NAV_SECTIONS: {
   },
   {
     label: 'Challenge',
+    collapsible: true,
     items: [
       { to: '/ledger', label: 'Cash Ledger', icon: Wallet },
       { to: '/positions', label: 'Positions', icon: TrendingUp },
@@ -49,6 +54,7 @@ export const NAV_SECTIONS: {
   },
   {
     label: 'Parked pile',
+    collapsible: true,
     items: [
       { to: '/parked', label: 'Parked Pile', icon: Archive },
       { to: '/activity', label: 'Activity', icon: History },
@@ -58,21 +64,23 @@ export const NAV_SECTIONS: {
     ],
   },
   {
-    label: 'Bitcoin',
-    items: [{ to: '/bitcoin', label: 'Bitcoin', icon: Bitcoin }],
-  },
-  {
-    label: 'Retirement',
-    items: [{ to: '/retirement', label: 'Retirement', icon: PiggyBank }],
-  },
-  {
     label: null,
     items: [
-      { to: '/rules', label: 'Rules', icon: BookOpen },
-      { to: '/help', label: 'Help', icon: HelpCircle },
+      { to: '/bitcoin', label: 'Bitcoin', icon: Bitcoin },
+      { to: '/retirement', label: 'Retirement', icon: PiggyBank },
     ],
   },
 ];
+
+const COLLAPSE_KEY = 'sidebar-collapsed';
+
+function loadCollapsed(): Record<string, boolean> {
+  try {
+    return JSON.parse(localStorage.getItem(COLLAPSE_KEY) ?? '{}');
+  } catch {
+    return {};
+  }
+}
 
 interface SidebarProps {
   isOpen: boolean;
@@ -82,6 +90,17 @@ interface SidebarProps {
 /** Structure and classes mirror SpokenFor's Layout chunk: one aside that is a
  * slide-in drawer on mobile and static on desktop. */
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
+  const { pathname } = useLocation();
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(loadCollapsed);
+
+  const toggle = (label: string) => {
+    setCollapsed((c) => {
+      const next = { ...c, [label]: !c[label] };
+      localStorage.setItem(COLLAPSE_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
+
   return (
     <>
       {isOpen && (
@@ -109,36 +128,59 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
           </div>
 
           <nav className="flex-1 overflow-y-auto p-3 space-y-1">
-            {NAV_SECTIONS.map((section, si) => (
-              <div key={si} className={cn(si === NAV_SECTIONS.length - 1 && 'pt-2 mt-2 border-t border-gray-100 dark:border-slate-800')}>
-                {section.label && (
-                  <p className="px-3 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500">
-                    {section.label}
-                  </p>
-                )}
-                <div className="space-y-1">
-                  {section.items.map(({ to, label, icon: Icon }) => (
-                    <NavLink
-                      key={to}
-                      to={to}
-                      end={to === '/'}
-                      onClick={onClose}
-                      className={({ isActive }) =>
-                        cn(
-                          'flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors relative',
-                          isActive
-                            ? 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-300'
-                            : 'text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800',
-                        )
-                      }
-                    >
-                      <Icon className="h-5 w-5" />
-                      <span className="font-medium">{label}</span>
-                    </NavLink>
-                  ))}
+            {NAV_SECTIONS.map((section, si) => {
+              // The active section never hides its screens — collapsing is a
+              // stored preference that resumes once you navigate elsewhere.
+              const containsActive = section.items.some((i) =>
+                i.to === '/' ? pathname === '/' : pathname === i.to,
+              );
+              const open =
+                !section.collapsible || containsActive || !collapsed[section.label ?? ''];
+              return (
+                <div key={si}>
+                  {section.label &&
+                    (section.collapsible ? (
+                      <button
+                        onClick={() => toggle(section.label!)}
+                        className="w-full flex items-center justify-between px-3 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300"
+                        aria-expanded={open}
+                      >
+                        {section.label}
+                        {open
+                          ? <ChevronDown className="h-3.5 w-3.5" />
+                          : <ChevronRight className="h-3.5 w-3.5" />}
+                      </button>
+                    ) : (
+                      <p className="px-3 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500">
+                        {section.label}
+                      </p>
+                    ))}
+                  {open && (
+                    <div className="space-y-1">
+                      {section.items.map(({ to, label, icon: Icon }) => (
+                        <NavLink
+                          key={to}
+                          to={to}
+                          end={to === '/'}
+                          onClick={onClose}
+                          className={({ isActive }) =>
+                            cn(
+                              'flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors relative',
+                              isActive
+                                ? 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-300'
+                                : 'text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800',
+                            )
+                          }
+                        >
+                          <Icon className="h-5 w-5" />
+                          <span className="font-medium">{label}</span>
+                        </NavLink>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </nav>
         </div>
       </aside>

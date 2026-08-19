@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Download, LogOut, Menu, Moon, RefreshCw, Sun } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { BookOpen, Download, HelpCircle, LogOut, Menu, Moon, RefreshCw, Sun } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
 import { Modal } from '../ui/Modal';
@@ -62,6 +63,14 @@ export function Header({ onMenuClick }: HeaderProps) {
         {!quotesAsOf && quotesError && (
           <span className="text-xs text-amber-600 font-medium">quotes unavailable</span>
         )}
+        {/* Reference material lives up here, not in the nav — it's reading,
+            not workflow. */}
+        <Link to="/rules" className="p-2 rounded-md hover:bg-gray-100" aria-label="Rules" title="Rules">
+          <BookOpen className="h-5 w-5 text-gray-500" />
+        </Link>
+        <Link to="/help" className="p-2 rounded-md hover:bg-gray-100" aria-label="Help" title="Help">
+          <HelpCircle className="h-5 w-5 text-gray-500" />
+        </Link>
         <button
           onClick={doRefresh}
           className="p-2 rounded-md hover:bg-gray-100"
