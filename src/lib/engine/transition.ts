@@ -17,7 +17,8 @@
 
 import { longTermDate, taxYearOf } from './dates';
 import { isArchivedPosition, parkedMarketValue } from './parked';
-import { consumeLotsFifo, estimatedPileTax, trimPreview } from './parkedLots';
+import { consumeLotsFifo, trimPreview } from './parkedLots';
+import { estimatedPileTax } from './pileTax';
 import type { ParkedLot } from './parkedLots';
 import { projectPositionIncome } from './parkedIncome';
 import type { DividendTaxRates } from './parkedIncome';

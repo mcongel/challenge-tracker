@@ -18,7 +18,7 @@ import {
   closeShares,
   computeAccountCash, concentration, consumeLotsFifo, cumulativeFloor, isArchivedPosition,
   LT_TAX_RATE, netContributed, ORDINARY_DIVIDEND_TAX_RATE, pileTotal, planSaleRestore,
-  QUALIFIED_DIVIDEND_TAX_RATE, reservedTotal, round6, roundCents, shadowValue, spentCash,
+  QUALIFIED_DIVIDEND_TAX_RATE, reservedTotal, round6, roundCents, shadowValue,
   ST_TAX_RATE, totalScore, trimPreview,
 } from '../lib/engine';
 import type {
@@ -1689,30 +1689,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         // dividend still happened — keep the lot at zero shares so trailing
         // income and the YTD tax estimate don't shrink retroactively.
         // (Account-cash math tells sold-DRIP relics from cash dividends by
-        // price: cash dividends have none.)
-        const lotSourceById = new Map(positionLots.map((l) => [l.id, l.source]));
-        dripDeletes = consumption.deletes.filter((id) => lotSourceById.get(id) === 'dividend');
-        hardDeletes = consumption.deletes.filter((id) => lotSourceById.get(id) !== 'dividend');
+        // price: cash dividends have none.) The partition and the consumed
+        // cash-spending basis both come straight from consumeLotsFifo — one
+        // source, so they can't diverge from what was actually consumed.
+        dripDeletes = consumption.dripDeletes;
+        hardDeletes = consumption.hardDeletes;
         const stampLookup = new Map(args.allLots.map((l) => [l.id, l.rocAllocatedAt ?? null]));
         snapshot = buildSaleSnapshot(
           p, positionLots, positionAdjustments, consumption, dripDeletes,
           (id) => stampLookup.get(id),
         );
-        // RAW cash-spending basis this sale removes from the lots — the
-        // account-cash math adds it back so the original purchase stays
-        // spent. Same lot predicate as computeAccountCash's purchases leg;
-        // DRIP lots never brought cash in, so their basis doesn't count.
-        const preLotById = new Map(positionLots.map((l) => [l.id, l]));
-        let raw = 0;
-        for (const u of consumption.updates) {
-          const pre = preLotById.get(u.id);
-          if (pre && pre.source === 'purchase' && spentCash(pre)) raw += pre.amount - u.amount;
-        }
-        for (const id of consumption.deletes) {
-          const pre = preLotById.get(id);
-          if (pre && pre.source === 'purchase' && spentCash(pre)) raw += pre.amount;
-        }
-        consumedBasis = roundCents(raw) > 0 ? roundCents(raw) : null;
+        const raw = roundCents(consumption.cashSpendingBasisConsumed);
+        consumedBasis = raw > 0 ? raw : null;
       }
 
       if (!consumption) {

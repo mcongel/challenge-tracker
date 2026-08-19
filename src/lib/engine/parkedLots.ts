@@ -1,5 +1,6 @@
 import { longTermDate } from './dates';
 import { round6, roundCents, sum } from './money';
+import { spentCash } from './parkedCash';
 import type { ParkedLotAdjustment } from './parkedRoc';
 
 /** Tax character of a dividend. Brokers reclassify after the 1099, so lots
@@ -89,6 +90,16 @@ export function dividendsCollected(lots: ParkedLot[]): number {
 export interface LotConsumption {
   updates: { id: string; shares: number; amount: number }[];
   deletes: string[];
+  /** deletes, partitioned by source. DRIP dividend lots double as income
+   * records — recordTrim keeps them at zero shares instead of deleting, so
+   * trailing income and the YTD tax estimate don't shrink retroactively. */
+  dripDeletes: string[];
+  hardDeletes: string[];
+  /** RAW cash-spending purchase basis this consumption removes from the lots
+   * (spentCash predicate — ACATS/milestone lots never brought cash in). The
+   * account-cash math adds it back so the original purchase stays spent.
+   * Computed HERE so it can't diverge from what was actually consumed. */
+  cashSpendingBasisConsumed: number;
   /** Scale surviving ROC-adjustment rows on partially consumed lots (amount ×
    * remaining fraction). Fully consumed lots need nothing — the FK cascade
    * removes their rows with the lot. */
@@ -129,8 +140,11 @@ export function consumeLotsFifo(
   }
   const updates: LotConsumption['updates'] = [];
   const deletes: string[] = [];
+  const dripDeletes: string[] = [];
+  const hardDeletes: string[] = [];
   const adjustmentUpdates: LotConsumption['adjustmentUpdates'] = [];
   const consumed: LotConsumption['consumed'] = [];
+  let cashSpendingBasisConsumed = 0;
   let remaining = sharesToSell;
   for (const lot of ordered) {
     if (remaining <= 1e-9) break;
@@ -148,6 +162,7 @@ export function consumeLotsFifo(
       for (const a of lotAdjs) {
         adjustmentUpdates.push({ id: a.id, amount: round6(a.amount * keptFraction) });
       }
+      if (lot.source === 'purchase' && spentCash(lot)) cashSpendingBasisConsumed += consumedAmount;
       consumed.push({
         id: lot.id,
         date: lot.date,
@@ -158,6 +173,8 @@ export function consumeLotsFifo(
       });
     } else {
       deletes.push(lot.id);
+      (lot.source === 'dividend' ? dripDeletes : hardDeletes).push(lot.id);
+      if (lot.source === 'purchase' && spentCash(lot)) cashSpendingBasisConsumed += lot.amount;
       consumed.push({
         id: lot.id,
         date: lot.date,
@@ -168,29 +185,7 @@ export function consumeLotsFifo(
       });
     }
   }
-  return { updates, deletes, adjustmentUpdates, consumed };
-}
-
-/** Spec's rough combined rates: ~21% long-term, ~28–30% short-term. Defaults
- * only — live values come from app_settings (lt_tax_rate / st_tax_rate). */
-export const LT_TAX_RATE = 0.21;
-export const ST_TAX_RATE = 0.29;
-
-/**
- * Rough tax estimate on a positive pile gain, blended by the long-term share
- * fraction. Unknown term assumes long-term (planned trims should be). Context
- * only — the quarterly skim is challenge-account-only and never covers this.
- */
-export function estimatedPileTax(
-  gain: number,
-  shares: number,
-  ltShares: number | null | undefined,
-  ltRate: number = LT_TAX_RATE,
-  stRate: number = ST_TAX_RATE,
-): number {
-  if (gain <= 0 || shares <= 0) return 0;
-  const ltFrac = ltShares == null ? 1 : Math.min(1, Math.max(0, ltShares / shares));
-  return gain * (ltFrac * ltRate + (1 - ltFrac) * stRate);
+  return { updates, deletes, dripDeletes, hardDeletes, adjustmentUpdates, consumed, cashSpendingBasisConsumed };
 }
 
 export interface TrimPreview {

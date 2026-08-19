@@ -706,7 +706,7 @@ describe('parked income — trailing, projection, yield, dividend tax', () => {
   });
 
   it('estimatedPileTax: explicit rates override the spec defaults', async () => {
-    const { estimatedPileTax } = await import('../parkedLots');
+    const { estimatedPileTax } = await import('../pileTax');
     expect(estimatedPileTax(1000, 10, 10)).toBeCloseTo(210, 9);          // defaults: all-LT at 21%
     expect(estimatedPileTax(1000, 10, 10, 0.1, 0.5)).toBeCloseTo(100, 9); // settings-driven LT
     expect(estimatedPileTax(1000, 10, 0, 0.1, 0.5)).toBeCloseTo(500, 9);  // all-ST at the override
