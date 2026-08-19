@@ -576,14 +576,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // Live-priced view of every position — the context's `parked`. Hand-priced
-  // rows take manual pins only: an API quote there is a code collision
-  // (TRAD the annuity vs TRAD the SPAC), never the holding's real value.
+  // rows keep their stored price, full stop: quotes AND pins are keyed by
+  // ticker, and an annuity-unit row can share letters with a real listing
+  // (TRAD the annuity vs TRAD the SPAC, JLGMX units vs JLGMX shares) — the
+  // market's number is never that holding's value.
   const mergedParked = useMemo(
     () =>
       state.parked.map((p) => {
-        const effective = isQuotable(p)
-          ? state.overrides[p.ticker] ?? quotes[p.ticker]
-          : state.overrides[p.ticker];
+        if (!isQuotable(p)) return p;
+        const effective = state.overrides[p.ticker] ?? quotes[p.ticker];
         return effective !== undefined ? { ...p, currentPrice: effective } : p;
       }),
     [state.parked, state.overrides, quotes, isQuotable],

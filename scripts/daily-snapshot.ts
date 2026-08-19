@@ -133,11 +133,14 @@ async function main(): Promise<void> {
     );
   }
 
+  // Hand-priced rows keep their stored price — quotes and pins are keyed by
+  // ticker, which an annuity-unit row can share with a real listing.
   const toPosition = (r: Record<string, any>): ParkedPosition => ({
     id: r.id, ticker: r.ticker, accountId: r.account_id, account: '', category: r.category,
     shares: num(r.shares), avgCost: num(r.avg_cost),
-    currentPrice:
-      overrides[r.ticker] ?? (quotable(r) ? quotes[r.ticker] : undefined) ?? num(r.current_price),
+    currentPrice: quotable(r)
+      ? overrides[r.ticker] ?? quotes[r.ticker] ?? num(r.current_price)
+      : num(r.current_price),
   });
   const parked: ParkedPosition[] = parkedRows.map(toPosition);
   const retirementParked: ParkedPosition[] = allParkedRows

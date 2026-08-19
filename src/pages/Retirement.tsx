@@ -29,7 +29,7 @@ import { unlockSummary } from '../lib/engine';
  * trim fuel, income projections, or taxes, and never in the score. */
 export function Retirement() {
   const {
-    retirementParked, parkedLots, accounts, tickerNames, overrides, quotes, snapshots,
+    retirementParked, parkedLots, accounts, tickerNames, overrides, snapshots,
     loading, error,
   } = useData();
   const chartSnapshots = useMemo(
@@ -272,10 +272,10 @@ export function Retirement() {
       {balancesOpen && (
         <UpdateBalancesModal
           accounts={retirementAccounts.filter((a) => live.some((p) => p.accountId === a.id))}
-          positions={live} quotes={quotes} onClose={() => setBalancesOpen(false)} />
+          positions={live} onClose={() => setBalancesOpen(false)} />
       )}
       {pricesOpen && (
-        <UpdatePricesModal positions={live} quotes={quotes} onClose={() => setPricesOpen(false)} />
+        <UpdatePricesModal positions={live} onClose={() => setPricesOpen(false)} />
       )}
       {editing && (
         <EditParkedModal position={editing} accountKinds={['retirement']}
@@ -327,29 +327,29 @@ function RetirementValueChart({ snapshots }: { snapshots: Snapshot[] }) {
  * per account, straight off the Voya screen. The delta lands on the
  * manually-priced holdings by scaling their prices proportionally — weights
  * hold, the total lands exact, and live-quoted holdings (BTC) are left
- * alone: their value is subtracted before scaling. Weights drift between
+ * alone: their value is subtracted before scaling. Live means the row's OWN
+ * flag, never the ticker: an annuity-unit row named JLGMX must keep taking
+ * balances even while the real JLGMX quotes. Weights drift between
  * true-ups; the Update-prices form corrects them with real unit values. */
 function UpdateBalancesModal({
-  accounts, positions, quotes, onClose,
+  accounts, positions, onClose,
 }: {
   accounts: { id: string; name: string; retirementFlavor?: string | null }[];
   positions: ParkedPosition[];
-  quotes: Record<string, number>;
   onClose: () => void;
 }) {
-  const { overrides, updateParkedPrices } = useData();
+  const { updateParkedPrices } = useData();
   const perAccount = useMemo(
     () =>
       accounts.map((a) => {
         const holdings = positions.filter((p) => p.accountId === a.id);
-        const isLive = (p: ParkedPosition) =>
-          quotes[p.ticker] !== undefined || overrides[p.ticker] !== undefined;
+        const isLive = (p: ParkedPosition) => p.liveQuotes === true;
         const liveValue = holdings.filter(isLive).reduce((s, p) => s + parkedMarketValue(p), 0);
         const manual = holdings.filter((p) => !isLive(p));
         const manualValue = manual.reduce((s, p) => s + parkedMarketValue(p), 0);
         return { account: a, total: liveValue + manualValue, liveValue, manual, manualValue };
       }),
-    [accounts, positions, quotes, overrides],
+    [accounts, positions],
   );
   const [balances, setBalances] = useState<Record<string, string>>(() =>
     Object.fromEntries(perAccount.map((r) => [r.account.id, String(roundCents(r.total))])),
@@ -430,24 +430,24 @@ function UpdateBalancesModal({
   );
 }
 
-/** The true-up: exact unit values per manually-priced holding (no live
- * quote, no pin), written to the POSITION rows — the same store the daily
- * balance-scaler adjusts, so the two routines never fight. Pins (the
- * override table) stay reserved for misquoted real tickers via Edit. */
+/** The true-up: exact unit values per manually-priced holding (live_quotes
+ * off — the row's own flag, never the ticker), written to the POSITION rows —
+ * the same store the daily balance-scaler adjusts, so the two routines never
+ * fight. Pins (the override table) stay reserved for misquoted real tickers
+ * via Edit and never touch hand-priced rows. */
 function UpdatePricesModal({
-  positions, quotes, onClose,
+  positions, onClose,
 }: {
   positions: ParkedPosition[];
-  quotes: Record<string, number>;
   onClose: () => void;
 }) {
-  const { overrides, updateParkedPrices } = useData();
+  const { updateParkedPrices } = useData();
   const rows = useMemo(
     () =>
       positions
-        .filter((p) => quotes[p.ticker] === undefined && overrides[p.ticker] === undefined)
+        .filter((p) => p.liveQuotes !== true)
         .sort((a, b) => a.ticker.localeCompare(b.ticker)),
-    [positions, quotes, overrides],
+    [positions],
   );
   const [prices, setPrices] = useState<Record<string, string>>(() =>
     Object.fromEntries(rows.map((p) => [p.id, String(p.currentPrice || '')])),
