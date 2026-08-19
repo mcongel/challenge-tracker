@@ -26,15 +26,6 @@ const SERIES = {
   floor: { light: '#16a34a', dark: '#22c55e' },
 };
 
-/** The pots' stack — green/violet/amber, validated both modes (worst adjacent
- * pair deutan ΔE 28+). Stack order keeps green and amber non-adjacent: their
- * protan ΔE (6.2) only clears the bar with a spacer between them. */
-const POTS = {
-  pile: { light: '#16a34a', dark: '#16a34a' },
-  retirement: { light: '#7c3aed', dark: '#8b5cf6' },
-  bitcoin: { light: '#d97706', dark: '#d97706' },
-};
-
 const ALERT_STYLES: Record<string, string> = {
   MILESTONE: 'bg-emerald-50 text-emerald-800 border-emerald-200',
   TARGET: 'bg-green-50 text-green-700 border-green-200',
@@ -100,16 +91,14 @@ export function Dashboard() {
     'Shadow VOO': roundCents(s.shadowVooValue),
     Floor: roundCents(s.bankedTotal),
   }));
-  // The pots' composition — only days where all three were tracked, so the
-  // line never fakes growth that was really just tracking starting. Bitcoin
-  // reads 0 for the two days it still rode inside the pile's number.
+  // Combined pots value — only days where all three were tracked, so the
+  // line never fakes growth that was really just tracking starting. Each
+  // pot's own page has its own line; here the sum is the story.
   const potsData = snapshots
     .filter((s) => s.retirementValue != null && s.retirementValue > 0)
     .map((s) => ({
       date: s.date.slice(5),
-      'Parked pile': roundCents(s.parkedPileValue),
-      Retirement: roundCents(s.retirementValue ?? 0),
-      Bitcoin: roundCents(s.btcValue ?? 0),
+      Value: roundCents(s.parkedPileValue + (s.btcValue ?? 0) + (s.retirementValue ?? 0)),
     }));
   // Its own series — a percent doesn't belong in the dollar charts' rows.
   const concentrationData = snapshots.map((s) => ({
@@ -269,38 +258,31 @@ export function Dashboard() {
         </div>
         {potsData.length === 1 && (
           <p className="mt-3 text-xs text-gray-400 text-center">
-            The stacked history draws after two daily snapshots with all three pots tracked —
+            The combined line draws after two daily snapshots with all three pots tracked —
             day one is on the books.
           </p>
         )}
         {potsData.length >= 2 && (
-          <div className="h-48 mt-4">
+          <div className="h-40 mt-4">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={potsData} margin={{ top: 8, right: 12, bottom: 0, left: 4 }}>
                 <CartesianGrid stroke={gridColor} vertical={false} />
                 <XAxis dataKey="date" stroke={axisColor} tickLine={false} axisLine={false}
                   tick={{ fontSize: 11 }} minTickGap={32} />
                 <YAxis stroke={axisColor} tickLine={false} axisLine={false}
-                  tick={{ fontSize: 11 }} tickFormatter={compactUsd} width={52} />
+                  tick={{ fontSize: 11 }} tickFormatter={compactUsd} width={52}
+                  domain={['auto', 'auto']} />
                 <Tooltip formatter={(v) => formatCurrency(Number(v))} />
-                <Legend iconType="plainline" wrapperStyle={{ fontSize: 12 }} />
-                {/* Stack order keeps green and amber apart — see POTS note. */}
-                <Area type="monotone" dataKey="Parked pile" stackId="pots" strokeWidth={2}
-                  stroke={isDark ? POTS.pile.dark : POTS.pile.light}
-                  fill={isDark ? POTS.pile.dark : POTS.pile.light} fillOpacity={0.15} />
-                <Area type="monotone" dataKey="Retirement" stackId="pots" strokeWidth={2}
-                  stroke={isDark ? POTS.retirement.dark : POTS.retirement.light}
-                  fill={isDark ? POTS.retirement.dark : POTS.retirement.light} fillOpacity={0.15} />
-                <Area type="monotone" dataKey="Bitcoin" stackId="pots" strokeWidth={2}
-                  stroke={isDark ? POTS.bitcoin.dark : POTS.bitcoin.light}
-                  fill={isDark ? POTS.bitcoin.dark : POTS.bitcoin.light} fillOpacity={0.15} />
+                <Area type="monotone" dataKey="Value" strokeWidth={2}
+                  stroke={isDark ? SERIES.floor.dark : SERIES.floor.light}
+                  fill={isDark ? SERIES.floor.dark : SERIES.floor.light} fillOpacity={0.12} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         )}
         <p className="mt-2 text-xs text-gray-400">
           context only — none of this is in the score or the benchmark
-          {potsData.length >= 2 && ' · value, not return: contributions and buys move the stack too'}
+          {potsData.length >= 2 && ' · value, not return: contributions and buys move this line too'}
         </p>
       </div>
 
