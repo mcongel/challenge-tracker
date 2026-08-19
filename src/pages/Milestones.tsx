@@ -11,21 +11,20 @@ import { Card, TableCard, theadCls } from '../components/ui/Card';
 import { Field } from '../components/ui/Field';
 import { FormError, ModalFooter, useModalForm } from '../components/ui/useModalForm';
 import { useData } from '../contexts/DataContext';
-import { priceMapFor } from '../lib/alerts';
+import { useScoreSummary } from '../lib/useScoreSummary';
 import type { MilestoneRow } from '../lib/engine';
-import { accountTotal, cumulativeFloor, milestoneTable, roundCents, skimDue } from '../lib/engine';
+import { milestoneTable, roundCents, skimDue } from '../lib/engine';
 import { cn, formatCurrency, inputCls, money, primaryBtnCls, todayISO } from '../lib/utils';
 
 export function Milestones() {
-  const { lots, cashEvents, milestones, deleteMilestone, overrides, quotes, loading, error } = useData();
+  const { milestones, deleteMilestone, loading, error } = useData();
   const [banking, setBanking] = useState<MilestoneRow | null>(null);
   const [justBanked, setJustBanked] = useState(false);
   const [deleting, setDeleting] = useState<{ id: string; level: number } | null>(null);
 
-  const account = accountTotal(lots, priceMapFor(lots, overrides, quotes), cashEvents);
+  const { account, floor } = useScoreSummary();
   const rows = milestoneTable(account, milestones);
   const hits = rows.filter((r) => r.status === 'HIT_BANK_NOW');
-  const floor = cumulativeFloor(milestones);
 
   return (
     <div>

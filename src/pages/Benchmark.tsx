@@ -14,9 +14,9 @@ import { Card, TableCard, theadCls } from '../components/ui/Card';
 import { Field } from '../components/ui/Field';
 import { FormError } from '../components/ui/useModalForm';
 import { useData } from '../contexts/DataContext';
-import { priceMapFor } from '../lib/alerts';
+import { useScoreSummary } from '../lib/useScoreSummary';
 import {
-  lead, leadPct, roundCents, rollingLeadDelta, shadowShares, shadowValue, totalScore,
+  lead, leadPct, roundCents, rollingLeadDelta, shadowShares,
 } from '../lib/engine';
 import {
   cn, compactUsd, errorMessage, formatCurrency, formatPercent, inputCls, money, primaryBtnCls,
@@ -30,16 +30,14 @@ const BEHIND = '#dc2626';
 
 export function Benchmark() {
   const {
-    benchmarkDeposits, lots, cashEvents, milestones, snapshots, overrides, overrideSetAt, quotes,
+    benchmarkDeposits, snapshots, overrides, overrideSetAt,
     setOverride, clearOverride, loading, error,
   } = useData();
   const [priceOpen, setPriceOpen] = useState(false);
   const { gridColor, axisColor } = useChartColors();
 
   const vooPinned = overrides['VOO'];
-  const vooToday = vooPinned ?? quotes['VOO'];
-  const score = totalScore(lots, priceMapFor(lots, overrides, quotes), cashEvents, milestones);
-  const shadow = vooToday ? shadowValue(benchmarkDeposits, vooToday) : null;
+  const { score, shadow, vooToday } = useScoreSummary();
   const delta = rollingLeadDelta(snapshots, todayISO());
 
   // The race chart on the Dashboard shows two lines; the verdict is their

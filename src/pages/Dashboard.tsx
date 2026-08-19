@@ -6,11 +6,12 @@ import {
 } from 'recharts';
 import { useData } from '../contexts/DataContext';
 import { lotsByPositionId } from '../lib/engine';
-import { activeAlerts, priceMapFor } from '../lib/alerts';
+import { activeAlerts } from '../lib/alerts';
+import { useScoreSummary } from '../lib/useScoreSummary';
 import {
-  accountTotal, cumulativeFloor, isArchivedPosition, isNeverTrimFuel, lead, netContributed,
-  netRealizedYTD, nextMilestone, pileTotal, reservedTotal, roundCents, shadowValue, taxYearOf,
-  totalScore, unlockSummary,
+  isArchivedPosition, isNeverTrimFuel, lead, netContributed,
+  netRealizedYTD, nextMilestone, pileTotal, roundCents, taxYearOf,
+  unlockSummary,
 } from '../lib/engine';
 import { ErrorCard } from '../components/ui/ErrorCard';
 import { ContributionCapBadge } from '../components/ui/ContributionCapBadge';
@@ -41,7 +42,7 @@ export function Dashboard() {
   const {
     // pileParked: the pile tile, CAP alert, and unlock line are pile rules —
     // retirement and the bitcoin bucket never move them.
-    lots, cashEvents, trades, milestones, benchmarkDeposits, pileParked: parked, btcParked,
+    lots, cashEvents, trades, milestones, pileParked: parked, btcParked,
     retirementParked, parkedLots,
     snapshots, carryforwards, overrides, quotes, contributionCap, concentrationCap, watchlist,
     loading, error, quotesSettled,
@@ -54,13 +55,7 @@ export function Dashboard() {
   // later. Hold the price-derived figures at a placeholder instead.
   const settling = loading || !quotesSettled;
 
-  const priceMap = priceMapFor(lots, overrides, quotes);
-  const account = accountTotal(lots, priceMap, cashEvents);
-  const floor = cumulativeFloor(milestones);
-  const reserved = reservedTotal(cashEvents);
-  const score = totalScore(lots, priceMap, cashEvents, milestones);
-  const vooToday = overrides['VOO'] ?? quotes['VOO'];
-  const shadow = vooToday ? shadowValue(benchmarkDeposits, vooToday) : null;
+  const { account, floor, reserved, score, shadow, vooToday } = useScoreSummary();
   const next = nextMilestone(account, milestones);
   const ytd = netRealizedYTD(trades, taxYearOf(today));
   const alerts = activeAlerts({
