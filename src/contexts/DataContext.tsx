@@ -156,6 +156,9 @@ interface DataContextValue extends DataState {
   quotesAsOf: number | null;
   /** Last quote fetch failed — the stamp shows amber "quotes stale". */
   quotesError: boolean;
+  /** First quote pass finished (even a failed one) — until then, price-
+   * derived numbers are fallbacks about to repaint; hold a placeholder. */
+  quotesSettled: boolean;
   refreshQuotes: () => Promise<void>;
   /** Company names by ticker (best-effort; ETFs may be absent). */
   tickerNames: Record<string, string>;
@@ -326,6 +329,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   >({});
   const [quotesAsOf, setQuotesAsOf] = useState<number | null>(null);
   const [quotesError, setQuotesError] = useState(false);
+  /** First quote pass finished — success, failure, or nothing to fetch.
+   * Until then, price-derived numbers are cost/stale fallbacks that would
+   * repaint moments later; screens hold a placeholder instead of flashing. */
+  const [quotesSettled, setQuotesSettled] = useState(false);
   const [tickerNames, setTickerNames] = useState<Record<string, string>>({});
 
   const refresh = useCallback(async () => {
@@ -458,7 +465,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         'VOO',
       ]),
     ];
-    if (tickers.length === 0) return;
+    if (tickers.length === 0) {
+      setQuotesSettled(true);
+      return;
+    }
     try {
       const res = await fetch(`/api/quotes?tickers=${tickers.join(',')}`);
       if (!res.ok) {
@@ -497,6 +507,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       // Local dev without the Pages Function, or the API is down — the UI
       // shows an amber "quotes stale" stamp instead of an error.
       setQuotesError(true);
+    } finally {
+      setQuotesSettled(true);
     }
   }, [state.lots, state.parked, state.watchlist, persistQuotedPrices, retirementAccountIds]);
 
@@ -2568,6 +2580,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       dayChange,
       quotesAsOf,
       quotesError,
+      quotesSettled,
       refreshQuotes,
       tickerNames,
       contributionCap,
@@ -2636,7 +2649,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       state, mergedParked, pileParked, retirementParked, retirementAccountIds,
-      quotes, dayChange, quotesAsOf, quotesError, refreshQuotes, tickerNames,
+      quotes, dayChange, quotesAsOf, quotesError, quotesSettled, refreshQuotes, tickerNames,
       contributionCap,
       concentrationCap, ltTaxRate, stTaxRate, dividendTaxRates, updateSetting, updateSettings,
       setCarryforward, addWatchlistItem, updateWatchlistItem, deleteWatchlistItem,

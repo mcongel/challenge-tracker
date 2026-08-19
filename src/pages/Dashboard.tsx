@@ -41,10 +41,15 @@ export function Dashboard() {
     // retirement money never moves them.
     lots, cashEvents, trades, milestones, benchmarkDeposits, pileParked: parked, parkedLots,
     snapshots, carryforwards, overrides, quotes, contributionCap, concentrationCap, watchlist,
-    loading, error,
+    loading, error, quotesSettled,
   } = useData();
   const isDark = useIsDark();
   const today = todayISO();
+
+  // Until the first quote pass lands, position prices are cost/stale
+  // fallbacks — the score would paint one number and jump to another a beat
+  // later. Hold the price-derived figures at a placeholder instead.
+  const settling = loading || !quotesSettled;
 
   const priceMap = priceMapFor(lots, overrides, quotes);
   const account = accountTotal(lots, priceMap, cashEvents);
@@ -102,8 +107,9 @@ export function Dashboard() {
 
       <GettingStarted />
 
-      {/* Active alerts */}
-      {alerts.map((a) => (
+      {/* Active alerts — price-driven (targets, cap), so they wait for the
+          first quote pass rather than flashing on cost-fallback prices. */}
+      {!settling && alerts.map((a) => (
         <Link
           key={a.kind + a.message}
           to={a.to}
@@ -118,7 +124,7 @@ export function Dashboard() {
       <div className="bg-white rounded-lg shadow-lg p-6 sm:p-8 text-center">
         <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Total Score</p>
         <p className="mt-1 text-5xl sm:text-6xl font-bold tabular-nums text-gray-900">
-          {loading ? '…' : formatCurrencyWhole(score)}
+          {settling ? '…' : formatCurrencyWhole(score)}
         </p>
         <p className="mt-2 text-xs text-gray-400">
           account + banked floors + tax reserved · every banked dollar is already won
@@ -128,7 +134,7 @@ export function Dashboard() {
           <Link to="/positions" className="rounded-lg border border-gray-200 p-4 hover:bg-gray-50 transition-colors">
             <p className="text-xs font-medium text-gray-500">Account value</p>
             <p className="mt-0.5 text-2xl font-bold tabular-nums text-gray-900">
-              {formatCurrency(roundCents(account))}
+              {settling ? '…' : formatCurrency(roundCents(account))}
             </p>
             <p className="text-xs text-gray-400 mt-0.5">positions + cash · everything rides</p>
           </Link>
@@ -149,9 +155,10 @@ export function Dashboard() {
       <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <p className="text-sm font-medium text-gray-700">
-            Next milestone: <span className="tabular-nums font-bold">{formatCurrency(next)}</span>
+            Next milestone:{' '}
+            <span className="tabular-nums font-bold">{settling ? '…' : formatCurrency(next)}</span>
             <span className="ml-2 text-gray-400 tabular-nums">
-              {formatCurrency(roundCents(Math.max(0, next - account)))} to go
+              {settling ? '' : `${formatCurrency(roundCents(Math.max(0, next - account)))} to go`}
             </span>
           </p>
           <p className="text-xs text-gray-400">$1M is the aspiration — direction, not a verdict</p>
@@ -159,11 +166,11 @@ export function Dashboard() {
         <div className="mt-3 h-2 rounded-full bg-gray-100 overflow-hidden">
           <div
             className="h-full bg-green-600 rounded-full transition-all"
-            style={{ width: `${Math.min(100, (score / 1_000_000) * 100)}%` }}
+            style={{ width: settling ? 0 : `${Math.min(100, (score / 1_000_000) * 100)}%` }}
           />
         </div>
         <p className="mt-2 text-xs text-gray-400 tabular-nums">
-          {((score / 1_000_000) * 100).toFixed(1)}% · final height is the prize
+          {settling ? '…' : `${((score / 1_000_000) * 100).toFixed(1)}%`} · final height is the prize
         </p>
       </div>
 
@@ -181,7 +188,9 @@ export function Dashboard() {
         </div>
         <Link to="/benchmark" className="bg-white rounded-lg shadow-lg p-4 density-aware-card block hover:bg-gray-50 transition-colors">
           <p className="text-xs font-medium text-gray-500">Lead vs VOO shadow</p>
-          {shadow === null ? (
+          {settling ? (
+            <p className="mt-0.5 text-xl font-bold text-gray-400">…</p>
+          ) : shadow === null ? (
             <p className="mt-0.5 text-xl font-bold text-gray-400">set VOO price</p>
           ) : (
             <p className={cn('mt-0.5 text-xl font-bold tabular-nums',
