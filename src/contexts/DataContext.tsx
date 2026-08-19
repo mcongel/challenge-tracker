@@ -403,6 +403,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     void refresh();
   }, [refresh]);
 
+  // The third wall: retirement positions reuse all the parked machinery but
+  // never enter pile math (total, cap, trim fuel, income, taxes, snapshots).
+  const retirementAccountIds = useMemo(
+    () => new Set(state.accounts.filter((a) => a.kind === 'retirement').map((a) => a.id)),
+    [state.accounts],
+  );
+
   /**
    * Write fresh quotes back onto parked_positions.current_price for every row
    * of that ticker. The stored price is only ever a fallback (overrides and
@@ -414,6 +421,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     async (fresh: Record<string, { price: number }>) => {
       const stale = state.parked.filter((p) => {
         if (isArchivedPosition(p)) return false; // archived rows don't need fresh prices
+        // Retirement holdings are TIAA fund codes priced by hand — a market
+        // listing that happens to share the code (TRAD) must never write here.
+        if (retirementAccountIds.has(p.accountId)) return false;
         const quoted = fresh[p.ticker]?.price;
         // 0.5c tolerance keeps us from writing on every rounding wobble.
         return quoted !== undefined && Math.abs(quoted - p.currentPrice) > 0.005;
@@ -430,7 +440,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
       await refresh();
     },
-    [state.parked, refresh],
+    [state.parked, refresh, retirementAccountIds],
   );
 
   const lastQuoteFetchAt = useRef(0);
@@ -438,7 +448,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const tickers = [
       ...new Set([
         ...state.lots.map((l) => l.ticker),
-        ...state.parked.filter((p) => !isArchivedPosition(p)).map((p) => p.ticker),
+        // Retirement holdings never join: their "tickers" are TIAA fund codes
+        // (W146, TRAD…) and asking the market API invites impostor listings.
+        ...state.parked
+          .filter((p) => !isArchivedPosition(p) && !retirementAccountIds.has(p.accountId))
+          .map((p) => p.ticker),
         // Bench names too — the Watchlist's "price now" column is the point.
         ...state.watchlist.map((w) => w.ticker),
         'VOO',
@@ -484,7 +498,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       // shows an amber "quotes stale" stamp instead of an error.
       setQuotesError(true);
     }
-  }, [state.lots, state.parked, state.watchlist, persistQuotedPrices]);
+  }, [state.lots, state.parked, state.watchlist, persistQuotedPrices, retirementAccountIds]);
 
   const refreshQuotesRef = useRef(refreshQuotes);
   useEffect(() => {
@@ -496,11 +510,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     if (loading || error || quotesFetched.current) return;
     quotesFetched.current = true;
     void refreshQuotes();
-    // Names once per session — they're cached a week server-side.
+    // Names once per session — they're cached a week server-side. Retirement
+    // fund codes stay out here too: "TRAD" must not label itself as a SPAC.
     const tickers = [
       ...new Set([
         ...state.lots.map((l) => l.ticker),
-        ...state.parked.filter((p) => !isArchivedPosition(p)).map((p) => p.ticker),
+        ...state.parked
+          .filter((p) => !isArchivedPosition(p) && !retirementAccountIds.has(p.accountId))
+          .map((p) => p.ticker),
       ]),
     ];
     if (tickers.length > 0) {
@@ -513,7 +530,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           /* best-effort */
         });
     }
-  }, [loading, error, refreshQuotes, state.lots, state.parked]);
+  }, [loading, error, refreshQuotes, state.lots, state.parked, retirementAccountIds]);
 
   // Keep an open tab honest: refetch every 30 minutes (the server cache TTL)
   // and when the tab regains focus after going stale. Cache hits cost nothing.
@@ -538,22 +555,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // Live-priced view of every position — the context's `parked`.
+  // Live-priced view of every position — the context's `parked`. Retirement
+  // rows take manual pins only: an API quote there is a code collision
+  // (TRAD the annuity vs TRAD the SPAC), never the holding's real value.
   const mergedParked = useMemo(
     () =>
       state.parked.map((p) => {
-        const effective = state.overrides[p.ticker] ?? quotes[p.ticker];
+        const effective = retirementAccountIds.has(p.accountId)
+          ? state.overrides[p.ticker]
+          : state.overrides[p.ticker] ?? quotes[p.ticker];
         return effective !== undefined ? { ...p, currentPrice: effective } : p;
       }),
-    [state.parked, state.overrides, quotes],
+    [state.parked, state.overrides, quotes, retirementAccountIds],
   );
 
-  // The third wall: retirement positions reuse all the parked machinery but
-  // never enter pile math (total, cap, trim fuel, income, taxes, snapshots).
-  const retirementAccountIds = useMemo(
-    () => new Set(state.accounts.filter((a) => a.kind === 'retirement').map((a) => a.id)),
-    [state.accounts],
-  );
   const pileParked = useMemo(
     () => mergedParked.filter((p) => !retirementAccountIds.has(p.accountId)),
     [mergedParked, retirementAccountIds],
