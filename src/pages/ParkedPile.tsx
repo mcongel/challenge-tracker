@@ -328,7 +328,7 @@ export function ParkedPile() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
         <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
           <p className="text-xs font-medium text-gray-500">Pile total</p>
-          <p className="mt-0.5 text-xl font-bold tabular-nums text-gray-900">{formatCurrency(roundCents(c.total))}</p>
+          <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums text-gray-900">{formatCurrency(roundCents(c.total))}</p>
           <p className="text-xs text-gray-400 mt-0.5"
             title={`All-time total return: price + dividends (${formatCurrency(roundCents(divTotal))} collected) + realized sales, ROC counted once. Simple return on dollars invested, not annualized.`}>
             not in score
@@ -342,7 +342,7 @@ export function ParkedPile() {
         </div>
         <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
           <p className="text-xs font-medium text-gray-500">Semiconductors</p>
-          <p className={cn('mt-0.5 text-xl font-bold tabular-nums', c.overCap ? 'text-red-600' : 'text-gray-900')}>
+          <p className={cn('mt-0.5 text-lg sm:text-xl font-bold tabular-nums', c.overCap ? 'text-red-600' : 'text-gray-900')}>
             {formatPercent(c.semiPct)}
           </p>
           <button onClick={() => setCapOpen(true)}
@@ -354,7 +354,7 @@ export function ParkedPile() {
           title={Object.entries(c.byCategory).sort((a, b) => b[1] - a[1])
             .map(([k, v]) => `${k} ${c.total > 0 ? Math.round((v / c.total) * 100) : 0}%`).join(' · ')}>
           <p className="text-xs font-medium text-gray-500">Sector mix</p>
-          <p className="mt-0.5 text-xl font-bold tabular-nums text-gray-900">
+          <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums text-gray-900">
             {Object.keys(c.byCategory).length}
           </p>
           <p className="text-xs text-gray-400 mt-0.5 truncate">
@@ -365,7 +365,7 @@ export function ParkedPile() {
         </div>
         <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
           <p className="text-xs font-medium text-gray-500">Unrealized</p>
-          <p className={cn('mt-0.5 text-xl font-bold tabular-nums',
+          <p className={cn('mt-0.5 text-lg sm:text-xl font-bold tabular-nums',
             c.total - totalBasis >= 0 ? 'text-green-600' : 'text-red-600')}>
             {formatCurrency(roundCents(c.total - totalBasis))}
           </p>
@@ -479,7 +479,7 @@ export function ParkedPile() {
           hint="Hit Buy to add the first holding — every position starts as a dated purchase lot with its own 366-day unlock clock."
         />
       ) : (
-        <div className="bg-white rounded-lg shadow-lg overflow-x-auto">
+        <div className="bg-white rounded-lg shadow-lg">
           <div className="flex flex-wrap items-center gap-1 px-4 pt-3">
             <span className="text-xs text-gray-400 mr-1">Group by</span>
             {(['account', 'ticker', 'flat'] as const).map((m) => (
@@ -504,6 +504,8 @@ export function ParkedPile() {
               </button>
             )}
           </div>
+          {/* Only the table scrolls sideways — the group-by toolbar above stays put. */}
+          <div className="overflow-x-auto">
           <table className="w-full text-sm compact-table">
             <thead className="bg-gray-50 sticky top-0 group/head">
               <tr className="text-left text-xs">
@@ -561,7 +563,7 @@ export function ParkedPile() {
                               {first.category}
                             </span>
                             {tickerNames[group.label] && (
-                              <span className="text-xs font-normal text-gray-400 truncate max-w-[12rem]">{tickerNames[group.label]}</span>
+                              <span className="inline-block align-bottom text-xs font-normal text-gray-400 truncate max-w-[12rem]">{tickerNames[group.label]}</span>
                             )}
                             <span className="text-xs font-normal text-gray-400 tabular-nums">
                               · {fmtSh(groupShares)} sh across {group.positions.length} account{group.positions.length > 1 ? 's' : ''} ·{' '}
@@ -671,16 +673,16 @@ export function ParkedPile() {
                         <UnlockCell summary={summ} price={p.currentPrice} />
                       </td>
                       <td className="px-2 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        <button onClick={() => setTrimming(p)} className="p-1 rounded hover:bg-green-50" aria-label={`Sell ${p.ticker}`} title="Sell shares (Rule 5 trim)">
+                        <button onClick={() => setTrimming(p)} className="p-2 sm:p-1 rounded hover:bg-green-50" aria-label={`Sell ${p.ticker}`} title="Sell shares (Rule 5 trim)">
                           <Scissors className="h-4 w-4 text-gray-300 hover:text-green-700" />
                         </button>
-                        <button onClick={() => setTransferring(p)} className="p-1 rounded hover:bg-gray-100" aria-label={`Transfer ${p.ticker}`} title="Transfer between accounts (ACATS)">
+                        <button onClick={() => setTransferring(p)} className="p-2 sm:p-1 rounded hover:bg-gray-100" aria-label={`Transfer ${p.ticker}`} title="Transfer between accounts (ACATS)">
                           <ArrowLeftRight className="h-4 w-4 text-gray-300 hover:text-gray-600" />
                         </button>
-                        <button onClick={() => setSplitTicker(p.ticker)} className="p-1 rounded hover:bg-gray-100" aria-label={`Record split for ${p.ticker}`} title={`Record stock split — adjusts every ${p.ticker} holding (all accounts + any challenge lots)`}>
+                        <button onClick={() => setSplitTicker(p.ticker)} className="p-2 sm:p-1 rounded hover:bg-gray-100" aria-label={`Record split for ${p.ticker}`} title={`Record stock split — adjusts every ${p.ticker} holding (all accounts + any challenge lots)`}>
                           <Divide className="h-4 w-4 text-gray-300 hover:text-gray-600" />
                         </button>
-                        <button onClick={() => setEditing(p)} className="p-1 rounded hover:bg-gray-100" aria-label={`Edit ${p.ticker}`}>
+                        <button onClick={() => setEditing(p)} className="p-2 sm:p-1 rounded hover:bg-gray-100" aria-label={`Edit ${p.ticker}`}>
                           <Pencil className="h-4 w-4 text-gray-300 hover:text-gray-600" />
                         </button>
                       </td>
@@ -700,6 +702,7 @@ export function ParkedPile() {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

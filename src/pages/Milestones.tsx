@@ -64,7 +64,7 @@ export function Milestones() {
         </div>
       )}
 
-      <div className="bg-white rounded-lg shadow-lg p-4 mb-4 density-aware-card flex items-baseline gap-6">
+      <div className="bg-white rounded-lg shadow-lg p-4 mb-4 density-aware-card flex flex-wrap items-baseline gap-x-6 gap-y-3">
         <div>
           <p className="text-xs font-medium text-gray-500">Banked floors (locked forever)</p>
           <p className="mt-0.5 text-2xl font-bold tabular-nums text-green-600">{formatCurrency(floor)}</p>
@@ -113,7 +113,7 @@ export function Milestones() {
                         {rec && (
                           <button
                             onClick={() => setDeleting({ id: rec.id, level: row.level })}
-                            className="p-1 rounded hover:bg-red-50"
+                            className="p-2 sm:p-1 rounded hover:bg-red-50"
                             aria-label="Delete milestone record"
                           >
                             <Trash2 className="h-3.5 w-3.5 text-gray-300 hover:text-red-600" />

@@ -83,7 +83,7 @@ export function Retirement() {
         title="Retirement"
         subtitle="The third pot. Same lot machinery as the pile, behind its own wall — never in the pile's total, cap, taxes, or the score."
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button onClick={() => setBalancesOpen(true)}
               className={cn(secondaryBtnCls, 'flex items-center gap-1.5')}
               disabled={live.length === 0}
@@ -127,14 +127,14 @@ export function Retirement() {
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
             <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
               <p className="text-xs font-medium text-gray-500">Retirement total</p>
-              <p className="mt-0.5 text-xl font-bold tabular-nums text-gray-900">
+              <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums text-gray-900">
                 {formatCurrency(roundCents(total))}
               </p>
               <p className="text-xs text-gray-400 mt-0.5">not in the score, not in the pile</p>
             </div>
             <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
               <p className="text-xs font-medium text-gray-500">Unrealized</p>
-              <p className={cn('mt-0.5 text-xl font-bold tabular-nums',
+              <p className={cn('mt-0.5 text-lg sm:text-xl font-bold tabular-nums',
                 total - totalBasis >= 0 ? 'text-green-600' : 'text-red-600')}>
                 {formatCurrency(roundCents(total - totalBasis))}
               </p>
@@ -143,7 +143,7 @@ export function Retirement() {
             <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card col-span-2 sm:col-span-1"
               title={byFlavor.map(([f, v]) => `${f} ${formatCurrency(roundCents(v))}`).join(' · ')}>
               <p className="text-xs font-medium text-gray-500">By flavor</p>
-              <p className="mt-0.5 text-xl font-bold tabular-nums text-gray-900">{byFlavor.length}</p>
+              <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums text-gray-900">{byFlavor.length}</p>
               <p className="text-xs text-gray-400 mt-0.5 truncate">
                 {byFlavor.map(([f, v]) =>
                   `${f} ${total > 0 ? Math.round((v / total) * 100) : 0}%`).join(' · ') || '—'}
@@ -160,8 +160,8 @@ export function Retirement() {
                   <th className="px-2 py-3 w-8" />
                   <th className="px-4 py-3">Ticker</th>
                   <th className="px-4 py-3 text-right">Shares</th>
-                  <th className="px-4 py-3 text-right">Avg cost</th>
-                  <th className="px-4 py-3 text-right">Price</th>
+                  <th className="hidden sm:table-cell px-4 py-3 text-right">Avg cost</th>
+                  <th className="hidden sm:table-cell px-4 py-3 text-right">Price</th>
                   <th className="px-4 py-3 text-right">Value</th>
                   <th className="px-4 py-3 text-right">Unrealized</th>
                   <th className="px-2 py-3" />
@@ -214,8 +214,8 @@ export function Retirement() {
                                 )}
                               </td>
                               <td className="px-4 py-3 text-right tabular-nums">{fmtSh(p.shares)}</td>
-                              <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(p.avgCost)}</td>
-                              <td className="px-4 py-3 text-right tabular-nums">
+                              <td className="hidden sm:table-cell px-4 py-3 text-right tabular-nums">{formatCurrency(p.avgCost)}</td>
+                              <td className="hidden sm:table-cell px-4 py-3 text-right tabular-nums">
                                 {formatCurrency(p.currentPrice)}
                                 {overrides[p.ticker] !== undefined && (
                                   <span className="ml-1 text-[10px] uppercase text-amber-800 font-bold"
@@ -239,7 +239,7 @@ export function Retirement() {
                                 </span>
                               </td>
                               <td className="px-2 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                                <button onClick={() => setEditing(p)} className="p-1 rounded hover:bg-gray-100" aria-label={`Edit ${p.ticker}`}>
+                                <button onClick={() => setEditing(p)} className="p-2 sm:p-1 rounded hover:bg-gray-100" aria-label={`Edit ${p.ticker}`}>
                                   <Pencil className="h-4 w-4 text-gray-300 hover:text-gray-600" />
                                 </button>
                               </td>
@@ -403,8 +403,8 @@ function UpdateBalancesModal({
         </p>
         <div className="space-y-2">
           {perAccount.map((r) => (
-            <div key={r.account.id} className="flex items-center gap-3">
-              <span className="w-40 flex-shrink-0">
+            <div key={r.account.id} className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+              <span className="sm:w-40 flex-shrink-0">
                 <span className="text-sm font-medium">{r.account.name}</span>
                 <span className="block text-[11px] text-gray-400 tabular-nums">
                   now {formatCurrency(roundCents(r.total))}
@@ -487,8 +487,8 @@ function UpdatePricesModal({
           </p>
           <div className="space-y-2">
             {rows.map((p) => (
-              <div key={p.id} className="flex items-center gap-3">
-                <span className="w-40 flex-shrink-0">
+              <div key={p.id} className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                <span className="sm:w-40 flex-shrink-0">
                   <span className="text-sm font-medium">{p.ticker}</span>
                   <span className="block text-[11px] text-gray-400 truncate">{p.account}</span>
                 </span>

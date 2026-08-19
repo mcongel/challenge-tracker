@@ -205,7 +205,7 @@ export function LotPanel({ position: p, summary }: { position: ParkedPosition; s
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-gray-600">{formatCurrency(l.amount)}</td>
                   <td className="px-1 py-2 w-8">
-                    <button onClick={() => setDeleting(l)} className="p-1 rounded hover:bg-red-50" aria-label="Delete lot">
+                    <button onClick={() => setDeleting(l)} className="p-2 sm:p-1 rounded hover:bg-red-50" aria-label="Delete lot">
                       <Trash2 className="h-3.5 w-3.5 text-gray-300 hover:text-red-600" />
                     </button>
                   </td>

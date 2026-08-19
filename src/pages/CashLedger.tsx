@@ -94,7 +94,7 @@ export function CashLedger() {
         ].map(([label, value]) => (
           <div key={label as string} className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
             <p className="text-xs font-medium text-gray-500">{label}</p>
-            <p className={cn('mt-0.5 text-xl font-bold tabular-nums',
+            <p className={cn('mt-0.5 text-lg sm:text-xl font-bold tabular-nums',
               (value as number) < 0 ? 'text-red-600' : 'text-gray-900')}>
               {formatCurrency(value as number)}
             </p>
@@ -143,13 +143,16 @@ export function CashLedger() {
                     </span>
                   </td>
                   <td className="px-4 py-3 font-medium">{e.ticker ?? ''}</td>
-                  <td className="px-4 py-3 text-gray-500 max-w-[16rem] truncate">
-                    {[
-                      accountName(accounts, e.accountId) && `from ${accountName(accounts, e.accountId)}`,
-                      accountName(accounts, e.destinationAccountId) && `→ ${accountName(accounts, e.destinationAccountId)}`,
-                      e.sourceDestination,
-                      e.notes,
-                    ].filter(Boolean).join(' · ')}
+                  <td className="px-4 py-3 text-gray-500">
+                    {/* max-width is ignored on table cells; the inner div is what actually truncates. */}
+                    <div className="max-w-[16rem] truncate">
+                      {[
+                        accountName(accounts, e.accountId) && `from ${accountName(accounts, e.accountId)}`,
+                        accountName(accounts, e.destinationAccountId) && `→ ${accountName(accounts, e.destinationAccountId)}`,
+                        e.sourceDestination,
+                        e.notes,
+                      ].filter(Boolean).join(' · ')}
+                    </div>
                   </td>
                   <td className={cn('px-4 py-3 text-right tabular-nums font-medium',
                     ADDS_CASH.includes(e.type) ? 'text-green-600' : 'text-gray-900')}>
@@ -160,11 +163,11 @@ export function CashLedger() {
                     {formatCurrency(roundCents(balance))}
                   </td>
                   <td className="px-2 py-3 whitespace-nowrap">
-                    <button onClick={() => setEditing(e)} className="p-1 rounded hover:bg-gray-100"
+                    <button onClick={() => setEditing(e)} className="p-2 sm:p-1 rounded hover:bg-gray-100"
                       aria-label="Edit event">
                       <Pencil className="h-4 w-4 text-gray-300 hover:text-gray-600" />
                     </button>
-                    <button onClick={() => setDeletingId(e.id)} className="p-1 rounded hover:bg-red-50"
+                    <button onClick={() => setDeletingId(e.id)} className="p-2 sm:p-1 rounded hover:bg-red-50"
                       aria-label="Delete event">
                       <Trash2 className="h-4 w-4 text-gray-300 hover:text-red-600" />
                     </button>

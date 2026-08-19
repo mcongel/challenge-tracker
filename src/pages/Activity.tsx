@@ -281,7 +281,7 @@ export function Activity() {
           hint="Buys, sells, dividends, and account cash movements all land here as they're recorded on the Parked Pile screen."
         />
       ) : (
-        <div className="bg-white rounded-lg shadow-lg overflow-x-auto">
+        <div className="bg-white rounded-lg shadow-lg">
           <div className="px-4 pt-3 pb-1 flex flex-wrap items-baseline justify-between gap-2">
             <p className="text-sm tabular-nums">
               <span className="text-gray-500">Realized: </span>
@@ -319,6 +319,8 @@ export function Activity() {
               </select>
             </div>
           </div>
+          {/* Only the table scrolls sideways — the summary/filter bar above stays put. */}
+          <div className="overflow-x-auto">
           <table className="w-full text-sm compact-table">
             <thead>
               <tr className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
@@ -383,7 +385,7 @@ export function Activity() {
                           <button
                             onClick={() => setUndoingSale(r.sale!)}
                             disabled={!newestSnapshotSaleIds.has(r.sale.id)}
-                            className="p-1 rounded hover:bg-gray-100 disabled:opacity-30"
+                            className="p-2 sm:p-1 rounded hover:bg-gray-100 disabled:opacity-30"
                             aria-label="Undo sale"
                             title={newestSnapshotSaleIds.has(r.sale.id)
                               ? 'Undo — lots and basis come back exactly'
@@ -392,10 +394,10 @@ export function Activity() {
                             <Undo2 className="h-4 w-4 text-gray-300 hover:text-gray-600" />
                           </button>
                         )}
-                        <button onClick={() => setEditingSale(r.sale!)} className="p-1 rounded hover:bg-gray-100" aria-label="Edit sale record">
+                        <button onClick={() => setEditingSale(r.sale!)} className="p-2 sm:p-1 rounded hover:bg-gray-100" aria-label="Edit sale record">
                           <Pencil className="h-4 w-4 text-gray-300 hover:text-gray-600" />
                         </button>
-                        <button onClick={() => setDeletingSale(r.sale!)} className="p-1 rounded hover:bg-red-50" aria-label="Delete sale record">
+                        <button onClick={() => setDeletingSale(r.sale!)} className="p-2 sm:p-1 rounded hover:bg-red-50" aria-label="Delete sale record">
                           <Trash2 className="h-4 w-4 text-gray-300 hover:text-red-600" />
                         </button>
                       </>
@@ -408,6 +410,7 @@ export function Activity() {
               )}
             </tbody>
           </table>
+          </div>
           {filtered.length > ACTIVITY_PAGE && (
             <button
               onClick={() => setShowAll((v) => !v)}

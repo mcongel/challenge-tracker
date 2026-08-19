@@ -302,19 +302,19 @@ export function Income() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
             <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
               <p className="text-xs font-medium text-gray-500">Trailing 12 months</p>
-              <p className="mt-0.5 text-xl font-bold tabular-nums">{formatCurrency(roundCents(trailingTotal))}</p>
+              <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums">{formatCurrency(roundCents(trailingTotal))}</p>
               <p className="text-xs text-gray-400 mt-0.5">dividends received</p>
             </div>
             <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
               <p className="text-xs font-medium text-gray-500">Next 12 months</p>
-              <p className="mt-0.5 text-xl font-bold tabular-nums">{formatCurrency(roundCents(projectedGross))}</p>
+              <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums">{formatCurrency(roundCents(projectedGross))}</p>
               <p className="text-xs text-gray-400 mt-0.5">
                 {formatCurrency(roundCents(projectedAfterTax))} after est. tax
               </p>
             </div>
             <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
               <p className="text-xs font-medium text-gray-500">Est. dividend tax YTD</p>
-              <p className="mt-0.5 text-xl font-bold tabular-nums">{formatCurrency(roundCents(taxYtd.totalTax))}</p>
+              <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums">{formatCurrency(roundCents(taxYtd.totalTax))}</p>
               {taxYtd.unclassifiedAmount > 0 ? (
                 <p className="text-xs text-amber-700 mt-0.5">
                   {formatCurrency(roundCents(taxYtd.unclassifiedAmount))} unclassified
@@ -337,7 +337,7 @@ export function Income() {
             </div>
             <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
               <p className="text-xs font-medium text-gray-500">Yield on cost</p>
-              <p className="mt-0.5 text-xl font-bold tabular-nums">
+              <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums">
                 {portfolioYoc != null ? formatPercent(portfolioYoc) : '—'}
               </p>
               <p className="text-xs text-gray-400 mt-0.5">projecting holdings only</p>
@@ -399,7 +399,7 @@ export function Income() {
             </table>
           </div>
 
-          <div className="bg-white rounded-lg shadow-lg overflow-x-auto">
+          <div className="bg-white rounded-lg shadow-lg">
             <div className="px-4 pt-4 flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
                 Distribution history
@@ -461,6 +461,8 @@ export function Income() {
             {allocError && (
               <p className="mx-4 mt-2 text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{allocError}</p>
             )}
+            {/* Only the table scrolls sideways — the filter/reclassify bars above stay put. */}
+            <div className="overflow-x-auto">
             <table className="w-full text-sm compact-table">
               <thead className="bg-gray-50 group/head">
                 <tr className="text-left text-xs">
@@ -503,11 +505,11 @@ export function Income() {
                     <td className="px-4 py-2 text-xs text-gray-500">{r.lot.shares > 0 ? 'DRIP' : 'cash'}</td>
                     <td className="px-2 py-2">
                       <div className="flex items-center gap-1 justify-end">
-                        <button onClick={() => setReclassifying(r)} className="p-1 rounded hover:bg-gray-100"
+                        <button onClick={() => setReclassifying(r)} className="p-2 sm:p-1 rounded hover:bg-gray-100"
                           aria-label="Reclassify" title="Change classification (1099 correction)">
                           <Pencil className="h-3.5 w-3.5 text-gray-300 hover:text-gray-600" />
                         </button>
-                        <button onClick={() => setDeleting(r)} className="p-1 rounded hover:bg-red-50"
+                        <button onClick={() => setDeleting(r)} className="p-2 sm:p-1 rounded hover:bg-red-50"
                           aria-label="Delete dividend">
                           <Trash2 className="h-3.5 w-3.5 text-gray-300 hover:text-red-600" />
                         </button>
@@ -524,6 +526,7 @@ export function Income() {
                 )}
               </tbody>
             </table>
+            </div>
             {classTotals && filteredHist.length > 0 && (
               <p className="px-4 py-3 text-xs text-gray-500 border-t border-gray-100 tabular-nums">
                 {yearFilter}{tickerFilter ? ` · ${tickerFilter}` : ''} by class
@@ -635,7 +638,7 @@ function HoldingRow({
       )}
       <td className="px-2 py-2 text-right">
         {!archived && (
-          <button onClick={onEditRate} className="p-1 rounded hover:bg-gray-100"
+          <button onClick={onEditRate} className="p-2 sm:p-1 rounded hover:bg-gray-100"
             aria-label="Edit dividend rate" title="Manual rate & frequency (used when there's no payment history)">
             <Pencil className="h-3.5 w-3.5 text-gray-300 hover:text-gray-600" />
           </button>
@@ -743,7 +746,7 @@ function RateModal({ position: p, onClose }: { position: ParkedPosition; onClose
   return (
     <Modal isOpen onClose={onClose} title={`${p.ticker} dividend rate`}>
       <form onSubmit={submit} className="space-y-3">
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
             <label className={labelCls}>Annual rate ($/share)</label>
             <input type="number" step="any" min="0" value={rate} autoFocus

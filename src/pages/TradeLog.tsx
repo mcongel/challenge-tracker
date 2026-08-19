@@ -101,7 +101,7 @@ export function TradeLog() {
       {error && <ErrorCard message={error} />}
       {rowError && <ErrorCard message={rowError} />}
 
-      <div className="bg-white rounded-lg shadow-lg p-4 mb-4 density-aware-card flex items-baseline justify-between">
+      <div className="bg-white rounded-lg shadow-lg p-4 mb-4 density-aware-card flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <div>
           <p className="text-xs font-medium text-gray-500">Net realized {currentYear} (drives the tax skim)</p>
           <p className={cn('mt-0.5 text-2xl font-bold tabular-nums', ytd >= 0 ? 'text-green-600' : 'text-red-600')}>
@@ -312,9 +312,9 @@ export function TradeLog() {
                         title="Wash sale — loss disallowed"
                       />
                     </td>
-                    <td className="px-4 py-3 text-gray-500 max-w-[12rem] truncate">{t.notes}</td>
+                    <td className="px-4 py-3 text-gray-500"><div className="max-w-[12rem] truncate">{t.notes}</div></td>
                     <td className="px-2 py-3">
-                      <button onClick={() => setDeletingTradeId(t.id)} className="p-1 rounded hover:bg-red-50" aria-label="Delete trade">
+                      <button onClick={() => setDeletingTradeId(t.id)} className="p-2 sm:p-1 rounded hover:bg-red-50" aria-label="Delete trade">
                         <Trash2 className="h-4 w-4 text-gray-300 hover:text-red-600" />
                       </button>
                     </td>
@@ -352,11 +352,11 @@ export function TradeLog() {
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-2 text-gray-500 max-w-[12rem] truncate">{s.notes}</td>
+                  <td className="px-4 py-2 text-gray-500"><div className="max-w-[12rem] truncate">{s.notes}</div></td>
                   <td className="px-2 py-2 w-10">
                     <button
                       onClick={() => setDeletingOutsideId(s.id)}
-                      className="p-1 rounded hover:bg-red-50" aria-label="Delete outside sale">
+                      className="p-2 sm:p-1 rounded hover:bg-red-50" aria-label="Delete outside sale">
                       <Trash2 className="h-4 w-4 text-gray-300 hover:text-red-600" />
                     </button>
                   </td>

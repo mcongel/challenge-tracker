@@ -164,11 +164,11 @@ export function Positions() {
                           )}
                         </td>
                         <td className="px-2 py-2 whitespace-nowrap">
-                          <button onClick={() => setEditingLot(lot)} className="p-1 rounded hover:bg-gray-100"
+                          <button onClick={() => setEditingLot(lot)} className="p-2 sm:p-1 rounded hover:bg-gray-100"
                             aria-label="Edit lot">
                             <Pencil className="h-4 w-4 text-gray-300 hover:text-gray-600" />
                           </button>
-                          <button onClick={() => setDeletingLot(lot)} className="p-1 rounded hover:bg-red-50"
+                          <button onClick={() => setDeletingLot(lot)} className="p-2 sm:p-1 rounded hover:bg-red-50"
                             aria-label="Delete lot">
                             <Trash2 className="h-4 w-4 text-gray-300 hover:text-red-600" />
                           </button>
@@ -392,7 +392,7 @@ function AddPositionModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
           </div>
         )}
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
             <label className={labelCls}>Shares</label>
             <input type="number" step="any" min="0.00000001" required value={shares}

@@ -117,7 +117,7 @@ export function EditSaleModal({ sale: s, onClose }: { sale: ParkedSale; onClose:
           </>
         ) : (
           <>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className={labelCls}>Date</label>
                 <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />

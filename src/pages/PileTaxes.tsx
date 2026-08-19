@@ -119,7 +119,7 @@ export function PileTaxes() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
             <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
               <p className="text-xs font-medium text-gray-500">Realized sales</p>
-              <p className="mt-0.5 text-xl font-bold tabular-nums">
+              <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums">
                 {capGains.saleCount > 0 ? (
                   <span className={netGain >= 0 ? 'text-green-600' : 'text-red-600'}>
                     {netGain >= 0 ? '+' : '−'}{formatCurrency(Math.abs(roundCents(netGain)))}
@@ -135,7 +135,7 @@ export function PileTaxes() {
             </div>
             <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
               <p className="text-xs font-medium text-gray-500">Dividends</p>
-              <p className="mt-0.5 text-xl font-bold tabular-nums">
+              <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums">
                 {divAmount > 0 ? formatCurrency(roundCents(divAmount)) : '—'}
               </p>
               <p className="text-xs text-gray-400 mt-0.5 tabular-nums">
@@ -150,7 +150,7 @@ export function PileTaxes() {
             </div>
             <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
               <p className="text-xs font-medium text-gray-500">Set aside for {pileYear}</p>
-              <p className="mt-0.5 text-xl font-bold tabular-nums text-gray-900">
+              <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums text-gray-900">
                 {formatCurrency(setAsideTarget)}
               </p>
               <p className={cn('text-xs mt-0.5 tabular-nums',
@@ -181,7 +181,7 @@ export function PileTaxes() {
                         </td>
                         <td className="px-3 py-1.5 text-gray-400 text-xs truncate">{s.notes}</td>
                         <td className="px-1 py-1.5 w-8">
-                          <button onClick={() => setDeleting(s)} className="p-1 rounded hover:bg-red-50" aria-label="Delete set-aside">
+                          <button onClick={() => setDeleting(s)} className="p-2 sm:p-1 rounded hover:bg-red-50" aria-label="Delete set-aside">
                             <Trash2 className="h-3.5 w-3.5 text-gray-300 hover:text-red-600" />
                           </button>
                         </td>

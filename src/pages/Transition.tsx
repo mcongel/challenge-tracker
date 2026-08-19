@@ -186,14 +186,14 @@ export function Transition() {
                           className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-600" />
                       </td>
                       <td className="px-2 py-2 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        <button onClick={() => setScenarioModal(s)} className="p-1 rounded hover:bg-gray-100" aria-label="Edit scenario">
+                        <button onClick={() => setScenarioModal(s)} className="p-2 sm:p-1 rounded hover:bg-gray-100" aria-label="Edit scenario">
                           <Pencil className="h-4 w-4 text-gray-300 hover:text-gray-600" />
                         </button>
                         <button onClick={() => duplicateScenario(s.id).catch((err) => setRowError(errorMessage(err)))}
-                          className="p-1 rounded hover:bg-gray-100" aria-label="Duplicate scenario">
+                          className="p-2 sm:p-1 rounded hover:bg-gray-100" aria-label="Duplicate scenario">
                           <Copy className="h-4 w-4 text-gray-300 hover:text-gray-600" />
                         </button>
-                        <button onClick={() => setDeletingScenario(s)} className="p-1 rounded hover:bg-red-50" aria-label="Delete scenario">
+                        <button onClick={() => setDeletingScenario(s)} className="p-2 sm:p-1 rounded hover:bg-red-50" aria-label="Delete scenario">
                           <Trash2 className="h-4 w-4 text-gray-300 hover:text-red-600" />
                         </button>
                       </td>
@@ -258,7 +258,7 @@ export function Transition() {
                 )}
               </div>
 
-              <div className="bg-white rounded-lg shadow-lg overflow-x-auto">
+              <div className="bg-white rounded-lg shadow-lg">
                 <div className="px-4 pt-4 flex items-center justify-between">
                   <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
                     Planned rotations
@@ -268,6 +268,8 @@ export function Transition() {
                     Add rotation
                   </button>
                 </div>
+                {/* Only the table scrolls sideways — the toolbar above stays put. */}
+                <div className="overflow-x-auto">
                 <table className="w-full text-sm compact-table">
                   <thead className="bg-gray-50">
                     <tr className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
@@ -323,10 +325,10 @@ export function Transition() {
                             })}
                           </td>
                           <td className="px-2 py-2 whitespace-nowrap">
-                            <button onClick={() => setRotationModal(r)} className="p-1 rounded hover:bg-gray-100" aria-label="Edit rotation">
+                            <button onClick={() => setRotationModal(r)} className="p-2 sm:p-1 rounded hover:bg-gray-100" aria-label="Edit rotation">
                               <Pencil className="h-4 w-4 text-gray-300 hover:text-gray-600" />
                             </button>
-                            <button onClick={() => setDeletingRotation(r)} className="p-1 rounded hover:bg-red-50" aria-label="Delete rotation">
+                            <button onClick={() => setDeletingRotation(r)} className="p-2 sm:p-1 rounded hover:bg-red-50" aria-label="Delete rotation">
                               <Trash2 className="h-4 w-4 text-gray-300 hover:text-red-600" />
                             </button>
                           </td>
@@ -342,6 +344,7 @@ export function Transition() {
                     )}
                   </tbody>
                 </table>
+                </div>
               </div>
             </>
           )}
@@ -569,7 +572,7 @@ function ScenarioFormModal({
           Tax rates in this scenario — retired brackets usually differ from working ones. Blank uses
           the Tax Reserve settings.
         </p>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
             <label className={labelCls}>Qualified (%)</label>
             <input type="number" step="any" min="0" max="99" value={qualified}
@@ -720,7 +723,7 @@ function RotationFormModal({
               onChange={(e) => setCashAmount(e.target.value)} className={inputCls} />
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3 items-end">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:items-end">
             <div className="flex gap-3 text-sm text-gray-600">
               <label className="flex items-center gap-1.5">
                 <input type="radio" checked={sellMode === 'pct'} onChange={() => setSellMode('pct')}
@@ -748,7 +751,7 @@ function RotationFormModal({
             )}
           </div>
         )}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
             <label className={labelCls}>Buy symbol</label>
             <input required value={symbol} onChange={(e) => setSymbol(e.target.value)}
@@ -775,7 +778,7 @@ function RotationFormModal({
               Σ {Math.round(mixSum * 100) / 100}
             </span>
           </p>
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {MIX_FIELDS.map(([key, label]) => (
               <div key={key}>
                 <label className="block text-[10px] text-gray-400 mb-0.5">{label}</label>

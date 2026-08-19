@@ -127,7 +127,7 @@ export function Benchmark() {
             Needs a year of daily snapshots — the verdict unlocks {snapshots.length > 0 ? 'as history accumulates' : 'once the scoreboard starts recording'}.
           </p>
         ) : (
-          <p className={cn('mt-0.5 text-xl font-bold tabular-nums', delta >= 0 ? 'text-green-600' : 'text-red-600')}>
+          <p className={cn('mt-0.5 text-lg sm:text-xl font-bold tabular-nums', delta >= 0 ? 'text-green-600' : 'text-red-600')}>
             {delta >= 0 ? 'AHEAD' : 'BEHIND'} by {formatCurrency(roundCents(Math.abs(delta)))} over the trailing year
             <span className="ml-2 text-xs font-normal text-gray-400">
               {delta >= 0 ? 'edge demonstrated — adding capital is investing' : 'the experiment is answering the question'}

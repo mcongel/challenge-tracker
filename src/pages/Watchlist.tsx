@@ -120,8 +120,8 @@ export function Watchlist() {
                         <span className="block text-xs font-normal text-gray-400">{industries[w.ticker]}</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-gray-600 max-w-[16rem] truncate" title={w.catalyst ?? undefined}>
-                      {w.catalyst ?? <span className="text-gray-400">—</span>}
+                    <td className="px-4 py-3 text-gray-600" title={w.catalyst ?? undefined}>
+                      <div className="max-w-[16rem] truncate">{w.catalyst ?? <span className="text-gray-400">—</span>}</div>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap tabular-nums">
                       {w.catalystDate ? (
@@ -153,14 +153,14 @@ export function Watchlist() {
                     <td className="px-4 py-3 text-right tabular-nums text-gray-500">
                       {livePrice != null ? formatCurrency(livePrice) : '—'}
                     </td>
-                    <td className="px-4 py-3 text-gray-500 max-w-[14rem] truncate" title={w.notes ?? undefined}>
-                      {w.notes}
+                    <td className="px-4 py-3 text-gray-500" title={w.notes ?? undefined}>
+                      <div className="max-w-[14rem] truncate">{w.notes}</div>
                     </td>
                     <td className="px-2 py-3 whitespace-nowrap">
-                      <button onClick={() => setEditing(w)} className="p-1 rounded hover:bg-gray-100" aria-label="Edit candidate">
+                      <button onClick={() => setEditing(w)} className="p-2 sm:p-1 rounded hover:bg-gray-100" aria-label="Edit candidate">
                         <Pencil className="h-4 w-4 text-gray-300 hover:text-gray-600" />
                       </button>
-                      <button onClick={() => setDeleting(w)} className="p-1 rounded hover:bg-red-50" aria-label="Remove candidate">
+                      <button onClick={() => setDeleting(w)} className="p-2 sm:p-1 rounded hover:bg-red-50" aria-label="Remove candidate">
                         <Trash2 className="h-4 w-4 text-gray-300 hover:text-red-600" />
                       </button>
                     </td>
@@ -261,7 +261,7 @@ function CandidateModal({ item, onClose }: { item: WatchlistItem | null; onClose
           <input value={catalyst} onChange={(e) => setCatalyst(e.target.value)}
             className={inputCls} placeholder="Q3 earnings; new fab ramp guidance" />
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
             <label className={labelCls}>Entry zone</label>
             <input value={entryNote} onChange={(e) => setEntryNote(e.target.value)}

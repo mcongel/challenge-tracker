@@ -96,14 +96,14 @@ export function Bitcoin() {
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
             <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
               <p className="text-xs font-medium text-gray-500">Bucket total</p>
-              <p className="mt-0.5 text-xl font-bold tabular-nums text-gray-900">
+              <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums text-gray-900">
                 {formatCurrency(roundCents(total))}
               </p>
               <p className="text-xs text-gray-400 mt-0.5">not in the score, not in the pile</p>
             </div>
             <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
               <p className="text-xs font-medium text-gray-500">Unrealized</p>
-              <p className={cn('mt-0.5 text-xl font-bold tabular-nums',
+              <p className={cn('mt-0.5 text-lg sm:text-xl font-bold tabular-nums',
                 total - totalBasis >= 0 ? 'text-green-600' : 'text-red-600')}>
                 {formatCurrency(roundCents(total - totalBasis))}
               </p>
@@ -111,7 +111,7 @@ export function Bitcoin() {
             </div>
             <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card col-span-2 sm:col-span-1">
               <p className="text-xs font-medium text-gray-500">BTC</p>
-              <p className="mt-0.5 text-xl font-bold tabular-nums text-gray-900">
+              <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums text-gray-900">
                 {btcPrice ? formatCurrencyWhole(btcPrice) : '—'}
               </p>
               <p className={cn('text-xs mt-0.5 tabular-nums',
@@ -196,7 +196,7 @@ export function Bitcoin() {
                             </span>
                           </td>
                           <td className="px-2 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                            <button onClick={() => setEditing(p)} className="p-1 rounded hover:bg-gray-100" aria-label={`Edit ${p.ticker}`}>
+                            <button onClick={() => setEditing(p)} className="p-2 sm:p-1 rounded hover:bg-gray-100" aria-label={`Edit ${p.ticker}`}>
                               <Pencil className="h-4 w-4 text-gray-300 hover:text-gray-600" />
                             </button>
                           </td>

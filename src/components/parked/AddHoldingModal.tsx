@@ -103,7 +103,7 @@ export function AddHoldingModal({
   return (
     <Modal isOpen onClose={onClose} title="Buy — parked pile">
       <form onSubmit={submit} className="space-y-3">
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <div>
             <label className={labelCls}>Ticker</label>
             <input required value={ticker} onChange={(e) => setTicker(e.target.value)}
@@ -129,7 +129,7 @@ export function AddHoldingModal({
               </p>
             )}
           </div>
-          <div>
+          <div className="col-span-2 sm:col-span-1">
             <label className={labelCls}>Buy date</label>
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
           </div>
@@ -142,7 +142,7 @@ export function AddHoldingModal({
         )}
         <AccountSelect accounts={accounts} value={accountId} onChange={setAccountId}
           label="Account" kinds={kinds} allowNone={false} />
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
             <label className={labelCls}>Shares</label>
             <input type="number" step="any" min="0.00000001" required value={shares}

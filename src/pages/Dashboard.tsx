@@ -133,7 +133,7 @@ export function Dashboard() {
       {/* Hero: the one big honest number */}
       <div className="bg-white rounded-lg shadow-lg p-6 sm:p-8 text-center">
         <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Total Score</p>
-        <p className="mt-1 text-5xl sm:text-6xl font-bold tabular-nums text-gray-900">
+        <p className="mt-1 text-4xl sm:text-6xl font-bold tabular-nums text-gray-900">
           {settling ? '…' : formatCurrencyWhole(score)}
         </p>
         <p className="mt-2 text-xs text-gray-400">
@@ -188,7 +188,7 @@ export function Dashboard() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
           <p className="text-xs font-medium text-gray-500">Net contributed</p>
-          <p className="mt-0.5 text-xl font-bold tabular-nums text-gray-900">
+          <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums text-gray-900">
             {formatCurrency(netContributed(cashEvents))}
           </p>
           <p className="text-xs text-gray-400 mt-0.5">
@@ -203,7 +203,7 @@ export function Dashboard() {
           ) : shadow === null ? (
             <p className="mt-0.5 text-xl font-bold text-gray-400">set VOO price</p>
           ) : (
-            <p className={cn('mt-0.5 text-xl font-bold tabular-nums',
+            <p className={cn('mt-0.5 text-lg sm:text-xl font-bold tabular-nums',
               lead(score, shadow) >= 0 ? 'text-green-600' : 'text-red-600')}>
               {formatCurrency(roundCents(lead(score, shadow)))}
             </p>
@@ -212,7 +212,7 @@ export function Dashboard() {
         </Link>
         <Link to="/trades" className="bg-white rounded-lg shadow-lg p-4 density-aware-card block hover:bg-gray-50 transition-colors">
           <p className="text-xs font-medium text-gray-500">Net realized {taxYearOf(today)}</p>
-          <p className={cn('mt-0.5 text-xl font-bold tabular-nums', ytd >= 0 ? 'text-green-600' : 'text-red-600')}>
+          <p className={cn('mt-0.5 text-lg sm:text-xl font-bold tabular-nums', ytd >= 0 ? 'text-green-600' : 'text-red-600')}>
             {formatCurrency(roundCents(ytd))}
           </p>
           <p className="text-xs text-gray-400 mt-0.5">drives the tax skim</p>
@@ -223,7 +223,7 @@ export function Dashboard() {
       <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6">
         <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
           <p className="text-sm font-medium text-gray-700">Beyond the challenge</p>
-          <p className="text-xl font-bold tabular-nums text-gray-900">
+          <p className="text-lg sm:text-xl font-bold tabular-nums text-gray-900">
             {formatCurrency(roundCents(
               pileTotal(parked) + pileTotal(btcParked) + pileTotal(retirementParked),
             ))}
@@ -232,7 +232,7 @@ export function Dashboard() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Link to="/parked" className="rounded-lg border border-gray-200 p-4 hover:bg-gray-50 transition-colors">
             <p className="text-xs font-medium text-gray-500">Parked pile</p>
-            <p className="mt-0.5 text-xl font-bold tabular-nums text-gray-700">
+            <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums text-gray-700">
               {formatCurrency(roundCents(pileTotal(parked)))}
             </p>
             <p className="text-xs text-gray-400 mt-0.5">
@@ -243,14 +243,14 @@ export function Dashboard() {
           </Link>
           <Link to="/bitcoin" className="rounded-lg border border-gray-200 p-4 hover:bg-gray-50 transition-colors">
             <p className="text-xs font-medium text-gray-500">Bitcoin</p>
-            <p className="mt-0.5 text-xl font-bold tabular-nums text-gray-700">
+            <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums text-gray-700">
               {formatCurrency(roundCents(pileTotal(btcParked)))}
             </p>
             <p className="text-xs text-gray-400 mt-0.5">the conviction bucket — held, not traded</p>
           </Link>
           <Link to="/retirement" className="rounded-lg border border-gray-200 p-4 hover:bg-gray-50 transition-colors">
             <p className="text-xs font-medium text-gray-500">Retirement</p>
-            <p className="mt-0.5 text-xl font-bold tabular-nums text-gray-700">
+            <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums text-gray-700">
               {formatCurrency(roundCents(pileTotal(retirementParked)))}
             </p>
             <p className="text-xs text-gray-400 mt-0.5">behind its own wall — tax-sheltered</p>

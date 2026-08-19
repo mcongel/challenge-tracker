@@ -241,7 +241,7 @@ function AccountCard({ account: a, selected, onSelect, tracked, holdings, lastRe
         </p>
       ) : (
         <>
-          <p className="mt-2 text-xl font-bold tabular-nums text-gray-900">
+          <p className="mt-2 text-lg sm:text-xl font-bold tabular-nums text-gray-900">
             {formatCurrency(roundCents(tracked))}
           </p>
           <p className="text-xs text-gray-400">
@@ -280,7 +280,7 @@ function AccountDetail({ account, usage, onEdit, onDelete }: {
 
   return (
     <div className="bg-white rounded-lg shadow-lg density-aware-card">
-      <div className="flex items-center gap-2 px-4 pt-4">
+      <div className="flex flex-wrap items-center gap-2 px-4 pt-4">
         <h2 className="text-lg font-bold text-gray-900 truncate">{account.name}</h2>
         <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', KIND_STYLES[account.kind])}>
           {account.kind}
@@ -388,7 +388,7 @@ function AccountCashPanel({ account }: { account: Account }) {
             {formatCurrency(roundCents(cash.balance))}
           </p>
         </div>
-        <div className="flex gap-4 pb-0.5">
+        <div className="flex flex-wrap gap-x-4 gap-y-2 pb-0.5">
           {breakdown.map(({ label, value, signed }) => (
             <div key={label}>
               <p className="text-[11px] text-gray-400">{label}</p>
@@ -424,7 +424,7 @@ function AccountCashPanel({ account }: { account: Account }) {
 
         <form onSubmit={addEvent} className="rounded-md border border-gray-200 px-3 py-2.5 space-y-2">
           <p className="text-xs font-semibold text-gray-500">Add movement (external money, interest, fees)</p>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             <select value={type} onChange={(e) => setType(e.target.value as ParkedCashEvent['type'])} className={inputCls}>
               <option value="deposit">deposit</option>
               <option value="withdrawal">withdrawal</option>
@@ -476,7 +476,7 @@ function AccountCashPanel({ account }: { account: Account }) {
                   </td>
                   <td className="px-3 py-1.5 text-gray-400 text-xs">{e.notes}</td>
                   <td className="px-1 py-1.5 w-8">
-                    <button onClick={() => setDeleting(e)} className="p-1 rounded hover:bg-red-50" aria-label="Delete cash event">
+                    <button onClick={() => setDeleting(e)} className="p-2 sm:p-1 rounded hover:bg-red-50" aria-label="Delete cash event">
                       <Trash2 className="h-3.5 w-3.5 text-gray-300 hover:text-red-600" />
                     </button>
                   </td>
@@ -554,7 +554,7 @@ function AccountFormModal({ account, usage, onClose }: {
   return (
     <Modal isOpen onClose={onClose} title={account ? `Edit ${account.name}` : 'Add account'}>
       <form onSubmit={submit} className="space-y-3">
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="col-span-2">
             <label className={labelCls}>Name</label>
             <input required autoFocus value={name} onChange={(e) => setName(e.target.value)}

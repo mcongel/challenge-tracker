@@ -33,21 +33,22 @@ export function Header({ onMenuClick }: HeaderProps) {
   };
 
   return (
-    <header className="h-14 flex items-center justify-between px-3 sm:px-6 bg-white border-b border-gray-200 sticky top-0 z-30">
-      <div className="flex items-center gap-2">
+    <header className="h-14 flex items-center justify-between gap-2 px-3 sm:px-6 bg-white border-b border-gray-200 sticky top-0 z-30">
+      <div className="flex items-center gap-2 min-w-0">
         <button
           onClick={onMenuClick}
-          className="lg:hidden p-2 rounded-md hover:bg-gray-100"
+          className="lg:hidden p-2.5 sm:p-2 rounded-md hover:bg-gray-100"
           aria-label="Open menu"
         >
           <Menu className="h-5 w-5 text-gray-600" />
         </button>
-        <span className="lg:hidden text-lg font-bold text-gray-600 dark:text-slate-200">
+        {/* Phones get the icons' full row — the drawer and bottom nav carry the name. */}
+        <span className="hidden sm:inline lg:hidden text-lg font-bold truncate text-gray-600 dark:text-slate-200">
           Challenge Tracker
         </span>
       </div>
 
-      <div className="flex items-center gap-1 sm:gap-2">
+      <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
         {quotesAsOf && (
           <span className={cn('text-xs tabular-nums', quotesError ? 'text-amber-600 font-medium' : 'text-gray-400')}>
             {/* Short form on phones, full on wider screens — staleness must be visible everywhere. */}
@@ -65,15 +66,15 @@ export function Header({ onMenuClick }: HeaderProps) {
         )}
         {/* Reference material lives up here, not in the nav — it's reading,
             not workflow. */}
-        <Link to="/rules" className="p-2 rounded-md hover:bg-gray-100" aria-label="Rules" title="Rules">
+        <Link to="/rules" className="p-2.5 sm:p-2 rounded-md hover:bg-gray-100" aria-label="Rules" title="Rules">
           <BookOpen className="h-5 w-5 text-gray-500" />
         </Link>
-        <Link to="/help" className="p-2 rounded-md hover:bg-gray-100" aria-label="Help" title="Help">
+        <Link to="/help" className="p-2.5 sm:p-2 rounded-md hover:bg-gray-100" aria-label="Help" title="Help">
           <HelpCircle className="h-5 w-5 text-gray-500" />
         </Link>
         <button
           onClick={doRefresh}
-          className="p-2 rounded-md hover:bg-gray-100"
+          className="p-2.5 sm:p-2 rounded-md hover:bg-gray-100"
           aria-label="Refresh prices"
           title="Refresh prices"
         >
@@ -81,7 +82,7 @@ export function Header({ onMenuClick }: HeaderProps) {
         </button>
         <button
           onClick={() => setExportOpen(true)}
-          className="p-2 rounded-md hover:bg-gray-100"
+          className="p-2.5 sm:p-2 rounded-md hover:bg-gray-100"
           aria-label="Export data"
           title="Export data"
         >
@@ -89,7 +90,7 @@ export function Header({ onMenuClick }: HeaderProps) {
         </button>
         <button
           onClick={() => setDark((d) => !d)}
-          className="p-2 rounded-md hover:bg-gray-100"
+          className="p-2.5 sm:p-2 rounded-md hover:bg-gray-100"
           aria-label="Toggle dark mode"
         >
           {dark ? (
@@ -100,7 +101,7 @@ export function Header({ onMenuClick }: HeaderProps) {
         </button>
         <button
           onClick={signOut}
-          className="p-2 rounded-md hover:bg-gray-100"
+          className="p-2.5 sm:p-2 rounded-md hover:bg-gray-100"
           aria-label="Sign out"
           title="Sign out"
         >
@@ -157,13 +158,13 @@ function ExportModal({ onClose }: { onClose: () => void }) {
         </button>
         <div>
           <p className="text-xs font-medium text-gray-500 mb-2">Or CSV per table</p>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {tables.map(([name, rows]) => (
               <button
                 key={name}
                 onClick={() => downloadTableCsv(name, rows, stamp)}
                 disabled={rows.length === 0}
-                className={cn(secondaryBtnCls, 'text-xs py-1.5 disabled:opacity-40')}
+                className={cn(secondaryBtnCls, 'text-xs py-1.5 truncate disabled:opacity-40')}
               >
                 {name} ({rows.length})
               </button>
