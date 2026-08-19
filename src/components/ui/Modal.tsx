@@ -1,5 +1,5 @@
 import { X } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
 interface ModalProps {
@@ -10,6 +10,9 @@ interface ModalProps {
 }
 
 export function Modal({ isOpen, onClose, title, children }: ModalProps) {
+  const titleId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     document.body.style.overflow = isOpen ? 'hidden' : 'unset';
     return () => {
@@ -25,6 +28,35 @@ export function Modal({ isOpen, onClose, title, children }: ModalProps) {
     return () => document.removeEventListener('keydown', handleEscape);
   }, [isOpen, onClose]);
 
+  // Focus management: move focus into the dialog on open (unless a child
+  // claimed it via autoFocus) and hand it back on close — without this a
+  // keyboard user keeps tabbing the page behind the overlay.
+  useEffect(() => {
+    if (!isOpen) return;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const panel = panelRef.current;
+    if (panel && !panel.contains(document.activeElement)) panel.focus();
+    return () => previouslyFocused?.focus?.();
+  }, [isOpen]);
+
+  // Minimal focus trap: Tab wraps within the panel.
+  const trapTab = (e: React.KeyboardEvent) => {
+    if (e.key !== 'Tab' || !panelRef.current) return;
+    const focusables = panelRef.current.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    );
+    if (focusables.length === 0) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
+
   if (!isOpen) return null;
 
   // Portal to <body>: a modal opened from inside another modal would otherwise
@@ -34,10 +66,18 @@ export function Modal({ isOpen, onClose, title, children }: ModalProps) {
     <div className="fixed inset-0 z-50 overflow-y-auto">
       <div className="flex items-center justify-center min-h-screen px-2 sm:px-4 pt-4 pb-20 text-center sm:p-0">
         <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={onClose} />
-        <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle w-full max-w-lg mx-2 sm:mx-0">
+        <div
+          ref={panelRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          tabIndex={-1}
+          onKeyDown={trapTab}
+          className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle w-full max-w-lg mx-2 sm:mx-0 focus:outline-none"
+        >
           <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-medium text-gray-900">{title}</h3>
+              <h3 id={titleId} className="text-lg font-medium text-gray-900">{title}</h3>
               <button
                 onClick={onClose}
                 className="p-1 hover:bg-gray-100 rounded-md transition-colors"
