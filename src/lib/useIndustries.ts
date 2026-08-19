@@ -28,7 +28,10 @@ export function useIndustries(tickers: string[]): Record<string, string | null> 
     void Promise.all(
       missing.map(async (t) => {
         const p = await fetchProfile(t);
-        industryCache.set(t, p?.industry ?? null);
+        // Cache only real answers. A failed fetch (rate limit, config, network)
+        // must stay retryable — caching it as null would render "no industry"
+        // for the whole session on what was actually an outage.
+        if (p) industryCache.set(t, p.industry ?? null);
       }),
     ).then(publish);
     return () => { cancelled = true; };

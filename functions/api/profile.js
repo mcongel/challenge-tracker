@@ -18,7 +18,9 @@ export async function onRequestGet(context) {
   if (!/^[A-Z.\-]{1,10}$/.test(ticker)) {
     return json({ error: 'ticker required' }, 400);
   }
-  if (!env.FINNHUB_API_KEY) return json({ ticker, name: null, industry: null });
+  // A missing key is a config failure, not "this ticker has no profile" —
+  // a 200 here made a Cloudflare env mishap look like every ticker is an ETF.
+  if (!env.FINNHUB_API_KEY) return json({ error: 'FINNHUB_API_KEY not configured' }, 503);
 
   const cache = caches.default;
   const key = new Request(`https://quotes-cache.internal/profile/v1/${ticker}`);
@@ -29,7 +31,7 @@ export async function onRequestGet(context) {
     const res = await fetch(
       `https://finnhub.io/api/v1/stock/profile2?symbol=${ticker}&token=${env.FINNHUB_API_KEY}`,
     );
-    if (!res.ok) return json({ ticker, name: null, industry: null });
+    if (!res.ok) return json({ error: `finnhub ${res.status}` }, 502);
     const body = await res.json();
     const payload = JSON.stringify({
       ticker,
@@ -48,7 +50,7 @@ export async function onRequestGet(context) {
     context.waitUntil(cache.put(key, response.clone()));
     return response;
   } catch {
-    return json({ ticker, name: null, industry: null });
+    return json({ error: 'finnhub unreachable' }, 502);
   }
 }
 
