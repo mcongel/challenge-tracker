@@ -108,8 +108,10 @@ export function TradeLog() {
         <p className="text-xs text-gray-400">{trades.length} closed trade{trades.length === 1 ? '' : 's'}</p>
       </div>
 
-      {/* Net realized per quarter — the cadence the 30% skim actually runs on */}
-      {byQuarter.length >= 2 && (
+      {/* Net realized per quarter — the cadence the 30% skim actually runs
+          on. Shows from the first quarter: one lonely bar beats an invisible
+          feature, and the axis gives even that one its scale. */}
+      {byQuarter.length >= 1 && (
         <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6 mb-4">
           <p className="text-sm font-medium text-gray-700 mb-1">
             Realized by quarter
