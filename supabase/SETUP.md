@@ -33,6 +33,16 @@ pattern if you add one: `enable row level security`, a `create policy
 owner_all … using (challenge.is_owner())`, and `grant all … to authenticated,
 service_role`.
 
+**`db push` on this shared project:** the Sackets migration history also
+holds the race apps' versions, which this repo rightly doesn't have — a
+plain `supabase db push` refuses (and its "repair --status reverted"
+suggestion would corrupt THEIR history; never run it). Either paste new
+migrations in the SQL editor, or push from a scratch dir whose
+`supabase/migrations/` holds an empty placeholder file per already-applied
+remote version plus the real new file — placeholders are skipped as applied,
+only the new migration runs. This repo's versions through 20260828 are
+recorded as applied (migration repair, 2026-08-19).
+
 **Deploy order rule: migrate BEFORE pushing code.** The app selects from
 every table at load, so new code against an old schema errors at startup.
 Apply the migration to the live DB, verify, then push.
