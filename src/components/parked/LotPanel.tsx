@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { ConfirmModal } from '../ui/ConfirmModal';
 import { TotalField } from '../ui/TotalField';
+import { Field } from '../ui/Field';
+import { FormError, ModalFooter, useModalForm } from '../ui/useModalForm';
 import { useData } from '../../contexts/DataContext';
 import type { DividendClassification, ParkedLot, ParkedPosition, UnlockSummary } from '../../lib/engine';
 import {
@@ -9,7 +11,7 @@ import {
 } from '../../lib/engine';
 import { useNotional } from '../../lib/useNotional';
 import {
-  cn, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls, secondaryBtnCls, todayISO,
+  cn, formatCurrency, formatPercent, inputCls, money, secondaryBtnCls, signedMoney, todayISO,
 } from '../../lib/utils';
 import { CLASSIFICATION_LABELS, classificationPillCls, fmtSh, unlockSentence } from './shared';
 
@@ -72,9 +74,50 @@ export function LotPanel({ position: p, summary }: { position: ParkedPosition; s
     else syncFromShares(shares, pr);
   };
   const [deleting, setDeleting] = useState<ParkedLot | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
   const [justAdded, setJustAdded] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+
+  const { busy, formError, setFormError, submit } = useModalForm(async () => {
+    if (mode === 'purchase') {
+      const sh = Number(pur.shares);
+      const pr = Number(pur.price);
+      if (!sh || sh <= 0 || !pr || pr <= 0) throw new Error('Enter shares and price.');
+      await addParkedLot({
+        parkedPositionId: p.id,
+        date: date || null,
+        source: 'purchase',
+        shares: sh,
+        price: pr,
+        amount: roundCents(sh * pr),
+      });
+      setMode(null);
+    } else {
+      const pr = Number(price);
+      if (reinvested && (!pr || pr <= 0)) throw new Error('Reinvested dividends need the reinvestment price.');
+      const amt = Number(amount) > 0 ? Number(amount) : Number(shares) > 0 && pr > 0 ? Number(shares) * pr : 0;
+      if (amt <= 0) throw new Error('Enter the dividend as dollars or shares.');
+      const sh = reinvested ? (Number(shares) > 0 ? Number(shares) : amt / pr) : 0;
+      await addParkedLot({
+        parkedPositionId: p.id,
+        date: date || null,
+        source: 'dividend',
+        shares: sh,
+        price: reinvested ? pr : null,
+        amount: roundCents(amt),
+        classification,
+        exDate: exDate || null,
+        notes: reinvested ? 'reinvested' : 'cash',
+      });
+      // Streaks are the norm (daily/monthly payers entered in a run) — keep
+      // the form open with date/classification/reinvest intact and the
+      // per-entry fields cleared. Ex-date clears too: it differs per
+      // payment, and a silently inherited one is wrong holding-period
+      // evidence.
+      setAmount('');
+      setShares('');
+      setExDate('');
+      setJustAdded(`Added ${money(amt)} ✓ — form kept for the next one`);
+    }
+  });
 
   const openForm = (m: 'purchase' | 'dividend') => {
     setMode(m);
@@ -89,58 +132,6 @@ export function LotPanel({ position: p, summary }: { position: ParkedPosition; s
     setJustAdded(null);
   };
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError(null);
-    setBusy(true);
-    try {
-      if (mode === 'purchase') {
-        const sh = Number(pur.shares);
-        const pr = Number(pur.price);
-        if (!sh || sh <= 0 || !pr || pr <= 0) throw new Error('Enter shares and price.');
-        await addParkedLot({
-          parkedPositionId: p.id,
-          date: date || null,
-          source: 'purchase',
-          shares: sh,
-          price: pr,
-          amount: roundCents(sh * pr),
-        });
-        setMode(null);
-      } else {
-        const pr = Number(price);
-        if (reinvested && (!pr || pr <= 0)) throw new Error('Reinvested dividends need the reinvestment price.');
-        const amt = Number(amount) > 0 ? Number(amount) : Number(shares) > 0 && pr > 0 ? Number(shares) * pr : 0;
-        if (amt <= 0) throw new Error('Enter the dividend as dollars or shares.');
-        const sh = reinvested ? (Number(shares) > 0 ? Number(shares) : amt / pr) : 0;
-        await addParkedLot({
-          parkedPositionId: p.id,
-          date: date || null,
-          source: 'dividend',
-          shares: sh,
-          price: reinvested ? pr : null,
-          amount: roundCents(amt),
-          classification,
-          exDate: exDate || null,
-          notes: reinvested ? 'reinvested' : 'cash',
-        });
-        // Streaks are the norm (daily/monthly payers entered in a run) — keep
-        // the form open with date/classification/reinvest intact and the
-        // per-entry fields cleared. Ex-date clears too: it differs per
-        // payment, and a silently inherited one is wrong holding-period
-        // evidence.
-        setAmount('');
-        setShares('');
-        setExDate('');
-        setJustAdded(`Added ${formatCurrency(roundCents(amt))} ✓ — form kept for the next one`);
-      }
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <div>
       <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">
@@ -152,11 +143,11 @@ export function LotPanel({ position: p, summary }: { position: ParkedPosition; s
           <span className="text-gray-500">
             {' '}Total return{' '}
             <span className={cn('font-medium tabular-nums', totalReturn.total >= 0 ? 'text-green-600' : 'text-red-600')}>
-              {totalReturn.total >= 0 ? '+' : '−'}{formatCurrency(Math.abs(roundCents(totalReturn.total)))}
+              {signedMoney(totalReturn.total)}
               {totalReturn.pct != null && ` (${formatPercent(totalReturn.pct)})`}
             </span>
-            {' '}— unrealized {formatCurrency(roundCents(totalReturn.unrealized))} · income{' '}
-            {formatCurrency(roundCents(totalReturn.income))} · realized {formatCurrency(roundCents(totalReturn.realized))}
+            {' '}— unrealized {money(totalReturn.unrealized)} · income{' '}
+            {money(totalReturn.income)} · realized {money(totalReturn.realized)}
             {totalReturn.unknownBasisSales > 0 && ` · ${totalReturn.unknownBasisSales} unknown-basis sale${totalReturn.unknownBasisSales > 1 ? 's' : ''} excluded`}.
           </span>
         )}
@@ -165,8 +156,8 @@ export function LotPanel({ position: p, summary }: { position: ParkedPosition; s
         )}
         {adjustedAgg.adjustedCostBasis < adjustedAgg.costBasis - 0.005 && (
           <span className="text-gray-500">
-            {' '}Basis {formatCurrency(roundCents(adjustedAgg.costBasis))} original ·{' '}
-            {formatCurrency(roundCents(adjustedAgg.adjustedCostBasis))} after ROC — sales are taxed
+            {' '}Basis {money(adjustedAgg.costBasis)} original ·{' '}
+            {money(adjustedAgg.adjustedCostBasis)} after ROC — sales are taxed
             against the adjusted number.
           </span>
         )}
@@ -231,49 +222,42 @@ export function LotPanel({ position: p, summary }: { position: ParkedPosition; s
             </p>
             {mode === 'purchase' ? (
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={labelCls}>Date</label>
+                <Field label="Date">
                   <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
-                </div>
-                <div>
-                  <label className={labelCls}>Shares</label>
+                </Field>
+                <Field label="Shares">
                   <input type="number" step="any" min="0.00000001" required value={pur.shares}
                     onChange={(e) => pur.setShares(e.target.value)} className={inputCls} />
-                </div>
-                <div>
-                  <label className={labelCls}>Price ($)</label>
+                </Field>
+                <Field label="Price ($)">
                   <input type="number" step="any" min="0" required value={pur.price}
                     onChange={(e) => pur.setPrice(e.target.value)} className={inputCls} />
-                </div>
+                </Field>
                 <TotalField value={pur.total} onChange={pur.setTotal} />
               </div>
             ) : (
               <>
                 <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className={labelCls}>Date</label>
+                  <Field label="Date">
                     <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
-                  </div>
+                  </Field>
                   {reinvested && (
-                    <div>
-                      <label className={labelCls}>Reinvest price ($)</label>
+                    <Field label="Reinvest price ($)">
                       <input type="number" step="any" min="0" value={price}
                         onChange={(e) => syncFromPrice(e.target.value)} className={inputCls} />
-                    </div>
+                    </Field>
                   )}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className={labelCls}>Amount ($)</label>
+                  <Field label="Amount ($)">
                     <input type="number" step="any" min="0" value={amount}
                       onChange={(e) => syncFromAmount(e.target.value, price)} className={inputCls} />
-                  </div>
+                  </Field>
                   {reinvested && (
-                    <div>
-                      <label className={labelCls}>Shares</label>
+                    <Field label="Shares">
                       <input type="number" step="any" min="0" value={shares}
                         onChange={(e) => syncFromShares(e.target.value, price)} className={inputCls} />
-                    </div>
+                    </Field>
                   )}
                 </div>
               </>
@@ -281,8 +265,7 @@ export function LotPanel({ position: p, summary }: { position: ParkedPosition; s
             {mode === 'dividend' && (
               <>
                 <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className={labelCls}>Classification</label>
+                  <Field label="Classification">
                     <select value={classification} className={inputCls}
                       onChange={(e) => setClassification(e.target.value as DividendClassification)}>
                       <option value="unclassified">Unclassified (confirm later)</option>
@@ -291,12 +274,11 @@ export function LotPanel({ position: p, summary }: { position: ParkedPosition; s
                       <option value="return_of_capital">Return of capital</option>
                       <option value="capital_gain_dist">Capital gain distribution</option>
                     </select>
-                  </div>
-                  <div>
-                    <label className={labelCls}>Ex-date (optional)</label>
+                  </Field>
+                  <Field label="Ex-date (optional)">
                     <input type="date" value={exDate} onChange={(e) => setExDate(e.target.value)}
                       className={inputCls} />
-                  </div>
+                  </Field>
                 </div>
                 <label className="flex items-center gap-2 text-sm text-gray-700">
                   <input type="checkbox" checked={reinvested} onChange={(e) => setReinvested(e.target.checked)}
@@ -306,16 +288,12 @@ export function LotPanel({ position: p, summary }: { position: ParkedPosition; s
                 </label>
               </>
             )}
-            {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
+            <FormError message={formError} />
             {justAdded && !formError && (
               <p className="text-sm text-green-700 bg-green-50 rounded-md px-3 py-2">{justAdded}</p>
             )}
-            <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setMode(null)} className={secondaryBtnCls}>
-                {justAdded ? 'Done' : 'Cancel'}
-              </button>
-              <button type="submit" disabled={busy} className={primaryBtnCls}>{busy ? 'Saving…' : 'Add'}</button>
-            </div>
+            <ModalFooter busy={busy} label="Add" onCancel={() => setMode(null)}
+              cancelLabel={justAdded ? 'Done' : 'Cancel'} />
           </form>
         )}
 

@@ -9,6 +9,10 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
 import { ErrorCard } from '../components/ui/ErrorCard';
 import { SkeletonTable } from '../components/ui/SkeletonTable';
+import { Card, TableCard } from '../components/ui/Card';
+import { StatTile, toneOf } from '../components/ui/StatTile';
+import { Field } from '../components/ui/Field';
+import { FormError, ModalFooter, useModalForm } from '../components/ui/useModalForm';
 import { SplitModal } from '../components/SplitModal';
 import { useData } from '../contexts/DataContext';
 import { lotsByPositionId } from '../lib/engine';
@@ -16,11 +20,12 @@ import type { ParkedPosition, UnlockSummary } from '../lib/engine';
 import {
   adjustmentsForLots, concentration, contributionStatus, daysBetween, dividendsCollected,
   estimatedPileTax, isArchivedPosition, isNeverTrimFuel, netContributed, parkedCostBasis,
-  parkedMarketValue, positionTotalReturn, roundCents, SEMI_CATEGORY, trimPreview, unlockSummary,
+  parkedMarketValue, positionTotalReturn, SEMI_CATEGORY, trimPreview, unlockSummary,
 } from '../lib/engine';
 import type { PositionTotalReturn } from '../lib/engine';
 import {
-  cn, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls, safeStorage, secondaryBtnCls, todayISO,
+  cn, formatCurrency, formatPercent, inputCls, money, primaryBtnCls, safeStorage, secondaryBtnCls,
+  signedMoney, todayISO,
 } from '../lib/utils';
 import { categoryPillCls, fmtSh, SortHeader, unlockSentence } from '../components/parked/shared';
 import type { SortState } from '../components/parked/shared';
@@ -324,51 +329,39 @@ export function ParkedPile() {
 
       {/* Concentration watch */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-        <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
-          <p className="text-xs font-medium text-gray-500">Pile total</p>
-          <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums text-gray-900">{formatCurrency(roundCents(c.total))}</p>
-          <p className="text-xs text-gray-400 mt-0.5"
-            title={`All-time total return: price + dividends (${formatCurrency(roundCents(divTotal))} collected) + realized sales, ROC counted once. Simple return on dollars invested, not annualized.`}>
-            not in score
-            {pileReturn.invested > 0 && (
-              <span className={pileReturn.total >= 0 ? 'text-green-700' : 'text-red-600'}>
-                {' '}· {pileReturn.total >= 0 ? '+' : '−'}{formatCurrency(Math.abs(roundCents(pileReturn.total)))} all-time
-                {pileReturn.pct != null && ` (${formatPercent(pileReturn.pct)})`}
-              </span>
-            )}
-          </p>
-        </div>
-        <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
-          <p className="text-xs font-medium text-gray-500">Semiconductors</p>
-          <p className={cn('mt-0.5 text-lg sm:text-xl font-bold tabular-nums', c.overCap ? 'text-red-600' : 'text-gray-900')}>
-            {formatPercent(c.semiPct)}
-          </p>
-          <button onClick={() => setCapOpen(true)}
-            className="text-xs text-gray-400 mt-0.5 hover:text-green-700 hover:underline">
-            cap {formatPercent(concentrationCap, 0)} — edit
-          </button>
-        </div>
-        <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card"
+        <StatTile label="Pile total" value={money(c.total)}
+          title={`All-time total return: price + dividends (${money(divTotal)} collected) + realized sales, ROC counted once. Simple return on dollars invested, not annualized.`}
+          sub={
+            <>
+              not in score
+              {pileReturn.invested > 0 && (
+                <span className={pileReturn.total >= 0 ? 'text-green-700' : 'text-red-600'}>
+                  {' '}· {signedMoney(pileReturn.total)} all-time
+                  {pileReturn.pct != null && ` (${formatPercent(pileReturn.pct)})`}
+                </span>
+              )}
+            </>
+          } />
+        <StatTile label="Semiconductors" value={formatPercent(c.semiPct)}
+          tone={c.overCap ? 'neg' : undefined}
+          sub={
+            <button onClick={() => setCapOpen(true)} className="hover:text-green-700 hover:underline">
+              cap {formatPercent(concentrationCap, 0)} — edit
+            </button>
+          } />
+        <StatTile label="Sector mix" value={Object.keys(c.byCategory).length}
           title={Object.entries(c.byCategory).sort((a, b) => b[1] - a[1])
-            .map(([k, v]) => `${k} ${c.total > 0 ? Math.round((v / c.total) * 100) : 0}%`).join(' · ')}>
-          <p className="text-xs font-medium text-gray-500">Sector mix</p>
-          <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums text-gray-900">
-            {Object.keys(c.byCategory).length}
-          </p>
-          <p className="text-xs text-gray-400 mt-0.5 truncate">
-            {Object.entries(c.byCategory).sort((a, b) => b[1] - a[1]).slice(1, 3)
-              .map(([k, v]) => `${k} ${c.total > 0 ? Math.round((v / c.total) * 100) : 0}%`)
-              .join(' · ') || '—'}
-          </p>
-        </div>
-        <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
-          <p className="text-xs font-medium text-gray-500">Unrealized</p>
-          <p className={cn('mt-0.5 text-lg sm:text-xl font-bold tabular-nums',
-            c.total - totalBasis >= 0 ? 'text-green-600' : 'text-red-600')}>
-            {formatCurrency(roundCents(c.total - totalBasis))}
-          </p>
-          <p className="text-xs text-gray-400 mt-0.5">vs {formatCurrency(roundCents(totalBasis))} basis</p>
-        </div>
+            .map(([k, v]) => `${k} ${c.total > 0 ? Math.round((v / c.total) * 100) : 0}%`).join(' · ')}
+          sub={
+            <span className="block truncate">
+              {Object.entries(c.byCategory).sort((a, b) => b[1] - a[1]).slice(1, 3)
+                .map(([k, v]) => `${k} ${c.total > 0 ? Math.round((v / c.total) * 100) : 0}%`)
+                .join(' · ') || '—'}
+            </span>
+          } />
+        <StatTile label="Unrealized" value={money(c.total - totalBasis)}
+          tone={toneOf(c.total - totalBasis)}
+          sub={<>vs {money(totalBasis)} basis</>} />
       </div>
 
       {c.overCap && (
@@ -382,7 +375,7 @@ export function ParkedPile() {
           order, with the tax cost attached. Supersedes squinting at locks.
           Accordion: the header carries the summary, so collapsed still informs. */}
       {(trimFuel.length > 0 || nextUnlocks.length > 0) && (
-        <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6 mb-4 density-aware-card">
+        <Card className="p-4 sm:p-6 mb-4 density-aware-card">
           <button
             onClick={() => setFuelOpen(!fuelOpen)}
             className="w-full flex flex-wrap items-baseline justify-between gap-2 text-left"
@@ -391,14 +384,14 @@ export function ParkedPile() {
             <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-gray-400">
               {fuelOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
               Trim fuel — {trimFuel.length > 0
-                ? `${trimFuel.length} holding${trimFuel.length > 1 ? 's' : ''} · ${formatCurrency(roundCents(trimFuel.reduce((s, r) => s + r.readyValue, 0)))} ready (Rule 5)`
+                ? `${trimFuel.length} holding${trimFuel.length > 1 ? 's' : ''} · ${money(trimFuel.reduce((s, r) => s + r.readyValue, 0))} ready (Rule 5)`
                 : 'nothing long-term yet (Rule 5)'}
             </span>
             {capRoom !== null && (
               <span className={cn('text-xs tabular-nums', capRoom <= 0 ? 'text-red-600 font-medium' : 'text-gray-400')}>
                 {capRoom <= 0
                   ? 'contribution cap reached — proceeds stay in the pile'
-                  : `${formatCurrency(roundCents(capRoom))} of contribution-cap room`}
+                  : `${money(capRoom)} of contribution-cap room`}
               </span>
             )}
           </button>
@@ -424,14 +417,14 @@ export function ParkedPile() {
                   </span>
                   <span className="flex items-center gap-3 text-sm tabular-nums">
                     <span>
-                      <span className="font-bold">{formatCurrency(roundCents(readyValue))}</span>
+                      <span className="font-bold">{money(readyValue)}</span>
                       <span className="ml-1 text-xs text-gray-400">{fmtSh(unlockedShares)} sh</span>
                     </span>
                     {gain != null && (
                       <span className={cn('text-xs', gain >= 0 ? 'text-green-600' : 'text-red-600')}>
-                        {gain >= 0 ? '+' : '−'}{formatCurrency(Math.abs(roundCents(gain)))} gain
+                        {signedMoney(gain)} gain
                         {estTax != null && estTax > 0 && (
-                          <span className="text-gray-400"> · est. tax {formatCurrency(roundCents(estTax))}</span>
+                          <span className="text-gray-400"> · est. tax {money(estTax)}</span>
                         )}
                       </span>
                     )}
@@ -455,7 +448,7 @@ export function ParkedPile() {
                 `${fmtSh(next.shares)} sh ${p.ticker} on ${next.date}`).join(' · ')}
             </p>
           )}
-        </div>
+        </Card>
       )}
 
       {/* Value history reconstructed from the real records (lots × actual
@@ -477,33 +470,35 @@ export function ParkedPile() {
           hint="Hit Buy to add the first holding — every position starts as a dated purchase lot with its own 366-day unlock clock."
         />
       ) : (
-        <div className="bg-white rounded-lg shadow-lg">
-          <div className="flex flex-wrap items-center gap-1 px-4 pt-3">
-            <span className="text-xs text-gray-400 mr-1">Group by</span>
-            {(['account', 'ticker', 'flat'] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => setGroupBy(m)}
-                className={cn(
-                  'rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors',
-                  groupBy === m ? 'bg-green-50 text-green-700' : 'text-gray-400 hover:bg-gray-100',
-                )}
-              >
-                {m === 'account' ? 'Account' : m === 'ticker' ? 'Ticker' : 'Nothing (flat)'}
-              </button>
-            ))}
-            {sort.key !== 'default' && (
-              <button
-                onClick={() => setSort({ key: 'default', dir: 'desc' })}
-                className="ml-2 rounded-full px-2.5 py-0.5 text-xs font-medium text-gray-400 hover:bg-gray-100"
-                title="Back to trim rank, then largest value"
-              >
-                clear sort
-              </button>
-            )}
-          </div>
-          {/* Only the table scrolls sideways — the group-by toolbar above stays put. */}
-          <div className="overflow-x-auto">
+        // Only the table scrolls sideways — the group-by toolbar above stays put.
+        <TableCard
+          toolbar={
+            <div className="flex flex-wrap items-center gap-1 px-4 pt-3">
+              <span className="text-xs text-gray-400 mr-1">Group by</span>
+              {(['account', 'ticker', 'flat'] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setGroupBy(m)}
+                  className={cn(
+                    'rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors',
+                    groupBy === m ? 'bg-green-50 text-green-700' : 'text-gray-400 hover:bg-gray-100',
+                  )}
+                >
+                  {m === 'account' ? 'Account' : m === 'ticker' ? 'Ticker' : 'Nothing (flat)'}
+                </button>
+              ))}
+              {sort.key !== 'default' && (
+                <button
+                  onClick={() => setSort({ key: 'default', dir: 'desc' })}
+                  className="ml-2 rounded-full px-2.5 py-0.5 text-xs font-medium text-gray-400 hover:bg-gray-100"
+                  title="Back to trim rank, then largest value"
+                >
+                  clear sort
+                </button>
+              )}
+            </div>
+          }
+        >
           <table className="w-full text-sm compact-table">
             <thead className="bg-gray-50 sticky top-0 group/head">
               <tr className="text-left text-xs">
@@ -541,16 +536,15 @@ export function ParkedPile() {
                             {group.label}
                             <span className="ml-2 text-xs font-normal text-gray-400">
                               {group.positions.length} holding{group.positions.length > 1 ? 's' : ''} ·{' '}
-                              <span className="tabular-nums">{formatCurrency(roundCents(groupValue))}</span>
+                              <span className="tabular-nums">{money(groupValue)}</span>
                               {groupBasis > 0 && (
                                 <span className={cn('tabular-nums',
                                   groupValue - groupBasis >= 0 ? 'text-green-600' : 'text-red-600')}>
-                                  {' '}· {groupValue - groupBasis >= 0 ? '+' : '−'}
-                                  {formatCurrency(Math.abs(roundCents(groupValue - groupBasis)))}
+                                  {' '}· {signedMoney(groupValue - groupBasis)}
                                 </span>
                               )}
                               <span className="tabular-nums" title="Tracked strategy cash — auto-flows from sales, dividends, buys, and challenge funding, plus your manual entries. Reconcile on the Accounts screen.">
-                                {' '}· {formatCurrency(roundCents(accountCash(group.key).balance))} cash
+                                {' '}· {money(accountCash(group.key).balance)} cash
                               </span>
                             </span>
                           </span>
@@ -565,11 +559,10 @@ export function ParkedPile() {
                             )}
                             <span className="text-xs font-normal text-gray-400 tabular-nums">
                               · {fmtSh(groupShares)} sh across {group.positions.length} account{group.positions.length > 1 ? 's' : ''} ·{' '}
-                              {formatCurrency(roundCents(groupValue))}
+                              {money(groupValue)}
                               {groupBasis > 0 && (
                                 <span className={groupValue - groupBasis >= 0 ? ' text-green-600' : ' text-red-600'}>
-                                  {' '}· {groupValue - groupBasis >= 0 ? '+' : '−'}
-                                  {formatCurrency(Math.abs(roundCents(groupValue - groupBasis)))}
+                                  {' '}· {signedMoney(groupValue - groupBasis)}
                                   {' '}({formatPercent((groupValue - groupBasis) / groupBasis)})
                                 </span>
                               )}
@@ -649,7 +642,7 @@ export function ParkedPile() {
                       <td className="px-4 py-3 text-right">
                         <DayChangeCell move={dayChange[p.ticker]} />
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums font-medium">{formatCurrency(roundCents(value))}</td>
+                      <td className="px-4 py-3 text-right tabular-nums font-medium">{money(value)}</td>
                       <td className="px-4 py-3 text-right">
                         <UnrealCell gain={value - basis} basis={basis} />
                       </td>
@@ -659,7 +652,7 @@ export function ParkedPile() {
                           if (!tr) return <span className="text-gray-400">—</span>;
                           return (
                             <span className={cn('tabular-nums font-medium', tr.total >= 0 ? 'text-green-600' : 'text-red-600')}>
-                              {tr.total >= 0 ? '+' : '−'}{formatCurrency(Math.abs(roundCents(tr.total)))}
+                              {signedMoney(tr.total)}
                               {tr.pct != null && (
                                 <span className="block text-xs font-normal">{formatPercent(tr.pct)}</span>
                               )}
@@ -700,8 +693,7 @@ export function ParkedPile() {
               })}
             </tbody>
           </table>
-          </div>
-        </div>
+        </TableCard>
       )}
 
       {editing && <EditParkedModal position={editing} onClose={() => setEditing(null)} />}
@@ -733,39 +725,26 @@ function CapModal({
   onClose: () => void;
 }) {
   const [pct, setPct] = useState(String(Math.round(current * 100)));
-  const [formError, setFormError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const { busy, formError, submit } = useModalForm(async () => {
     const v = Number(pct);
-    if (!v || v <= 0 || v > 100) return setFormError('Enter a percentage between 1 and 100.');
-    setBusy(true);
-    try {
-      await onSave(v / 100);
-      onClose();
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+    if (!v || v <= 0 || v > 100) throw new Error('Enter a percentage between 1 and 100.');
+    await onSave(v / 100);
+    onClose();
+  });
 
   return (
     <Modal isOpen onClose={onClose} title="Semiconductor concentration cap">
       <form onSubmit={submit} className="space-y-3">
-        <div>
-          <label className={labelCls}>Cap (% of pile)</label>
+        <Field label="Cap (% of pile)">
           <input type="number" min="1" max="100" step="1" required value={pct} autoFocus
             onChange={(e) => setPct(e.target.value)} className={inputCls} />
-        </div>
+        </Field>
         <p className="text-xs text-gray-400">
           Above this share of the pile in Semiconductors, the OVER CAP banner fires — trim semis first.
         </p>
-        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
-        <div className="flex justify-end">
-          <button type="submit" disabled={busy} className={primaryBtnCls}>{busy ? 'Saving…' : 'Save cap'}</button>
-        </div>
+        <FormError message={formError} />
+        <ModalFooter busy={busy} label="Save cap" />
       </form>
     </Modal>
   );
@@ -787,7 +766,7 @@ function UnlockCell({ summary: s, price }: { summary: UnlockSummary; price: numb
     return flag(<AlertTriangle className="h-4 w-4" />, 'text-amber-600', 'needs dates');
   }
   if (s.unlockedShares > 0) {
-    const ready = formatCurrency(roundCents(s.unlockedShares * price));
+    const ready = money(s.unlockedShares * price);
     const partial = s.unlockedShares < s.totalShares - 1e-9;
     // Fully unlocked = green; partial = amber open lock — some fuel, not all.
     return flag(
@@ -810,7 +789,7 @@ function UnrealCell({ gain, basis }: { gain: number; basis: number }) {
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap tabular-nums">
       <span className={cn('font-medium', up ? 'text-green-600' : 'text-red-600')}>
-        {up ? '+' : '−'}{formatCurrency(Math.abs(roundCents(gain)))}
+        {signedMoney(gain)}
       </span>
       {basis > 0 && (
         <span className={cn('rounded px-1.5 py-0.5 text-xs font-medium',

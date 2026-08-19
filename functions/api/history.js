@@ -29,7 +29,7 @@ export async function onRequestGet(context) {
   const raw = url.searchParams.get('tickers') ?? '';
   const from = url.searchParams.get('from') ?? '';
   const tickers = [...new Set(
-    raw.split(',').map((t) => t.trim().toUpperCase()).filter((t) => /^[A-Z.\-]{1,10}$/.test(t)),
+    raw.split(',').map((t) => t.trim().toUpperCase()).filter((t) => /^[A-Z.-]{1,10}$/.test(t)),
   )].slice(0, MAX_TICKERS);
 
   if (tickers.length === 0) return json({ error: 'tickers query param required' }, 400);

@@ -15,7 +15,8 @@ import {
 import { ErrorCard } from '../components/ui/ErrorCard';
 import { ContributionCapBadge } from '../components/ui/ContributionCapBadge';
 import { GettingStarted } from '../components/GettingStarted';
-import { cn, compactUsd, formatCurrency, formatCurrencyWhole, todayISO } from '../lib/utils';
+import { Card } from '../components/ui/Card';
+import { cn, compactUsd, formatCurrency, formatCurrencyWhole, money, todayISO } from '../lib/utils';
 import { useChartColors } from '../lib/useIsDark';
 
 /** Chart palette — validated (dataviz six checks) for both surfaces.
@@ -125,7 +126,7 @@ export function Dashboard() {
       ))}
 
       {/* Hero: the one big honest number */}
-      <div className="bg-white rounded-lg shadow-lg p-6 sm:p-8 text-center">
+      <Card className="p-6 sm:p-8 text-center">
         <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Total Score</p>
         <p className="mt-1 text-4xl sm:text-6xl font-bold tabular-nums text-gray-900">
           {settling ? '…' : formatCurrencyWhole(score)}
@@ -138,7 +139,7 @@ export function Dashboard() {
           <Link to="/positions" className="rounded-lg border border-gray-200 p-4 hover:bg-gray-50 transition-colors">
             <p className="text-xs font-medium text-gray-500">Account value</p>
             <p className="mt-0.5 text-2xl font-bold tabular-nums text-gray-900">
-              {settling ? '…' : formatCurrency(roundCents(account))}
+              {settling ? '…' : money(account)}
             </p>
             <p className="text-xs text-gray-400 mt-0.5">positions + cash · everything rides</p>
           </Link>
@@ -149,20 +150,20 @@ export function Dashboard() {
           </Link>
           <Link to="/tax" className="rounded-lg border border-gray-200 p-4 hover:bg-gray-50 transition-colors">
             <p className="text-xs font-medium text-gray-500">Tax reserved</p>
-            <p className="mt-0.5 text-2xl font-bold tabular-nums text-sky-600">{formatCurrency(roundCents(reserved))}</p>
+            <p className="mt-0.5 text-2xl font-bold tabular-nums text-sky-600">{money(reserved)}</p>
             <p className="text-xs text-gray-400 mt-0.5">30% of realized gains, out of play</p>
           </Link>
         </div>
-      </div>
+      </Card>
 
       {/* Next milestone + aspiration */}
-      <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6">
+      <Card className="p-4 sm:p-6">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <p className="text-sm font-medium text-gray-700">
             Next milestone:{' '}
             <span className="tabular-nums font-bold">{settling ? '…' : formatCurrency(next)}</span>
             <span className="ml-2 text-gray-400 tabular-nums">
-              {settling ? '' : `${formatCurrency(roundCents(Math.max(0, next - account)))} to go`}
+              {settling ? '' : `${money(Math.max(0, next - account))} to go`}
             </span>
           </p>
           <p className="text-xs text-gray-400">$1M is the aspiration — direction, not a verdict</p>
@@ -176,11 +177,11 @@ export function Dashboard() {
         <p className="mt-2 text-xs text-gray-400 tabular-nums">
           {settling ? '…' : `${((score / 1_000_000) * 100).toFixed(1)}%`} · final height is the prize
         </p>
-      </div>
+      </Card>
 
       {/* Supporting stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
+        <Card className="p-4 density-aware-card">
           <p className="text-xs font-medium text-gray-500">Net contributed</p>
           <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums text-gray-900">
             {formatCurrency(netContributed(cashEvents))}
@@ -189,7 +190,7 @@ export function Dashboard() {
             true stake so far{contributionCap !== null && ` · ${formatCurrencyWhole(contributionCap)} cap`}
           </p>
           <ContributionCapBadge netContributed={netContributed(cashEvents)} cap={contributionCap} />
-        </div>
+        </Card>
         <Link to="/benchmark" className="bg-white rounded-lg shadow-lg p-4 density-aware-card block hover:bg-gray-50 transition-colors">
           <p className="text-xs font-medium text-gray-500">Lead vs VOO shadow</p>
           {settling ? (
@@ -199,7 +200,7 @@ export function Dashboard() {
           ) : (
             <p className={cn('mt-0.5 text-lg sm:text-xl font-bold tabular-nums',
               lead(score, shadow) >= 0 ? 'text-green-600' : 'text-red-600')}>
-              {formatCurrency(roundCents(lead(score, shadow)))}
+              {money(lead(score, shadow))}
             </p>
           )}
           <p className="text-xs text-gray-400 mt-0.5">the honest test</p>
@@ -207,27 +208,25 @@ export function Dashboard() {
         <Link to="/trades" className="bg-white rounded-lg shadow-lg p-4 density-aware-card block hover:bg-gray-50 transition-colors">
           <p className="text-xs font-medium text-gray-500">Net realized {taxYearOf(today)}</p>
           <p className={cn('mt-0.5 text-lg sm:text-xl font-bold tabular-nums', ytd >= 0 ? 'text-green-600' : 'text-red-600')}>
-            {formatCurrency(roundCents(ytd))}
+            {money(ytd)}
           </p>
           <p className="text-xs text-gray-400 mt-0.5">drives the tax skim</p>
         </Link>
       </div>
 
       {/* The other book: three pots that share a card but never the score. */}
-      <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6">
+      <Card className="p-4 sm:p-6">
         <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
           <p className="text-sm font-medium text-gray-700">Beyond the challenge</p>
           <p className="text-lg sm:text-xl font-bold tabular-nums text-gray-900">
-            {formatCurrency(roundCents(
-              pileTotal(parked) + pileTotal(btcParked) + pileTotal(retirementParked),
-            ))}
+            {money(pileTotal(parked) + pileTotal(btcParked) + pileTotal(retirementParked))}
           </p>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Link to="/parked" className="rounded-lg border border-gray-200 p-4 hover:bg-gray-50 transition-colors">
             <p className="text-xs font-medium text-gray-500">Parked pile</p>
             <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums text-gray-700">
-              {formatCurrency(roundCents(pileTotal(parked)))}
+              {money(pileTotal(parked))}
             </p>
             <p className="text-xs text-gray-400 mt-0.5">
               {nextUnlock
@@ -238,14 +237,14 @@ export function Dashboard() {
           <Link to="/bitcoin" className="rounded-lg border border-gray-200 p-4 hover:bg-gray-50 transition-colors">
             <p className="text-xs font-medium text-gray-500">Bitcoin</p>
             <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums text-gray-700">
-              {formatCurrency(roundCents(pileTotal(btcParked)))}
+              {money(pileTotal(btcParked))}
             </p>
             <p className="text-xs text-gray-400 mt-0.5">the conviction bucket — held, not traded</p>
           </Link>
           <Link to="/retirement" className="rounded-lg border border-gray-200 p-4 hover:bg-gray-50 transition-colors">
             <p className="text-xs font-medium text-gray-500">Retirement</p>
             <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums text-gray-700">
-              {formatCurrency(roundCents(pileTotal(retirementParked)))}
+              {money(pileTotal(retirementParked))}
             </p>
             <p className="text-xs text-gray-400 mt-0.5">behind its own wall — tax-sheltered</p>
           </Link>
@@ -278,10 +277,10 @@ export function Dashboard() {
           context only — none of this is in the score or the benchmark
           {potsData.length >= 2 && ' · value, not return: contributions and buys move this line too'}
         </p>
-      </div>
+      </Card>
 
       {/* The race: Total Score vs shadow VOO over time */}
-      <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6">
+      <Card className="p-4 sm:p-6">
         <p className="text-sm font-medium text-gray-700 mb-1">The race</p>
         {chartData.length < 2 ? (
           <p className="text-xs text-gray-400 py-6 text-center">
@@ -307,11 +306,11 @@ export function Dashboard() {
             </ResponsiveContainer>
           </div>
         )}
-      </div>
+      </Card>
 
       {/* Concentration trend — is the semiconductor share of the pile drifting toward the cap? */}
       {concentrationData.length >= 2 && (
-        <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6">
+        <Card className="p-4 sm:p-6">
           <p className="text-sm font-medium text-gray-700 mb-1">Pile concentration — semiconductor share</p>
           <div className="h-40">
             <ResponsiveContainer width="100%" height="100%">
@@ -329,11 +328,11 @@ export function Dashboard() {
               </LineChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </Card>
       )}
 
       {/* Banked floors staircase */}
-      <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6">
+      <Card className="p-4 sm:p-6">
         <p className="text-sm font-medium text-gray-700 mb-1">Banked floors</p>
         {floor === 0 ? (
           <p className="text-xs text-gray-400 py-6 text-center">
@@ -359,7 +358,7 @@ export function Dashboard() {
             </ResponsiveContainer>
           </div>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

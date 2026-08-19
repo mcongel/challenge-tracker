@@ -12,6 +12,9 @@ import { AccountSelect } from '../components/ui/AccountSelect';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { ErrorCard } from '../components/ui/ErrorCard';
 import { SkeletonTable } from '../components/ui/SkeletonTable';
+import { Card, TableCard, theadCls } from '../components/ui/Card';
+import { Field } from '../components/ui/Field';
+import { FormError, ModalFooter, useModalForm } from '../components/ui/useModalForm';
 import { useData } from '../contexts/DataContext';
 import {
   netRealizedYTD, realizedGain, realizedPct, roundCents, stLt, taxYearOf, tradeDaysHeld,
@@ -20,8 +23,8 @@ import {
 import { useIndustries } from '../lib/useIndustries';
 import { useMemo } from 'react';
 import {
-  cn, compactUsd, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls,
-  secondaryBtnCls, todayISO,
+  cn, compactUsd, errorMessage, formatCurrency, formatPercent, inputCls, money,
+  secondaryBtnCls, signedMoney, todayISO,
 } from '../lib/utils';
 
 /** Polarity per bar — the house P&L pair (same steps the YTD number wears). */
@@ -102,20 +105,20 @@ export function TradeLog() {
       {error && <ErrorCard message={error} />}
       {rowError && <ErrorCard message={rowError} />}
 
-      <div className="bg-white rounded-lg shadow-lg p-4 mb-4 density-aware-card flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+      <Card className="p-4 mb-4 density-aware-card flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <div>
           <p className="text-xs font-medium text-gray-500">Net realized {currentYear} (drives the tax skim)</p>
           <p className={cn('mt-0.5 text-2xl font-bold tabular-nums', ytd >= 0 ? 'text-green-600' : 'text-red-600')}>
-            {formatCurrency(roundCents(ytd))}
+            {money(ytd)}
           </p>
         </div>
         <p className="text-xs text-gray-400">{trades.length} closed trade{trades.length === 1 ? '' : 's'}</p>
-      </div>
+      </Card>
 
       {/* Net realized per month. Shows from the first month: one lonely bar
           beats an invisible feature, and the axis gives even that its scale. */}
       {byMonth.length >= 1 && (
-        <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6 mb-4">
+        <Card className="p-4 sm:p-6 mb-4">
           <p className="text-sm font-medium text-gray-700 mb-1">
             Realized by month
             <span className="ml-2 text-xs font-normal text-gray-400">
@@ -140,13 +143,13 @@ export function TradeLog() {
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </Card>
       )}
 
       {/* Know thyself — the pattern behind the closes. The best picking input
           there is: what YOUR trades actually do. */}
       {stats.count >= 2 && (
-        <div className="bg-white rounded-lg shadow-lg p-4 mb-4 density-aware-card">
+        <Card className="p-4 mb-4 density-aware-card">
           <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
             Your pattern — all {stats.count} closes
           </p>
@@ -161,7 +164,7 @@ export function TradeLog() {
             <div>
               <p className="text-xs text-gray-500">Avg winner</p>
               <p className="font-bold tabular-nums text-green-600">
-                {stats.avgWin != null ? formatCurrency(roundCents(stats.avgWin)) : '—'}
+                {stats.avgWin != null ? money(stats.avgWin) : '—'}
                 {stats.avgWinPct != null && (
                   <span className="ml-1 text-xs font-normal">({formatPercent(stats.avgWinPct)})</span>
                 )}
@@ -170,7 +173,7 @@ export function TradeLog() {
             <div>
               <p className="text-xs text-gray-500">Avg loser</p>
               <p className="font-bold tabular-nums text-red-600">
-                {stats.avgLoss != null ? formatCurrency(roundCents(stats.avgLoss)) : '—'}
+                {stats.avgLoss != null ? money(stats.avgLoss) : '—'}
                 {stats.avgLossPct != null && (
                   <span className="ml-1 text-xs font-normal">({formatPercent(stats.avgLossPct)})</span>
                 )}
@@ -192,8 +195,8 @@ export function TradeLog() {
           </div>
           {stats.best && stats.worst && stats.count >= 3 && (
             <p className="mt-2 text-xs text-gray-400 tabular-nums">
-              Best: {stats.best.ticker} {formatCurrency(roundCents(realizedGain(stats.best)))} ·
-              Worst: {stats.worst.ticker} {formatCurrency(roundCents(realizedGain(stats.worst)))}
+              Best: {stats.best.ticker} {money(realizedGain(stats.best))} ·
+              Worst: {stats.worst.ticker} {money(realizedGain(stats.worst))}
             </p>
           )}
           {(() => {
@@ -218,7 +221,7 @@ export function TradeLog() {
                     <span className="text-gray-600 min-w-[10rem]">{industry}</span>
                     <span className="text-gray-500">{s.wins}W–{s.losses}L</span>
                     <span className={cn('font-medium', net >= 0 ? 'text-green-600' : 'text-red-600')}>
-                      {net >= 0 ? '+' : '−'}{formatCurrency(Math.abs(roundCents(net)))}
+                      {signedMoney(net)}
                     </span>
                     {s.winRate != null && s.count >= 2 && (
                       <span className="text-gray-400">{formatPercent(s.winRate, 0)} win rate</span>
@@ -228,7 +231,7 @@ export function TradeLog() {
               </ul>
             </div>
           )}
-        </div>
+        </Card>
       )}
 
       {loading ? (
@@ -240,10 +243,10 @@ export function TradeLog() {
           hint="Trades appear here when positions are closed on the Positions screen."
         />
       ) : (
-        <div className="bg-white rounded-lg shadow-lg overflow-x-auto">
+        <TableCard>
           <table className="w-full text-sm compact-table">
             <thead className="bg-gray-50 sticky top-0">
-              <tr className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+              <tr className={theadCls}>
                 <th className="px-4 py-3">Ticker</th>
                 <th className="px-4 py-3">Open</th>
                 <th className="px-4 py-3">Close</th>
@@ -286,7 +289,7 @@ export function TradeLog() {
                     <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(t.proceeds)}</td>
                     <td className={cn('px-4 py-3 text-right tabular-nums font-medium',
                       gain >= 0 ? 'text-green-600' : 'text-red-600')}>
-                      {formatCurrency(roundCents(gain))}
+                      {money(gain)}
                     </td>
                     <td className={cn('px-4 py-3 text-right tabular-nums',
                       gain >= 0 ? 'text-green-600' : 'text-red-600')}>
@@ -308,7 +311,7 @@ export function TradeLog() {
                         type="checkbox"
                         checked={t.washSale}
                         onChange={(e) => setTradeWashSale(t.id, e.target.checked).catch((err) =>
-                          setRowError(err instanceof Error ? err.message : String(err)))}
+                          setRowError(errorMessage(err)))}
                         className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-600"
                         title="Wash sale — loss disallowed"
                       />
@@ -324,15 +327,19 @@ export function TradeLog() {
               })}
             </tbody>
           </table>
-        </div>
+        </TableCard>
       )}
 
       {/* Outside sales — the cross-brokerage wash-sale radar (Rule 9). */}
       {outsideSales.length > 0 && (
-        <div className="mt-4 bg-white rounded-lg shadow-lg overflow-x-auto">
-          <p className="px-4 pt-3 text-xs font-semibold uppercase tracking-wider text-gray-400">
-            Outside sales — wash-sale radar only, never in the score
-          </p>
+        <TableCard
+          className="mt-4"
+          toolbar={
+            <p className="px-4 pt-3 text-xs font-semibold uppercase tracking-wider text-gray-400">
+              Outside sales — wash-sale radar only, never in the score
+            </p>
+          }
+        >
           <table className="w-full text-sm compact-table">
             <tbody className="divide-y divide-gray-100">
               {[...outsideSales].reverse().map((s) => (
@@ -365,7 +372,7 @@ export function TradeLog() {
               ))}
             </tbody>
           </table>
-        </div>
+        </TableCard>
       )}
 
       {outsideOpen && <OutsideSaleModal onClose={() => setOutsideOpen(false)} />}
@@ -398,44 +405,31 @@ function OutsideSaleModal({ onClose }: { onClose: () => void }) {
   const [saleDate, setSaleDate] = useState(todayISO());
   const [loss, setLoss] = useState(true);
   const [notes, setNotes] = useState('');
-  const [formError, setFormError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError(null);
-    if (!accountId) return setFormError('Pick the account the sale happened in.');
-    setBusy(true);
-    try {
-      await addOutsideSale({
-        ticker: ticker.toUpperCase(),
-        accountId,
-        saleDate,
-        loss,
-        notes: notes || null,
-      });
-      onClose();
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const { busy, formError, submit } = useModalForm(async () => {
+    if (!accountId) throw new Error('Pick the account the sale happened in.');
+    await addOutsideSale({
+      ticker: ticker.toUpperCase(),
+      accountId,
+      saleDate,
+      loss,
+      notes: notes || null,
+    });
+    onClose();
+  });
 
   return (
     <Modal isOpen onClose={onClose} title="Record outside sale">
       <form onSubmit={submit} className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls}>Ticker</label>
+          <Field label="Ticker">
             <input required value={ticker} onChange={(e) => setTicker(e.target.value)}
               className={inputCls} placeholder="GLW" />
-          </div>
-          <div>
-            <label className={labelCls}>Sale date</label>
+          </Field>
+          <Field label="Sale date">
             <input type="date" required value={saleDate}
               onChange={(e) => setSaleDate(e.target.value)} className={inputCls} />
-          </div>
+          </Field>
         </div>
         <AccountSelect accounts={accounts} value={accountId} onChange={setAccountId}
           label="Account" kinds={['outside']} allowNone={false} />
@@ -444,20 +438,15 @@ function OutsideSaleModal({ onClose }: { onClose: () => void }) {
             className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-600" />
           Sold at a loss (starts the 31-day wash-sale window — Rule 9 crosses brokerages)
         </label>
-        <div>
-          <label className={labelCls}>Notes</label>
+        <Field label="Notes">
           <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls} />
-        </div>
+        </Field>
         <p className="text-xs text-gray-400">
           Radar only: this never touches the score, YTD realized, or the tax skim. It exists so a
           challenge-account buy inside the window gets called out.
         </p>
-        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
-        <div className="flex justify-end">
-          <button type="submit" disabled={busy} className={primaryBtnCls}>
-            {busy ? 'Saving…' : 'Record sale'}
-          </button>
-        </div>
+        <FormError message={formError} />
+        <ModalFooter busy={busy} label="Record sale" />
       </form>
     </Modal>
   );

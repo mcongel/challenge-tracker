@@ -7,11 +7,14 @@ import { Modal } from '../components/ui/Modal';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { ErrorCard } from '../components/ui/ErrorCard';
 import { SkeletonTable } from '../components/ui/SkeletonTable';
+import { Card, theadCls } from '../components/ui/Card';
+import { Field } from '../components/ui/Field';
+import { FormError, ModalFooter, useModalForm } from '../components/ui/useModalForm';
 import { useData } from '../contexts/DataContext';
 import type { Account, AccountKind, ParkedCashEvent } from '../lib/engine';
 import { daysBetween, parkedMarketValue, roundCents } from '../lib/engine';
 import {
-  cn, errorMessage, formatCurrency, inputCls, labelCls, primaryBtnCls, secondaryBtnCls, todayISO,
+  cn, errorMessage, formatCurrency, inputCls, money, primaryBtnCls, secondaryBtnCls, todayISO,
 } from '../lib/utils';
 
 const KIND_STYLES: Record<AccountKind, string> = {
@@ -243,11 +246,11 @@ function AccountCard({ account: a, selected, onSelect, tracked, holdings, lastRe
       ) : (
         <>
           <p className="mt-2 text-lg sm:text-xl font-bold tabular-nums text-gray-900">
-            {formatCurrency(roundCents(tracked))}
+            {money(tracked)}
           </p>
           <p className="text-xs text-gray-400">
             tracked cash
-            {holdings && <> · {formatCurrency(roundCents(holdings.value))} held</>}
+            {holdings && <> · {money(holdings.value)} held</>}
             {' · '}
             {recDays == null ? 'never reconciled' : `reconciled ${recDays <= 0 ? 'today' : `${recDays}d ago`}`}
           </p>
@@ -280,7 +283,7 @@ function AccountDetail({ account, usage, onEdit, onDelete }: {
       : 'Delete this empty account';
 
   return (
-    <div className="bg-white rounded-lg shadow-lg density-aware-card">
+    <Card className="density-aware-card">
       <div className="flex flex-wrap items-center gap-2 px-4 pt-4">
         <h2 className="text-lg font-bold text-gray-900 truncate">{account.name}</h2>
         <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', KIND_STYLES[account.kind])}>
@@ -314,7 +317,7 @@ function AccountDetail({ account, usage, onEdit, onDelete }: {
       ) : (
         <AccountCashPanel account={account} />
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -386,7 +389,7 @@ function AccountCashPanel({ account }: { account: Account }) {
         <div>
           <p className="text-xs font-medium text-gray-500">Tracked cash</p>
           <p className="text-2xl font-bold tabular-nums text-gray-900">
-            {formatCurrency(roundCents(cash.balance))}
+            {money(cash.balance)}
           </p>
         </div>
         <div className="flex flex-wrap gap-x-4 gap-y-2 pb-0.5">
@@ -395,7 +398,7 @@ function AccountCashPanel({ account }: { account: Account }) {
               <p className="text-[11px] text-gray-400">{label}</p>
               <p className={cn('text-sm font-medium tabular-nums',
                 value < 0 ? 'text-red-600' : signed || value > 0 ? 'text-green-600' : 'text-gray-400')}>
-                {value >= 0 ? '+' : '−'}{formatCurrency(roundCents(Math.abs(value)))}
+                {value >= 0 ? '+' : '−'}{money(Math.abs(value))}
               </p>
             </div>
           ))}
@@ -448,13 +451,13 @@ function AccountCashPanel({ account }: { account: Account }) {
         </form>
       </div>
 
-      {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
+      <FormError message={formError} />
 
       {events.length > 0 && (
         <div className="max-h-96 overflow-y-auto rounded-md border border-gray-200">
           <table className="w-full text-sm compact-table">
             <thead className="bg-gray-50 sticky top-0">
-              <tr className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+              <tr className={theadCls}>
                 <th className="px-3 py-2">Date</th>
                 <th className="px-3 py-2">Type</th>
                 <th className="px-3 py-2 text-right">Amount</th>
@@ -514,21 +517,16 @@ function AccountFormModal({ account, usage, onClose }: {
   const [kind, setKind] = useState<AccountKind>(account?.kind ?? 'bank');
   const [broker, setBroker] = useState(account?.broker ?? '');
   const [flavor, setFlavor] = useState(account?.retirementFlavor ?? '');
-  const [formError, setFormError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   const blockers = usage ? usageBlockers(usage) : [];
   const kindLocked = account !== undefined && (account.kind === 'challenge' || blockers.length > 0);
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError(null);
+  const { busy, formError, submit } = useModalForm(async () => {
     const trimmed = name.trim();
-    if (!trimmed) return setFormError('Name required.');
+    if (!trimmed) throw new Error('Name required.');
     if (accounts.some((a) => a.id !== account?.id && a.name.toLowerCase() === trimmed.toLowerCase())) {
-      return setFormError(`An account named "${trimmed}" already exists.`);
+      throw new Error(`An account named "${trimmed}" already exists.`);
     }
-    setBusy(true);
     try {
       if (account) {
         await updateAccount(account.id, {
@@ -540,15 +538,14 @@ function AccountFormModal({ account, usage, onClose }: {
       } else {
         await addAccount(trimmed, kind, broker.trim() || undefined, flavor.trim() || undefined);
       }
-      onClose();
     } catch (err) {
       // 23505 = unique violation — races past the client-side check.
       const isDuplicate = typeof err === 'object' && err !== null && 'code' in err && (err as { code?: string }).code === '23505';
-      setFormError(isDuplicate ? `An account named "${trimmed}" already exists.` : errorMessage(err));
-    } finally {
-      setBusy(false);
+      if (isDuplicate) throw new Error(`An account named "${trimmed}" already exists.`);
+      throw err;
     }
-  };
+    onClose();
+  });
 
   const effectiveKind = kindLocked && account ? account.kind : kind;
 
@@ -556,13 +553,11 @@ function AccountFormModal({ account, usage, onClose }: {
     <Modal isOpen onClose={onClose} title={account ? `Edit ${account.name}` : 'Add account'}>
       <form onSubmit={submit} className="space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="col-span-2">
-            <label className={labelCls}>Name</label>
+          <Field label="Name" className="col-span-2">
             <input required autoFocus value={name} onChange={(e) => setName(e.target.value)}
               className={inputCls} placeholder="Ally Savings" />
-          </div>
-          <div>
-            <label className={labelCls}>Kind</label>
+          </Field>
+          <Field label="Kind">
             {kindLocked && account ? (
               <input disabled value={account.kind} className={cn(inputCls, 'bg-gray-50 text-gray-500')} />
             ) : (
@@ -572,22 +567,20 @@ function AccountFormModal({ account, usage, onClose }: {
                 <option value="retirement">retirement</option>
               </select>
             )}
-          </div>
+          </Field>
         </div>
-        <div>
-          <label className={labelCls}>Broker / institution (optional)</label>
+        <Field label="Broker / institution (optional)">
           <input value={broker} onChange={(e) => setBroker(e.target.value)} className={inputCls} />
-        </div>
+        </Field>
         {effectiveKind === 'retirement' && (
-          <div>
-            <label className={labelCls}>Flavor (Roth / traditional / 401k…)</label>
+          <Field
+            label="Flavor (Roth / traditional / 401k…)"
+            hint="Retirement holdings get their own page — never in the pile's total, cap, or taxes."
+          >
             <input value={flavor} onChange={(e) => setFlavor(e.target.value)} className={inputCls}
               placeholder="Roth IRA" list="retirement-flavors" />
             {FLAVOR_DATALIST}
-            <p className="mt-0.5 text-xs text-gray-400">
-              Retirement holdings get their own page — never in the pile's total, cap, or taxes.
-            </p>
-          </div>
+          </Field>
         )}
         <p className="text-xs text-gray-400">
           {account
@@ -596,13 +589,8 @@ function AccountFormModal({ account, usage, onClose }: {
               : 'History, cash, and holdings reference the account by id — relabeling moves nothing.'
             : 'Accounts are labels for where money lives — they never change the score.'}
         </p>
-        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className={secondaryBtnCls}>Cancel</button>
-          <button type="submit" disabled={busy} className={primaryBtnCls}>
-            {busy ? 'Saving…' : account ? 'Save' : 'Add account'}
-          </button>
-        </div>
+        <FormError message={formError} />
+        <ModalFooter busy={busy} label={account ? 'Save' : 'Add account'} onCancel={onClose} />
       </form>
     </Modal>
   );

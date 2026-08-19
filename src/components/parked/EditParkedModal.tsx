@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Modal } from '../ui/Modal';
 import { AccountSelect } from '../ui/AccountSelect';
+import { Field } from '../ui/Field';
+import { FormError, ModalFooter } from '../ui/useModalForm';
 import { useData } from '../../contexts/DataContext';
 import type { ParkedPosition } from '../../lib/engine';
 import { fetchProfile } from '../../lib/quotes';
-import { errorMessage, formatCurrency, inputCls, labelCls, primaryBtnCls } from '../../lib/utils';
+import { errorMessage, formatCurrency, inputCls } from '../../lib/utils';
 import { CATEGORY_SUGGESTIONS } from './shared';
 
 export function EditParkedModal({
@@ -39,6 +41,8 @@ export function EditParkedModal({
     return () => { cancelled = true; };
   }, [p.ticker]);
 
+  // Deliberately NOT useModalForm: the pin buttons drive the same
+  // busy/formError pair outside the submit flow.
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
@@ -54,7 +58,7 @@ export function EditParkedModal({
       });
       onClose();
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err));
+      setFormError(errorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -64,19 +68,16 @@ export function EditParkedModal({
     <Modal isOpen onClose={onClose} title={`Edit ${p.ticker} (${p.account})`}>
       <form onSubmit={submit} className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls}>Price ($)</label>
+          <Field label="Price ($)">
             {/* step=any: unit values carry 4 decimals (75.8888) */}
             <input type="number" step="any" min="0" value={price}
               onChange={(e) => setPrice(e.target.value)} className={inputCls} />
-          </div>
-          <div>
-            <label className={labelCls}>Trim rank</label>
+          </Field>
+          <Field label="Trim rank">
             <input type="number" min="1" step="1" value={trimRank}
               onChange={(e) => setTrimRank(e.target.value)} className={inputCls} placeholder="1 = trim first" />
-          </div>
-          <div>
-            <label className={labelCls}>Sector</label>
+          </Field>
+          <Field label="Sector">
             <input list="sector-suggestions-edit" value={category} className={inputCls}
               onChange={(e) => setCategory(e.target.value)} />
             <datalist id="sector-suggestions-edit">
@@ -87,7 +88,7 @@ export function EditParkedModal({
               title="Vendor sector (Finnhub) — the default, not the law. Semiconductors drives the concentration cap; BTC marks the never-trim bucket.">
               vendor: {industry ?? 'none'}
             </p>
-          </div>
+          </Field>
         </div>
         <div className="flex items-center justify-between gap-2 text-xs text-gray-400">
           <span>
@@ -144,14 +145,11 @@ export function EditParkedModal({
         <p className="text-xs text-gray-400">
           Shares, cost, and dates live in the lots (click the row to open them) — they recompute from there.
         </p>
-        <div>
-          <label className={labelCls}>Notes</label>
+        <Field label="Notes">
           <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls} />
-        </div>
-        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
-        <div className="flex justify-end">
-          <button type="submit" disabled={busy} className={primaryBtnCls}>{busy ? 'Saving…' : 'Save'}</button>
-        </div>
+        </Field>
+        <FormError message={formError} />
+        <ModalFooter busy={busy} label="Save" />
       </form>
     </Modal>
   );

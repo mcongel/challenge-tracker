@@ -716,7 +716,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         });
       }
 
-      let closed = false;
       try {
         // Trades are one batch insert (all-or-nothing at PostgREST), so a
         // failure below can't leave half the paper trail.
@@ -758,20 +757,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           }),
         );
         if (cashErr) throw cashErr;
-        closed = true;
       } catch (err) {
         throw new Error(
           `Close failed midway (${errorMessage(err)}). Check the Trade Log and lot list for partial records before retrying — retrying blindly can duplicate trades.`,
         );
       } finally {
         // Refresh even on failure — a retry must never recompute the close
-        // from stale lots. But a refresh failure must not replace the
-        // guidance error above with a bare fetch error.
-        try {
-          await refresh();
-        } catch (refreshErr) {
-          if (closed) throw refreshErr;
-        }
+        // from stale lots. refresh() never rejects (fetch failures land in
+        // the context's error banner), so no rethrow path is needed here.
+        await refresh();
       }
     },
     [refresh, state.lots],

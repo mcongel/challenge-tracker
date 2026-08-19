@@ -9,6 +9,10 @@ import { Modal } from '../components/ui/Modal';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { ErrorCard } from '../components/ui/ErrorCard';
 import { SkeletonTable } from '../components/ui/SkeletonTable';
+import { Card, TableCard, theadCls } from '../components/ui/Card';
+import { StatTile } from '../components/ui/StatTile';
+import { Field } from '../components/ui/Field';
+import { FormError, ModalFooter, useModalForm } from '../components/ui/useModalForm';
 import { CLASSIFICATION_LABELS, classificationPillCls, SortHeader } from '../components/parked/shared';
 import type { SortState } from '../components/parked/shared';
 import { useData } from '../contexts/DataContext';
@@ -22,7 +26,7 @@ import {
   trailingIncomeByMonth,
 } from '../lib/engine';
 import {
-  cn, compactUsd, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls,
+  cn, compactUsd, formatCurrency, formatPercent, inputCls, money,
   safeStorage, secondaryBtnCls, todayISO,
 } from '../lib/utils';
 import { useChartColors } from '../lib/useIsDark';
@@ -296,51 +300,34 @@ export function Income() {
       ) : (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-            <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
-              <p className="text-xs font-medium text-gray-500">Trailing 12 months</p>
-              <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums">{formatCurrency(roundCents(trailingTotal))}</p>
-              <p className="text-xs text-gray-400 mt-0.5">dividends received</p>
-            </div>
-            <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
-              <p className="text-xs font-medium text-gray-500">Next 12 months</p>
-              <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums">{formatCurrency(roundCents(projectedGross))}</p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {formatCurrency(roundCents(projectedAfterTax))} after est. tax
-              </p>
-            </div>
-            <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
-              <p className="text-xs font-medium text-gray-500">Est. dividend tax YTD</p>
-              <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums">{formatCurrency(roundCents(taxYtd.totalTax))}</p>
-              {taxYtd.unclassifiedAmount > 0 ? (
-                <p className="text-xs text-amber-700 mt-0.5">
-                  {formatCurrency(roundCents(taxYtd.unclassifiedAmount))} unclassified
-                </p>
-              ) : taxYtd.rocUnallocatedAmount > 0 ? (
-                <p className="text-xs text-amber-700 mt-0.5">
-                  {formatCurrency(roundCents(taxYtd.rocUnallocatedAmount))} ROC unallocated
-                </p>
-              ) : taxYtd.rocOverflowAmount > 0 ? (
-                <p className="text-xs text-gray-400 mt-0.5">
-                  incl. ROC beyond basis: {formatCurrency(roundCents(taxYtd.rocOverflowAmount))}
-                </p>
-              ) : (
-                <p className="text-xs text-gray-400 mt-0.5">
+            <StatTile label="Trailing 12 months" value={money(trailingTotal)}
+              sub="dividends received" />
+            <StatTile label="Next 12 months" value={money(projectedGross)}
+              sub={<>{money(projectedAfterTax)} after est. tax</>} />
+            <StatTile label="Est. dividend tax YTD" value={money(taxYtd.totalTax)}
+              sub={
+                taxYtd.unclassifiedAmount > 0 ? (
+                  <span className="text-amber-700">
+                    {money(taxYtd.unclassifiedAmount)} unclassified
+                  </span>
+                ) : taxYtd.rocUnallocatedAmount > 0 ? (
+                  <span className="text-amber-700">
+                    {money(taxYtd.rocUnallocatedAmount)} ROC unallocated
+                  </span>
+                ) : taxYtd.rocOverflowAmount > 0 ? (
+                  <>incl. ROC beyond basis: {money(taxYtd.rocOverflowAmount)}</>
+                ) : (
                   <Link to="/pile-taxes" className="hover:text-green-700 hover:underline">
                     full year picture on Pile Taxes →
                   </Link>
-                </p>
-              )}
-            </div>
-            <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
-              <p className="text-xs font-medium text-gray-500">Yield on cost</p>
-              <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums">
-                {portfolioYoc != null ? formatPercent(portfolioYoc) : '—'}
-              </p>
-              <p className="text-xs text-gray-400 mt-0.5">projecting holdings only</p>
-            </div>
+                )
+              } />
+            <StatTile label="Yield on cost"
+              value={portfolioYoc != null ? formatPercent(portfolioYoc) : '—'}
+              sub="projecting holdings only" />
           </div>
 
-          <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6 density-aware-card mb-4">
+          <Card className="p-4 sm:p-6 density-aware-card mb-4">
             <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
               Monthly income — last 12 actual, next 12 projected
             </p>
@@ -365,15 +352,15 @@ export function Income() {
                 No dated dividends and nothing to project yet — log a payment or set a manual rate.
               </p>
             )}
-          </div>
+          </Card>
 
-          <div className="bg-white rounded-lg shadow-lg overflow-x-auto mb-4">
+          <Card className="overflow-x-auto mb-4">
             <p className="px-4 pt-4 text-xs font-semibold uppercase tracking-wider text-gray-400">
               Holdings
             </p>
             <table className="w-full text-sm compact-table">
               <thead className="bg-gray-50">
-                <tr className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                <tr className={theadCls}>
                   <th className="px-4 py-2">Ticker</th>
                   <th className="px-4 py-2 text-right" title="Projected annual income / original cost basis">Yield on cost</th>
                   <th className="px-4 py-2 text-right">T12M</th>
@@ -393,72 +380,87 @@ export function Income() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </Card>
 
-          <div className="bg-white rounded-lg shadow-lg">
-            <div className="px-4 pt-4 flex flex-wrap items-center justify-between gap-3">
-              <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-                Distribution history
-              </p>
-              <div className="flex flex-wrap items-center gap-2">
-                <select
-                  value={yearFilter}
-                  onChange={(e) => setHistFilters({ year: e.target.value, ticker: tickerFilter })}
-                  className={cn(inputCls, 'w-auto py-1 text-xs')}
-                  aria-label="Filter by year"
-                >
-                  <option value="">All years</option>
-                  {histYears.map((y) => <option key={y} value={y}>{y}</option>)}
-                </select>
-                <select
-                  value={tickerFilter}
-                  onChange={(e) => setHistFilters({ year: yearFilter, ticker: e.target.value })}
-                  className={cn(inputCls, 'w-auto py-1 text-xs')}
-                  aria-label="Filter by ticker"
-                >
-                  <option value="">All tickers</option>
-                  {histTickers.map((t) => <option key={t} value={t}>{t}</option>)}
-                </select>
-                {unallocatedRoc.length > 0 && (
-                  <button
-                    onClick={allocateAll}
-                    disabled={allocatingAll}
-                    className={cn(secondaryBtnCls, 'text-xs px-2.5 py-1')}
-                    title="Apply basis reductions for every ROC distribution that predates basis tracking, oldest first."
-                  >
-                    {allocatingAll ? 'Allocating…' : `Allocate ${unallocatedRoc.length} ROC to basis`}
-                  </button>
+          {/* Only the table scrolls sideways — the filter/reclassify bars above stay put. */}
+          <TableCard
+            toolbar={
+              <>
+                <div className="px-4 pt-4 flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+                    Distribution history
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={yearFilter}
+                      onChange={(e) => setHistFilters({ year: e.target.value, ticker: tickerFilter })}
+                      className={cn(inputCls, 'w-auto py-1 text-xs')}
+                      aria-label="Filter by year"
+                    >
+                      <option value="">All years</option>
+                      {histYears.map((y) => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                    <select
+                      value={tickerFilter}
+                      onChange={(e) => setHistFilters({ year: yearFilter, ticker: e.target.value })}
+                      className={cn(inputCls, 'w-auto py-1 text-xs')}
+                      aria-label="Filter by ticker"
+                    >
+                      <option value="">All tickers</option>
+                      {histTickers.map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                    {unallocatedRoc.length > 0 && (
+                      <button
+                        onClick={allocateAll}
+                        disabled={allocatingAll}
+                        className={cn(secondaryBtnCls, 'text-xs px-2.5 py-1')}
+                        title="Apply basis reductions for every ROC distribution that predates basis tracking, oldest first."
+                      >
+                        {allocatingAll ? 'Allocating…' : `Allocate ${unallocatedRoc.length} ROC to basis`}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {filtersActive && filteredHist.length > 0 && (
+                  <div className="px-4 pt-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                    <span>{filteredHist.length} filtered:</span>
+                    <select
+                      value={bulkClass}
+                      onChange={(e) => setBulkClass(e.target.value as DividendClassification | '')}
+                      className={cn(inputCls, 'w-auto py-1 text-xs')}
+                      aria-label="Bulk classification"
+                    >
+                      <option value="">reclassify to…</option>
+                      {(Object.keys(CLASSIFICATION_LABELS) as DividendClassification[]).map((c) => (
+                        <option key={c} value={c}>{CLASSIFICATION_LABELS[c]}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => setBulkConfirm(true)}
+                      disabled={!bulkClass}
+                      className={cn(secondaryBtnCls, 'text-xs px-2.5 py-1 disabled:opacity-50')}
+                    >
+                      Apply to all {filteredHist.length}
+                    </button>
+                  </div>
                 )}
-              </div>
-            </div>
-            {filtersActive && filteredHist.length > 0 && (
-              <div className="px-4 pt-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
-                <span>{filteredHist.length} filtered:</span>
-                <select
-                  value={bulkClass}
-                  onChange={(e) => setBulkClass(e.target.value as DividendClassification | '')}
-                  className={cn(inputCls, 'w-auto py-1 text-xs')}
-                  aria-label="Bulk classification"
-                >
-                  <option value="">reclassify to…</option>
-                  {(Object.keys(CLASSIFICATION_LABELS) as DividendClassification[]).map((c) => (
-                    <option key={c} value={c}>{CLASSIFICATION_LABELS[c]}</option>
-                  ))}
-                </select>
-                <button
-                  onClick={() => setBulkConfirm(true)}
-                  disabled={!bulkClass}
-                  className={cn(secondaryBtnCls, 'text-xs px-2.5 py-1 disabled:opacity-50')}
-                >
-                  Apply to all {filteredHist.length}
-                </button>
-              </div>
+                {allocError && (
+                  <p className="mx-4 mt-2 text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{allocError}</p>
+                )}
+              </>
+            }
+            footer={classTotals && filteredHist.length > 0 && (
+              <p className="px-4 py-3 text-xs text-gray-500 border-t border-gray-100 tabular-nums">
+                {yearFilter}{tickerFilter ? ` · ${tickerFilter}` : ''} by class
+                (the 1099-DIV boxes):{' '}
+                {(['qualified', 'ordinary', 'return_of_capital', 'capital_gain_dist', 'unclassified'] as DividendClassification[])
+                  .filter((c) => (classTotals.get(c) ?? 0) > 0)
+                  .map((c) => `${CLASSIFICATION_LABELS[c]} ${money(classTotals.get(c) ?? 0)}`)
+                  .join(' · ')}
+                {' '}· Total {money(filteredHist.reduce((t, r) => t + r.lot.amount, 0))}
+              </p>
             )}
-            {allocError && (
-              <p className="mx-4 mt-2 text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{allocError}</p>
-            )}
-            {/* Only the table scrolls sideways — the filter/reclassify bars above stay put. */}
-            <div className="overflow-x-auto">
+          >
             <table className="w-full text-sm compact-table">
               <thead className="bg-gray-50 group/head">
                 <tr className="text-left text-xs">
@@ -466,7 +468,7 @@ export function Income() {
                   <SortHeader<HistSortKey> label="Ticker" sortKey="ticker" sort={histSort} onSort={toggleHistSort} />
                   <SortHeader<HistSortKey> label="Amount" sortKey="amount" sort={histSort} onSort={toggleHistSort} align="right" />
                   <SortHeader<HistSortKey> label="Class" sortKey="classification" sort={histSort} onSort={toggleHistSort} />
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Type</th>
+                  <th className={cn('px-4 py-3', theadCls)}>Type</th>
                   <th className="px-4 py-3 w-20" />
                 </tr>
               </thead>
@@ -522,19 +524,7 @@ export function Income() {
                 )}
               </tbody>
             </table>
-            </div>
-            {classTotals && filteredHist.length > 0 && (
-              <p className="px-4 py-3 text-xs text-gray-500 border-t border-gray-100 tabular-nums">
-                {yearFilter}{tickerFilter ? ` · ${tickerFilter}` : ''} by class
-                (the 1099-DIV boxes):{' '}
-                {(['qualified', 'ordinary', 'return_of_capital', 'capital_gain_dist', 'unclassified'] as DividendClassification[])
-                  .filter((c) => (classTotals.get(c) ?? 0) > 0)
-                  .map((c) => `${CLASSIFICATION_LABELS[c]} ${formatCurrency(roundCents(classTotals.get(c) ?? 0))}`)
-                  .join(' · ')}
-                {' '}· Total {formatCurrency(roundCents(filteredHist.reduce((t, r) => t + r.lot.amount, 0)))}
-              </p>
-            )}
-          </div>
+          </TableCard>
         </>
       )}
 
@@ -600,14 +590,14 @@ function HoldingRow({
         {s.yieldOnCost != null ? formatPercent(s.yieldOnCost) : '—'}
       </td>
       <td className="px-4 py-2 text-right tabular-nums text-gray-600">
-        {s.trailing12m > 0 ? formatCurrency(roundCents(s.trailing12m)) : '—'}
+        {s.trailing12m > 0 ? money(s.trailing12m) : '—'}
       </td>
       <td className="px-4 py-2 text-right tabular-nums text-gray-600">
-        {proj ? formatCurrency(roundCents(proj.annualGross)) : '—'}
+        {proj ? money(proj.annualGross) : '—'}
       </td>
       <td className="px-4 py-2 text-right tabular-nums text-gray-600">
         {proj?.nextPayment
-          ? `${proj.nextPayment.date} · est. ${formatCurrency(roundCents(proj.nextPayment.amount))}`
+          ? `${proj.nextPayment.date} · est. ${money(proj.nextPayment.amount)}`
           : '—'}
       </td>
       <td className="px-4 py-2">
@@ -627,9 +617,9 @@ function HoldingRow({
       {anyRoc && (
         <td className="px-4 py-2 text-right tabular-nums text-gray-600"
           title={s.rocCumulative > 0 && s.adjustedCostBasis < s.costBasis
-            ? `Adjusted basis ${formatCurrency(roundCents(s.adjustedCostBasis))} (original ${formatCurrency(roundCents(s.costBasis))})`
+            ? `Adjusted basis ${money(s.adjustedCostBasis)} (original ${money(s.costBasis)})`
             : undefined}>
-          {s.rocCumulative > 0 ? formatCurrency(roundCents(s.rocCumulative)) : '—'}
+          {s.rocCumulative > 0 ? money(s.rocCumulative) : '—'}
         </td>
       )}
       <td className="px-2 py-2 text-right">
@@ -650,21 +640,11 @@ function ReclassifyModal({ row, onClose }: { row: HistRow; onClose: () => void }
     row.lot.classification ?? 'unclassified',
   );
   const [exDate, setExDate] = useState(row.lot.exDate ?? '');
-  const [formError, setFormError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    try {
-      await reclassifyDividend(row.lot.id, classification, exDate || null);
-      onClose();
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const { busy, formError, submit } = useModalForm(async () => {
+    await reclassifyDividend(row.lot.id, classification, exDate || null);
+    onClose();
+  });
 
   return (
     <Modal isOpen onClose={onClose} title={`Reclassify ${row.ticker} dividend`}>
@@ -674,8 +654,7 @@ function ReclassifyModal({ row, onClose }: { row: HistRow; onClose: () => void }
           {row.lot.shares > 0 ? 'DRIP' : 'cash'}
         </p>
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls}>Classification</label>
+          <Field label="Classification">
             <select value={classification} className={inputCls}
               onChange={(e) => setClassification(e.target.value as DividendClassification)}>
               <option value="unclassified">Unclassified</option>
@@ -684,21 +663,17 @@ function ReclassifyModal({ row, onClose }: { row: HistRow; onClose: () => void }
               <option value="return_of_capital">Return of capital</option>
               <option value="capital_gain_dist">Capital gain distribution</option>
             </select>
-          </div>
-          <div>
-            <label className={labelCls}>Ex-date (optional)</label>
+          </Field>
+          <Field label="Ex-date (optional)">
             <input type="date" value={exDate} onChange={(e) => setExDate(e.target.value)} className={inputCls} />
-          </div>
+          </Field>
         </div>
         <p className="text-xs text-gray-400">
           Brokers reclassify distributions on the 1099 after year end — this records the correction
           and flags the row so you know it was revised.
         </p>
-        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className={secondaryBtnCls}>Cancel</button>
-          <button type="submit" disabled={busy} className={primaryBtnCls}>{busy ? 'Saving…' : 'Save'}</button>
-        </div>
+        <FormError message={formError} />
+        <ModalFooter busy={busy} label="Save" onCancel={onClose} />
       </form>
     </Modal>
   );
@@ -711,68 +686,52 @@ function RateModal({ position: p, onClose }: { position: ParkedPosition; onClose
   const [growth, setGrowth] = useState(
     p.dividendGrowthPct != null ? String(Math.round(p.dividendGrowthPct * 10000) / 100) : '',
   );
-  const [formError, setFormError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const { busy, formError, submit } = useModalForm(async () => {
     const r = rate === '' ? null : Number(rate);
-    if (r != null && (Number.isNaN(r) || r < 0)) return setFormError('Rate is annual dollars per share, ≥ 0.');
+    if (r != null && (Number.isNaN(r) || r < 0)) throw new Error('Rate is annual dollars per share, ≥ 0.');
     const g = growth === '' ? null : Number(growth) / 100;
     if (g != null && (Number.isNaN(g) || g <= -1 || g >= 1)) {
-      return setFormError('Growth is an annual percentage between -99 and 99.');
+      throw new Error('Growth is an annual percentage between -99 and 99.');
     }
-    setBusy(true);
-    try {
-      await updateParked(p.id, {
-        dividendRate: r,
-        dividendFrequency: r == null ? null : frequency,
-        // Clearing the rate retires its projection companions too — a stale
-        // growth assumption must not keep compounding actual-history income.
-        dividendGrowthPct: r == null ? null : g,
-      });
-      onClose();
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+    await updateParked(p.id, {
+      dividendRate: r,
+      dividendFrequency: r == null ? null : frequency,
+      // Clearing the rate retires its projection companions too — a stale
+      // growth assumption must not keep compounding actual-history income.
+      dividendGrowthPct: r == null ? null : g,
+    });
+    onClose();
+  });
 
   return (
     <Modal isOpen onClose={onClose} title={`${p.ticker} dividend rate`}>
       <form onSubmit={submit} className="space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div>
-            <label className={labelCls}>Annual rate ($/share)</label>
+          <Field label="Annual rate ($/share)">
             <input type="number" step="any" min="0" value={rate} autoFocus
               onChange={(e) => setRate(e.target.value)} className={inputCls} placeholder="e.g. 2.48" />
-          </div>
-          <div>
-            <label className={labelCls}>Frequency</label>
+          </Field>
+          <Field label="Frequency">
             <select value={frequency} className={inputCls}
               onChange={(e) => setFrequency(e.target.value as DividendFrequency)}>
               {(Object.keys(FREQUENCY_LABELS) as DividendFrequency[]).map((f) => (
                 <option key={f} value={f}>{FREQUENCY_LABELS[f]}</option>
               ))}
             </select>
-          </div>
-          <div>
-            <label className={labelCls}>Div growth (%/yr)</label>
+          </Field>
+          <Field label="Div growth (%/yr)">
             <input type="number" step="any" value={growth}
               onChange={(e) => setGrowth(e.target.value)} className={inputCls}
               placeholder="for projections" title="Assumed annual dividend growth — used by the Transition modeler." />
-          </div>
+          </Field>
         </div>
         <p className="text-xs text-gray-400">
           A manual estimate for projections until real payments build a history — actuals take over
           automatically once two dated payments exist. Clear the rate to exclude the holding.
         </p>
-        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className={secondaryBtnCls}>Cancel</button>
-          <button type="submit" disabled={busy} className={primaryBtnCls}>{busy ? 'Saving…' : 'Save'}</button>
-        </div>
+        <FormError message={formError} />
+        <ModalFooter busy={busy} label="Save" onCancel={onClose} />
       </form>
     </Modal>
   );

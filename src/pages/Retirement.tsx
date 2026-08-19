@@ -11,6 +11,9 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
 import { ErrorCard } from '../components/ui/ErrorCard';
 import { SkeletonTable } from '../components/ui/SkeletonTable';
+import { Card, theadCls } from '../components/ui/Card';
+import { StatTile, toneOf } from '../components/ui/StatTile';
+import { FormError, ModalFooter, useModalForm } from '../components/ui/useModalForm';
 import { useData } from '../contexts/DataContext';
 import { lotsByPositionId } from '../lib/engine';
 import type { ParkedPosition } from '../lib/engine';
@@ -18,7 +21,7 @@ import {
   isArchivedPosition, parkedCostBasis, parkedMarketValue, roundCents,
 } from '../lib/engine';
 import {
-  cn, errorMessage, formatCurrency, formatPercent, inputCls, primaryBtnCls, secondaryBtnCls,
+  cn, formatCurrency, formatPercent, inputCls, money, primaryBtnCls, secondaryBtnCls, signedMoney,
 } from '../lib/utils';
 import { categoryPillCls, fmtSh } from '../components/parked/shared';
 import { AddHoldingModal } from '../components/parked/AddHoldingModal';
@@ -119,38 +122,37 @@ export function Retirement() {
       ) : (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
-            <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
-              <p className="text-xs font-medium text-gray-500">Retirement total</p>
-              <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums text-gray-900">
-                {formatCurrency(roundCents(total))}
-              </p>
-              <p className="text-xs text-gray-400 mt-0.5">not in the score, not in the pile</p>
-            </div>
-            <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
-              <p className="text-xs font-medium text-gray-500">Unrealized</p>
-              <p className={cn('mt-0.5 text-lg sm:text-xl font-bold tabular-nums',
-                total - totalBasis >= 0 ? 'text-green-600' : 'text-red-600')}>
-                {formatCurrency(roundCents(total - totalBasis))}
-              </p>
-              <p className="text-xs text-gray-400 mt-0.5">vs {formatCurrency(roundCents(totalBasis))} basis</p>
-            </div>
-            <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card col-span-2 sm:col-span-1"
-              title={byFlavor.map(([f, v]) => `${f} ${formatCurrency(roundCents(v))}`).join(' · ')}>
-              <p className="text-xs font-medium text-gray-500">By flavor</p>
-              <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums text-gray-900">{byFlavor.length}</p>
-              <p className="text-xs text-gray-400 mt-0.5 truncate">
-                {byFlavor.map(([f, v]) =>
-                  `${f} ${total > 0 ? Math.round((v / total) * 100) : 0}%`).join(' · ') || '—'}
-              </p>
-            </div>
+            <StatTile
+              label="Retirement total"
+              value={money(total)}
+              sub="not in the score, not in the pile"
+            />
+            <StatTile
+              label="Unrealized"
+              value={money(total - totalBasis)}
+              tone={toneOf(total - totalBasis)}
+              sub={`vs ${money(totalBasis)} basis`}
+            />
+            <StatTile
+              label="By flavor"
+              value={byFlavor.length}
+              className="col-span-2 sm:col-span-1"
+              title={byFlavor.map(([f, v]) => `${f} ${money(v)}`).join(' · ')}
+              sub={
+                <span className="block truncate">
+                  {byFlavor.map(([f, v]) =>
+                    `${f} ${total > 0 ? Math.round((v / total) * 100) : 0}%`).join(' · ') || '—'}
+                </span>
+              }
+            />
           </div>
 
           {chartSnapshots.length >= 2 && <RetirementValueChart snapshots={chartSnapshots} />}
 
-          <div className="bg-white rounded-lg shadow-lg overflow-x-auto">
+          <Card className="overflow-x-auto">
             <table className="w-full text-sm compact-table">
               <thead className="bg-gray-50 sticky top-0">
-                <tr className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                <tr className={theadCls}>
                   <th className="px-2 py-3 w-8" />
                   <th className="px-4 py-3">Ticker</th>
                   <th className="px-4 py-3 text-right">Shares</th>
@@ -174,7 +176,7 @@ export function Retirement() {
                             </span>
                           )}
                           <span className="text-xs font-normal text-gray-400 tabular-nums">
-                            · {formatCurrency(roundCents(g.positions.reduce((s, p) => s + parkedMarketValue(p), 0)))}
+                            · {money(g.positions.reduce((s, p) => s + parkedMarketValue(p), 0))}
                           </span>
                         </span>
                       </td>
@@ -219,12 +221,12 @@ export function Retirement() {
                                 )}
                               </td>
                               <td className="px-4 py-3 text-right tabular-nums font-medium">
-                                {formatCurrency(roundCents(value))}
+                                {money(value)}
                               </td>
                               <td className="px-4 py-3 text-right">
                                 <span className={cn('tabular-nums font-medium',
                                   value - basis >= 0 ? 'text-green-600' : 'text-red-600')}>
-                                  {value - basis >= 0 ? '+' : '−'}{formatCurrency(Math.abs(roundCents(value - basis)))}
+                                  {signedMoney(value - basis)}
                                   {basis > 0 && (
                                     <span className="block text-xs font-normal">
                                       {formatPercent((value - basis) / basis)}
@@ -253,7 +255,7 @@ export function Retirement() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </Card>
           <p className="mt-3 text-xs text-gray-400">
             Sales, taxes, and the 366-day clocks are informational curiosities here — retirement
             money is tax-sheltered and can't fund the challenge, so nothing on this page feeds
@@ -290,7 +292,7 @@ function RetirementValueChart({ snapshots }: { snapshots: Snapshot[] }) {
     Value: roundCents(s.retirementValue ?? 0),
   }));
   return (
-    <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6 mb-4">
+    <Card className="p-4 sm:p-6 mb-4">
       <p className="text-sm font-medium text-gray-700 mb-1">
         Retirement value over time
         <span className="ml-2 text-xs font-normal text-gray-400">
@@ -311,7 +313,7 @@ function RetirementValueChart({ snapshots }: { snapshots: Snapshot[] }) {
           </AreaChart>
         </ResponsiveContainer>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -346,25 +348,21 @@ function UpdateBalancesModal({
   const [balances, setBalances] = useState<Record<string, string>>(() =>
     Object.fromEntries(perAccount.map((r) => [r.account.id, String(roundCents(r.total))])),
   );
-  const [formError, setFormError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError(null);
+  const { busy, formError, submit } = useModalForm(async () => {
     const priceUpdates: { id: string; price: number }[] = [];
     for (const r of perAccount) {
       const entered = Number(balances[r.account.id]);
       if (!entered || Math.abs(entered - r.total) < 0.005) continue; // unchanged
       if (r.manual.length === 0) {
-        return setFormError(
+        throw new Error(
           `${r.account.name} is fully live-priced — its balance follows the quotes and can't be set by hand.`,
         );
       }
       const targetManual = entered - r.liveValue;
       if (targetManual <= 0 || r.manualValue <= 0) {
-        return setFormError(
-          `${r.account.name}: the entered balance is below its live-priced holdings' value (${formatCurrency(roundCents(r.liveValue))}) — check the number.`,
+        throw new Error(
+          `${r.account.name}: the entered balance is below its live-priced holdings' value (${money(r.liveValue)}) — check the number.`,
         );
       }
       const factor = targetManual / r.manualValue;
@@ -373,16 +371,9 @@ function UpdateBalancesModal({
       }
     }
     if (priceUpdates.length === 0) return onClose();
-    setBusy(true);
-    try {
-      await updateParkedPrices(priceUpdates);
-      onClose();
-    } catch (err) {
-      setFormError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+    await updateParkedPrices(priceUpdates);
+    onClose();
+  });
 
   return (
     <Modal isOpen onClose={onClose} title="Update balances">
@@ -399,9 +390,9 @@ function UpdateBalancesModal({
               <span className="sm:w-40 flex-shrink-0">
                 <span className="text-sm font-medium">{r.account.name}</span>
                 <span className="block text-[11px] text-gray-400 tabular-nums">
-                  now {formatCurrency(roundCents(r.total))}
+                  now {money(r.total)}
                   {r.liveValue > 0 && r.manual.length > 0 &&
-                    ` · ${formatCurrency(roundCents(r.liveValue))} live`}
+                    ` · ${money(r.liveValue)} live`}
                   {r.manual.length === 0 && ' · fully live-priced'}
                 </span>
               </span>
@@ -411,12 +402,8 @@ function UpdateBalancesModal({
             </div>
           ))}
         </div>
-        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
-        <div className="flex justify-end">
-          <button type="submit" disabled={busy} className={primaryBtnCls}>
-            {busy ? 'Saving…' : 'Save balances'}
-          </button>
-        </div>
+        <FormError message={formError} />
+        <ModalFooter busy={busy} label="Save balances" />
       </form>
     </Modal>
   );
@@ -444,26 +431,15 @@ function UpdatePricesModal({
   const [prices, setPrices] = useState<Record<string, string>>(() =>
     Object.fromEntries(rows.map((p) => [p.id, String(p.currentPrice || '')])),
   );
-  const [formError, setFormError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError(null);
+  const { busy, formError, submit } = useModalForm(async () => {
     const entries = rows
       .map((p) => ({ id: p.id, price: Number(prices[p.id]) }))
       .filter((e2) => e2.price > 0);
-    if (entries.length === 0) return setFormError('Nothing to update.');
-    setBusy(true);
-    try {
-      await updateParkedPrices(entries);
-      onClose();
-    } catch (err) {
-      setFormError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+    if (entries.length === 0) throw new Error('Nothing to update.');
+    await updateParkedPrices(entries);
+    onClose();
+  });
 
   return (
     <Modal isOpen onClose={onClose} title="Update prices">
@@ -490,12 +466,8 @@ function UpdatePricesModal({
               </div>
             ))}
           </div>
-          {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
-          <div className="flex justify-end">
-            <button type="submit" disabled={busy} className={primaryBtnCls}>
-              {busy ? 'Saving…' : `Save ${rows.length} price${rows.length > 1 ? 's' : ''}`}
-            </button>
-          </div>
+          <FormError message={formError} />
+          <ModalFooter busy={busy} label={`Save ${rows.length} price${rows.length > 1 ? 's' : ''}`} />
         </form>
       )}
     </Modal>

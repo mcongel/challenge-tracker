@@ -8,7 +8,7 @@ import { fetchProfile } from './quotes';
 const industryCache = new Map<string, string | null>();
 
 export function useIndustries(tickers: string[]): Record<string, string | null> {
-  const wanted = [...new Set(tickers)].filter((t) => /^[A-Z.\-]{1,10}$/.test(t)).sort();
+  const wanted = [...new Set(tickers)].filter((t) => /^[A-Z.-]{1,10}$/.test(t)).sort();
   const key = wanted.join(',');
   const [map, setMap] = useState<Record<string, string | null>>({});
 

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { Modal } from '../ui/Modal';
 import { TotalField } from '../ui/TotalField';
+import { Field } from '../ui/Field';
+import { FormError, ModalFooter, useModalForm } from '../ui/useModalForm';
 import { useData } from '../../contexts/DataContext';
 import type { ParkedPosition } from '../../lib/engine';
 import {
@@ -10,9 +12,7 @@ import {
 } from '../../lib/engine';
 import { useNotional } from '../../lib/useNotional';
 import { fetchClose } from '../../lib/quotes';
-import {
-  cn, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls, todayISO,
-} from '../../lib/utils';
+import { cn, formatCurrency, formatPercent, inputCls, money, todayISO } from '../../lib/utils';
 import { fmtSh } from './shared';
 
 export function TrimModal({
@@ -68,8 +68,6 @@ export function TrimModal({
   }, [fund, date, vooPrice]);
   const [fees, setFees] = useState('');
   const feeNum = Number(fees) || 0;
-  const [formError, setFormError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   const numShares = Number(shares);
   const numPrice = Number(price);
@@ -98,41 +96,32 @@ export function TrimModal({
     fund && netProceeds > 0 && contributionCap !== null &&
     depositExceedsCap(contributed, netProceeds, contributionCap);
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError(null);
-    if (!numShares || numShares <= 0) return setFormError('Enter shares to trim.');
-    if (numShares > p.shares + 1e-9) return setFormError(`Only ${p.shares} shares parked.`);
-    if (!numPrice || numPrice <= 0) return setFormError('Enter the sale price.');
+  const { busy, formError, submit } = useModalForm(async () => {
+    if (!numShares || numShares <= 0) throw new Error('Enter shares to trim.');
+    if (numShares > p.shares + 1e-9) throw new Error(`Only ${p.shares} shares parked.`);
+    if (!numPrice || numPrice <= 0) throw new Error('Enter the sale price.');
     if (feeNum < 0 || (proceeds > 0 && feeNum >= proceeds)) {
-      return setFormError('Fees must be smaller than the gross proceeds.');
+      throw new Error('Fees must be smaller than the gross proceeds.');
     }
     if (fund && (!Number(vooPrice) || Number(vooPrice) <= 0)) {
-      return setFormError("Funding the challenge account needs that day's VOO price for the shadow purchase.");
+      throw new Error("Funding the challenge account needs that day's VOO price for the shadow purchase.");
     }
     if (overCap && contributionCap !== null) {
       const room = contributionStatus(contributed, contributionCap).remaining;
-      return setFormError(
-        `Rule 12: depositing ${formatCurrency(netProceeds)} would exceed the contribution cap — only ${formatCurrency(roundCents(room))} of room remains. Uncheck funding or trim less.`,
+      throw new Error(
+        `Rule 12: depositing ${formatCurrency(netProceeds)} would exceed the contribution cap — only ${money(room)} of room remains. Uncheck funding or trim less.`,
       );
     }
-    setBusy(true);
-    try {
-      await recordTrim({
-        parkedId: p.id,
-        shares: numShares,
-        pricePerShare: numPrice,
-        date,
-        depositVooPrice: fund ? Number(vooPrice) : undefined,
-        fees: feeNum > 0 ? feeNum : undefined,
-      });
-      onClose();
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+    await recordTrim({
+      parkedId: p.id,
+      shares: numShares,
+      pricePerShare: numPrice,
+      date,
+      depositVooPrice: fund ? Number(vooPrice) : undefined,
+      fees: feeNum > 0 ? feeNum : undefined,
+    });
+    onClose();
+  });
 
   return (
     <Modal isOpen onClose={onClose} title={`Sell ${p.ticker} (${p.account})`}>
@@ -161,26 +150,22 @@ export function TrimModal({
         )}
 
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls}>Shares (of {p.shares})</label>
+          <Field label={`Shares (of ${p.shares})`}>
             <input type="number" step="any" min="0.00000001" required value={shares}
               onChange={(e) => setShares(e.target.value)} className={inputCls} />
-          </div>
-          <div>
-            <label className={labelCls}>Price / share ($)</label>
+          </Field>
+          <Field label="Price / share ($)">
             <input type="number" step="any" min="0.00000001" required value={price}
               onChange={(e) => setPrice(e.target.value)} className={inputCls} />
-          </div>
-          <div>
-            <label className={labelCls}>Date</label>
+          </Field>
+          <Field label="Date">
             <input type="date" required value={date} onChange={(e) => changeDate(e.target.value)} className={inputCls} />
-          </div>
+          </Field>
           <TotalField value={total} onChange={setTotal} label="Total proceeds ($)" />
-          <div>
-            <label className={labelCls}>Fees ($, optional)</label>
+          <Field label="Fees ($, optional)">
             <input type="number" step="0.01" min="0" value={fees} placeholder="SEC/FINRA fees"
               onChange={(e) => setFees(e.target.value)} className={inputCls} />
-          </div>
+          </Field>
           {feeNum > 0 && proceeds > 0 && (
             <p className="self-end pb-2 text-xs text-gray-500 tabular-nums">
               net proceeds {formatCurrency(netProceeds)}
@@ -194,8 +179,7 @@ export function TrimModal({
           Deposit the proceeds into the challenge account
         </label>
         {fund && (
-          <div>
-            <label className={labelCls}>VOO price on {date}</label>
+          <Field label={`VOO price on ${date}`}>
             <input type="number" step="0.01" min="0.01" value={vooPrice}
               onChange={(e) => setVooPrice(e.target.value)} className={inputCls} placeholder="for the shadow purchase" />
             {vooPrefilled && (
@@ -210,7 +194,7 @@ export function TrimModal({
                     : `backdated — fetching VOO's close for ${date}…`}
               </p>
             )}
-          </div>
+          </Field>
         )}
 
         {proceeds > 0 && (
@@ -222,12 +206,12 @@ export function TrimModal({
                 <>
                   {' '}· gain{' '}
                   <span className={cn('font-medium tabular-nums', preview.gain - feeNum >= 0 ? 'text-green-600' : 'text-red-600')}>
-                    {formatCurrency(roundCents(preview.gain - feeNum))}
+                    {money(preview.gain - feeNum)}
                   </span>
                   <span className="text-gray-400">
                     {preview.adjustedCostBasis < preview.costBasis - 0.005
-                      ? ` (adjusted basis ${formatCurrency(roundCents(preview.adjustedCostBasis))} — ROC-reduced from ${formatCurrency(roundCents(preview.costBasis))})`
-                      : ` (basis ${formatCurrency(roundCents(preview.costBasis))})`}
+                      ? ` (adjusted basis ${money(preview.adjustedCostBasis)} — ROC-reduced from ${money(preview.costBasis)})`
+                      : ` (basis ${money(preview.costBasis)})`}
                   </span>
                 </>
               )}
@@ -240,7 +224,7 @@ export function TrimModal({
                 {preview.unknownShares > 0 && ` · ${fmtSh(preview.unknownShares)} sh undated`}
                 {preview.gain - feeNum > 0 && (
                   <span title={`Rough estimate (~${formatPercent(ltTaxRate, 0)} LT / ~${formatPercent(stTaxRate, 0)} ST — editable on Tax Reserve). The quarterly skim never covers pile sales — set this aside yourself.`}>
-                    {' '}· est. tax {formatCurrency(roundCents(estimatedPileTax(preview.gain - feeNum, numShares, preview.ltShares + preview.unknownShares, ltTaxRate, stTaxRate)))}
+                    {' '}· est. tax {money(estimatedPileTax(preview.gain - feeNum, numShares, preview.ltShares + preview.unknownShares, ltTaxRate, stTaxRate))}
                   </span>
                 )}
                 {isLoss && !isCryptoTicker(p.ticker) && <span className="text-red-600 font-medium"> · loss — arms the 31-day wash-sale window</span>}
@@ -255,12 +239,8 @@ export function TrimModal({
           </div>
         )}
 
-        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
-        <div className="flex justify-end">
-          <button type="submit" disabled={busy} className={primaryBtnCls}>
-            {busy ? 'Recording…' : 'Record sale'}
-          </button>
-        </div>
+        <FormError message={formError} />
+        <ModalFooter busy={busy} label="Record sale" busyLabel="Recording…" />
       </form>
     </Modal>
   );

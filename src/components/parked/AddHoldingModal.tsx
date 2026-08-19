@@ -2,12 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import { Modal } from '../ui/Modal';
 import { AccountSelect } from '../ui/AccountSelect';
 import { TotalField } from '../ui/TotalField';
+import { Field } from '../ui/Field';
+import { FormError, ModalFooter, useModalForm } from '../ui/useModalForm';
 import { useData } from '../../contexts/DataContext';
 import type { ParkedPosition } from '../../lib/engine';
 import { isArchivedPosition, isCryptoTicker, roundCents, suggestCategory } from '../../lib/engine';
 import { useNotional } from '../../lib/useNotional';
 import { fetchProfile } from '../../lib/quotes';
-import { cn, inputCls, labelCls, primaryBtnCls } from '../../lib/utils';
+import { cn, inputCls } from '../../lib/utils';
 import { CATEGORY_SUGGESTIONS, fmtSh } from './shared';
 
 export function AddHoldingModal({
@@ -25,8 +27,6 @@ export function AddHoldingModal({
   const [date, setDate] = useState('');
   const { shares, price, total, setShares, setPrice, setTotal } = useNotional();
   const [notes, setNotes] = useState('');
-  const [formError, setFormError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   // Category help: the vendor industry shows as a hint, and unambiguous
   // industries (semis, crypto) pre-select — but a hand-picked category is
@@ -41,7 +41,7 @@ export function AddHoldingModal({
       if (!categoryTouched.current) setCategory('BTC');
       return;
     }
-    if (!/^[A-Z.\-]{1,10}$/.test(t) || profileFetchedFor.current === t) return;
+    if (!/^[A-Z.-]{1,10}$/.test(t) || profileFetchedFor.current === t) return;
     const timer = setTimeout(() => {
       profileFetchedFor.current = t;
       void fetchProfile(t).then((p) => {
@@ -62,55 +62,44 @@ export function AddHoldingModal({
   );
   const liveMatch = existing && !isArchivedPosition(existing) ? existing : null;
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError(null);
+  const { busy, formError, submit } = useModalForm(async () => {
     const t = ticker.trim().toUpperCase();
     const sh = Number(shares);
     const pr = Number(price);
-    if (!sh || sh <= 0 || !pr || pr <= 0) return setFormError('Enter shares and cost per share.');
-    setBusy(true);
-    try {
-      if (liveMatch) {
-        await addParkedLot({
-          parkedPositionId: liveMatch.id,
-          date: date || null,
-          source: 'purchase',
-          shares: sh,
-          price: pr,
-          amount: roundCents(sh * pr),
-          notes: notes || null,
-        });
-      } else {
-        await addParkedPosition({
-          ticker: t,
-          accountId,
-          category: category.trim() || 'Other',
-          date: date || null,
-          shares: sh,
-          price: pr,
-          notes: notes || null,
-        });
-      }
-      onClose();
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
+    if (!sh || sh <= 0 || !pr || pr <= 0) throw new Error('Enter shares and cost per share.');
+    if (liveMatch) {
+      await addParkedLot({
+        parkedPositionId: liveMatch.id,
+        date: date || null,
+        source: 'purchase',
+        shares: sh,
+        price: pr,
+        amount: roundCents(sh * pr),
+        notes: notes || null,
+      });
+    } else {
+      await addParkedPosition({
+        ticker: t,
+        accountId,
+        category: category.trim() || 'Other',
+        date: date || null,
+        shares: sh,
+        price: pr,
+        notes: notes || null,
+      });
     }
-  };
+    onClose();
+  });
 
   return (
     <Modal isOpen onClose={onClose} title="Buy — parked pile">
       <form onSubmit={submit} className="space-y-3">
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          <div>
-            <label className={labelCls}>Ticker</label>
+          <Field label="Ticker">
             <input required value={ticker} onChange={(e) => setTicker(e.target.value)}
               className={inputCls} placeholder="NVDA" />
-          </div>
-          <div>
-            <label className={labelCls}>Sector</label>
+          </Field>
+          <Field label="Sector">
             <input
               list="sector-suggestions"
               value={liveMatch ? liveMatch.category : category}
@@ -128,11 +117,10 @@ export function AddHoldingModal({
                 vendor: {industry}
               </p>
             )}
-          </div>
-          <div className="col-span-2 sm:col-span-1">
-            <label className={labelCls}>Buy date</label>
+          </Field>
+          <Field label="Buy date" className="col-span-2 sm:col-span-1">
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
-          </div>
+          </Field>
         </div>
         {liveMatch && (
           <p className="text-xs text-sky-700 bg-sky-50 rounded-md px-3 py-2">
@@ -143,32 +131,25 @@ export function AddHoldingModal({
         <AccountSelect accounts={accounts} value={accountId} onChange={setAccountId}
           label="Account" kinds={kinds} allowNone={false} />
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div>
-            <label className={labelCls}>Shares</label>
+          <Field label="Shares">
             <input type="number" step="any" min="0.00000001" required value={shares}
               onChange={(e) => setShares(e.target.value)} className={inputCls} />
-          </div>
-          <div>
-            <label className={labelCls}>Cost per share ($)</label>
+          </Field>
+          <Field label="Cost per share ($)">
             <input type="number" step="any" min="0" required value={price}
               onChange={(e) => setPrice(e.target.value)} className={inputCls} />
-          </div>
+          </Field>
           <TotalField value={total} onChange={setTotal} label="Total cost ($)" />
         </div>
-        <div>
-          <label className={labelCls}>Notes</label>
+        <Field label="Notes">
           <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls} />
-        </div>
+        </Field>
         <p className="text-xs text-gray-400">
           Each buy is its own dated lot with its own 366-day unlock clock. Dividends go in from
           the row's lot panel. Context only — never in the score.
         </p>
-        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
-        <div className="flex justify-end">
-          <button type="submit" disabled={busy} className={primaryBtnCls}>
-            {busy ? 'Buying…' : 'Buy'}
-          </button>
-        </div>
+        <FormError message={formError} />
+        <ModalFooter busy={busy} label="Buy" busyLabel="Buying…" />
       </form>
     </Modal>
   );

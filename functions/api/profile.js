@@ -15,7 +15,7 @@ export async function onRequestGet(context) {
   const { request, env } = context;
   const url = new URL(request.url);
   const ticker = (url.searchParams.get('ticker') ?? '').trim().toUpperCase();
-  if (!/^[A-Z.\-]{1,10}$/.test(ticker)) {
+  if (!/^[A-Z.-]{1,10}$/.test(ticker)) {
     return json({ error: 'ticker required' }, 400);
   }
   // A missing key is a config failure, not "this ticker has no profile" —

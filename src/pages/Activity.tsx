@@ -7,12 +7,13 @@ import { ErrorCard } from '../components/ui/ErrorCard';
 import { SkeletonTable } from '../components/ui/SkeletonTable';
 import { CLASSIFICATION_LABELS, classificationPillCls, fmtSh } from '../components/parked/shared';
 import { EditSaleModal } from '../components/parked/EditSaleModal';
+import { TableCard, theadCls } from '../components/ui/Card';
 import { useData } from '../contexts/DataContext';
 import type { DividendClassification, ParkedSale } from '../lib/engine';
 import {
   estimatedPileTax, lotCashImpact, roundCents, saleCashImpact, signedParkedCash,
 } from '../lib/engine';
-import { cn, formatCurrency, formatPercent, inputCls, safeStorage } from '../lib/utils';
+import { cn, formatCurrency, formatPercent, inputCls, money, safeStorage, signedMoney } from '../lib/utils';
 
 /** Every pile event in one filterable stream. Pile only, never the score —
  * the challenge account's history lives on the Cash Ledger and Trade Log. */
@@ -57,7 +58,7 @@ function SaleDetail({ sale: s }: { sale: ParkedSale }) {
         gain === null ? 'text-gray-400' : gain >= 0 ? 'text-green-600' : 'text-red-600')}>
         {gain === null
           ? 'unknown basis'
-          : `${gain >= 0 ? '+' : '−'}${formatCurrency(Math.abs(roundCents(gain)))}`}
+          : signedMoney(gain)}
       </span>
       {term && (
         <span className={cn('ml-1 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium',
@@ -275,49 +276,59 @@ export function Activity() {
           hint="Buys, sells, dividends, and account cash movements all land here as they're recorded on the Parked Pile screen."
         />
       ) : (
-        <div className="bg-white rounded-lg shadow-lg">
-          <div className="px-4 pt-3 pb-1 flex flex-wrap items-baseline justify-between gap-2">
-            <p className="text-sm tabular-nums">
-              <span className="text-gray-500">Realized: </span>
-              <span className={cn('font-bold', realizedTotal >= 0 ? 'text-green-600' : 'text-red-600')}>
-                {formatCurrency(roundCents(realizedTotal))}
-              </span>
-              {estTaxTotal > 0 && (
-                <span className="text-xs text-gray-400" title={`Rough estimate (~${formatPercent(ltTaxRate, 0)} LT / ~${formatPercent(stTaxRate, 0)} ST — editable on Tax Reserve). The quarterly skim is challenge-account-only — set this aside yourself.`}>
-                  {' '}· est. tax {formatCurrency(roundCents(estTaxTotal))}
+        /* Only the table scrolls sideways — the summary/filter bar above stays put. */
+        <TableCard
+          toolbar={
+            <div className="px-4 pt-3 pb-1 flex flex-wrap items-baseline justify-between gap-2">
+              <p className="text-sm tabular-nums">
+                <span className="text-gray-500">Realized: </span>
+                <span className={cn('font-bold', realizedTotal >= 0 ? 'text-green-600' : 'text-red-600')}>
+                  {money(realizedTotal)}
                 </span>
-              )}
-              {unknownBasisCount > 0 && (
-                <span className="text-xs text-gray-400"> · {unknownBasisCount} sale{unknownBasisCount > 1 ? 's' : ''} with unknown basis excluded</span>
-              )}
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <select value={actAccount} onChange={(e) => setActFilters({ account: e.target.value, ticker: actTicker, kind: actKind })}
-                className={cn(inputCls, 'w-auto py-1 text-xs')} aria-label="Filter by account">
-                <option value="">All accounts</option>
-                {actAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
-              <select value={actTicker} onChange={(e) => setActFilters({ account: actAccount, ticker: e.target.value, kind: actKind })}
-                className={cn(inputCls, 'w-auto py-1 text-xs')} aria-label="Filter by ticker">
-                <option value="">All tickers</option>
-                {actTickers.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
-              <select value={actKind} onChange={(e) => setActFilters({ account: actAccount, ticker: actTicker, kind: e.target.value })}
-                className={cn(inputCls, 'w-auto py-1 text-xs')} aria-label="Filter by type">
-                <option value="">All types</option>
-                <option value="buy">Buys</option>
-                <option value="sell">Sells</option>
-                <option value="dividend">Dividends</option>
-                <option value="transfer">Transfers</option>
-                <option value="cash">Cash</option>
-              </select>
+                {estTaxTotal > 0 && (
+                  <span className="text-xs text-gray-400" title={`Rough estimate (~${formatPercent(ltTaxRate, 0)} LT / ~${formatPercent(stTaxRate, 0)} ST — editable on Tax Reserve). The quarterly skim is challenge-account-only — set this aside yourself.`}>
+                    {' '}· est. tax {money(estTaxTotal)}
+                  </span>
+                )}
+                {unknownBasisCount > 0 && (
+                  <span className="text-xs text-gray-400"> · {unknownBasisCount} sale{unknownBasisCount > 1 ? 's' : ''} with unknown basis excluded</span>
+                )}
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <select value={actAccount} onChange={(e) => setActFilters({ account: e.target.value, ticker: actTicker, kind: actKind })}
+                  className={cn(inputCls, 'w-auto py-1 text-xs')} aria-label="Filter by account">
+                  <option value="">All accounts</option>
+                  {actAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+                <select value={actTicker} onChange={(e) => setActFilters({ account: actAccount, ticker: e.target.value, kind: actKind })}
+                  className={cn(inputCls, 'w-auto py-1 text-xs')} aria-label="Filter by ticker">
+                  <option value="">All tickers</option>
+                  {actTickers.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+                <select value={actKind} onChange={(e) => setActFilters({ account: actAccount, ticker: actTicker, kind: e.target.value })}
+                  className={cn(inputCls, 'w-auto py-1 text-xs')} aria-label="Filter by type">
+                  <option value="">All types</option>
+                  <option value="buy">Buys</option>
+                  <option value="sell">Sells</option>
+                  <option value="dividend">Dividends</option>
+                  <option value="transfer">Transfers</option>
+                  <option value="cash">Cash</option>
+                </select>
+              </div>
             </div>
-          </div>
-          {/* Only the table scrolls sideways — the summary/filter bar above stays put. */}
-          <div className="overflow-x-auto">
+          }
+          footer={filtered.length > ACTIVITY_PAGE && (
+            <button
+              onClick={() => setShowAll((v) => !v)}
+              className="w-full py-2 text-xs font-medium text-indigo-600 hover:text-indigo-800 border-t border-gray-100"
+            >
+              {showAll ? 'Show recent only' : `Show all ${filtered.length} events`}
+            </button>
+          )}
+        >
           <table className="w-full text-sm compact-table">
             <thead>
-              <tr className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+              <tr className={theadCls}>
                 <th className="px-4 py-2">Date</th>
                 <th className="px-4 py-2">Type</th>
                 <th className="px-4 py-2">Ticker</th>
@@ -351,7 +362,7 @@ export function Activity() {
                   <td className="px-4 py-2 text-right tabular-nums">{r.shares != null && r.shares > 0 ? fmtSh(r.shares) : '—'}</td>
                   <td className="px-4 py-2 text-right tabular-nums text-gray-500">{r.price != null ? formatCurrency(r.price) : '—'}</td>
                   <td className={cn('px-4 py-2 text-right tabular-nums font-medium', r.amountCls)}>
-                    {formatCurrency(roundCents(r.amount))}
+                    {money(r.amount)}
                   </td>
                   {balanceEligible && (
                     <td className={cn('px-4 py-2 text-right tabular-nums',
@@ -404,16 +415,7 @@ export function Activity() {
               )}
             </tbody>
           </table>
-          </div>
-          {filtered.length > ACTIVITY_PAGE && (
-            <button
-              onClick={() => setShowAll((v) => !v)}
-              className="w-full py-2 text-xs font-medium text-indigo-600 hover:text-indigo-800 border-t border-gray-100"
-            >
-              {showAll ? 'Show recent only' : `Show all ${filtered.length} events`}
-            </button>
-          )}
-        </div>
+        </TableCard>
       )}
 
       {deletingSale && (

@@ -9,13 +9,16 @@ import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { ErrorCard } from '../components/ui/ErrorCard';
 import { SkeletonTable } from '../components/ui/SkeletonTable';
 import { ContributionCapBadge } from '../components/ui/ContributionCapBadge';
+import { Card, theadCls } from '../components/ui/Card';
+import { Field } from '../components/ui/Field';
+import { FormError, ModalFooter, useModalForm } from '../components/ui/useModalForm';
 import type { CashEvent, CashEventType } from '../lib/engine';
 import {
   cashSummary, contributionStatus, depositExceedsCap, netContributed, roundCents,
   withRunningBalance,
 } from '../lib/engine';
 import {
-  cn, errorMessage, formatCurrency, formatCurrencyWhole, inputCls, labelCls, primaryBtnCls,
+  cn, formatCurrency, formatCurrencyWhole, inputCls, money, primaryBtnCls,
   todayISO,
 } from '../lib/utils';
 import { fetchClose } from '../lib/quotes';
@@ -94,7 +97,7 @@ export function CashLedger() {
           ['Net contributed', summary.netContributed],
           ['Current cash', roundCents(summary.currentCash)],
         ].map(([label, value]) => (
-          <div key={label as string} className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
+          <Card key={label as string} className="p-4 density-aware-card">
             <p className="text-xs font-medium text-gray-500">{label}</p>
             <p className={cn('mt-0.5 text-lg sm:text-xl font-bold tabular-nums',
               (value as number) < 0 ? 'text-red-600' : 'text-gray-900')}>
@@ -103,14 +106,14 @@ export function CashLedger() {
             {label === 'Net contributed' && (
               <ContributionCapBadge netContributed={summary.netContributed} cap={contributionCap} />
             )}
-          </div>
+          </Card>
         ))}
       </div>
       {/* The rest of cashSummary, compact — the spec's full breakdown. */}
       <p className="mb-4 px-1 text-xs text-gray-500 tabular-nums">
-        Buys −{formatCurrency(roundCents(summary.buys))} · Sells +{formatCurrency(roundCents(summary.sells))} ·
-        Dividends +{formatCurrency(roundCents(summary.dividends))} · Tax skims −{formatCurrency(roundCents(summary.taxSkims))} ·
-        Milestone banks −{formatCurrency(roundCents(summary.milestoneBanks))} · Fees −{formatCurrency(roundCents(summary.fees))}
+        Buys −{money(summary.buys)} · Sells +{money(summary.sells)} ·
+        Dividends +{money(summary.dividends)} · Tax skims −{money(summary.taxSkims)} ·
+        Milestone banks −{money(summary.milestoneBanks)} · Fees −{money(summary.fees)}
       </p>
 
       {loading ? (
@@ -122,10 +125,10 @@ export function CashLedger() {
           hint="Start with the funding deposit. Adding a deposit also records that day's shadow VOO purchase for the benchmark."
         />
       ) : (
-        <div className="bg-white rounded-lg shadow-lg overflow-x-auto">
+        <Card className="overflow-x-auto">
           <table className="w-full text-sm compact-table">
             <thead className="bg-gray-50 sticky top-0">
-              <tr className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+              <tr className={theadCls}>
                 <th className="px-4 py-3">Date</th>
                 <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Ticker</th>
@@ -162,7 +165,7 @@ export function CashLedger() {
                   </td>
                   <td className={cn('px-4 py-3 text-right tabular-nums font-bold',
                     balance < 0 ? 'text-red-600' : 'text-gray-900')}>
-                    {formatCurrency(roundCents(balance))}
+                    {money(balance)}
                   </td>
                   <td className="px-2 py-3 whitespace-nowrap">
                     <button onClick={() => setEditing(e)} className="p-2 sm:p-1 rounded hover:bg-gray-100"
@@ -178,7 +181,7 @@ export function CashLedger() {
               ))}
             </tbody>
           </table>
-        </div>
+        </Card>
       )}
 
       <AddEventModal isOpen={modalOpen} onClose={() => setModalOpen(false)} onAdd={addCashEvent} />
@@ -259,85 +262,69 @@ function AddEventModal({
   }, [isOpen, type, date, vooPrice]);
   const [fromAccount, setFromAccount] = useState('');
   const [toAccount, setToAccount] = useState('');
-  const [formError, setFormError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   const needsTicker = ['Buy', 'Sell', 'Dividend'].includes(type);
   const hasDestination = ['Withdrawal', 'TaxSkim', 'MilestoneBank'].includes(type);
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError(null);
+  const { busy, formError, submit } = useModalForm(async () => {
     const amt = Number(amount);
-    if (!amt || amt <= 0) return setFormError('Amount must be positive — the type sets direction.');
+    if (!amt || amt <= 0) throw new Error('Amount must be positive — the type sets direction.');
     if (type === 'Deposit' && (!vooPrice || Number(vooPrice) <= 0)) {
-      return setFormError("Deposits need that day's VOO price — it creates the shadow purchase for the honest test.");
+      throw new Error("Deposits need that day's VOO price — it creates the shadow purchase for the honest test.");
     }
     // Rule 12: net contributed caps at the configured value. Refuse, don't warn.
     if (type === 'Deposit' && contributionCap !== null) {
       const contributed = netContributed(cashEvents);
       if (depositExceedsCap(contributed, amt, contributionCap)) {
         const room = contributionStatus(contributed, contributionCap).remaining;
-        return setFormError(
+        throw new Error(
           room > 0
-            ? `Rule 12: this deposit would exceed the ${formatCurrencyWhole(contributionCap)} contribution cap — only ${formatCurrency(roundCents(room))} of room remains.`
+            ? `Rule 12: this deposit would exceed the ${formatCurrencyWhole(contributionCap)} contribution cap — only ${money(room)} of room remains.`
             : `Rule 12: the ${formatCurrencyWhole(contributionCap)} contribution cap is reached — growth by trading only. Raising the cap requires beating VOO over a trailing 12 months.`,
         );
       }
     }
-    setBusy(true);
-    try {
-      await onAdd(
-        {
-          date,
-          type,
-          amount: roundCents(amt),
-          ticker: needsTicker && ticker ? ticker.toUpperCase() : null,
-          sourceDestination: source || null,
-          accountId: type === 'Deposit' && fromAccount ? fromAccount : null,
-          destinationAccountId: hasDestination && toAccount ? toAccount : null,
-          notes: notes || null,
-        },
-        type === 'Deposit' ? Number(vooPrice) : undefined,
-      );
-      setAmount(''); setTicker(''); setSource(''); setNotes(''); setVooPrice('');
-      onClose();
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+    await onAdd(
+      {
+        date,
+        type,
+        amount: roundCents(amt),
+        ticker: needsTicker && ticker ? ticker.toUpperCase() : null,
+        sourceDestination: source || null,
+        accountId: type === 'Deposit' && fromAccount ? fromAccount : null,
+        destinationAccountId: hasDestination && toAccount ? toAccount : null,
+        notes: notes || null,
+      },
+      type === 'Deposit' ? Number(vooPrice) : undefined,
+    );
+    setAmount(''); setTicker(''); setSource(''); setNotes(''); setVooPrice('');
+    onClose();
+  });
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Add cash event">
       <form onSubmit={submit} className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls}>Date</label>
+          <Field label="Date">
             <input type="date" required value={date} onChange={(e) => changeDate(e.target.value)} className={inputCls} />
-          </div>
-          <div>
-            <label className={labelCls}>Type</label>
+          </Field>
+          <Field label="Type">
             <select value={type} onChange={(e) => setType(e.target.value as CashEventType)} className={inputCls}>
               {TYPES.map((t) => <option key={t}>{t}</option>)}
             </select>
-          </div>
+          </Field>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls}>Amount ($)</label>
+          <Field label="Amount ($)">
             <input type="number" step="0.01" min="0.01" required value={amount}
               onChange={(e) => setAmount(e.target.value)} className={inputCls} />
-          </div>
+          </Field>
           {needsTicker ? (
-            <div>
-              <label className={labelCls}>Ticker</label>
+            <Field label="Ticker">
               <input value={ticker} onChange={(e) => setTicker(e.target.value)} className={inputCls} placeholder="NBIS" />
-            </div>
+            </Field>
           ) : type === 'Deposit' ? (
-            <div>
-              <label className={labelCls}>VOO price today</label>
+            <Field label="VOO price today">
               <input type="number" step="0.01" min="0.01" value={vooPrice}
                 onChange={(e) => setVooPrice(e.target.value)} className={inputCls} placeholder="620.00" />
               {vooQuote !== undefined && vooPrice === String(vooQuote) && date === todayISO() && (
@@ -352,7 +339,7 @@ function AddEventModal({
                       : `backdated — fetching VOO's close for ${date}…`}
                 </p>
               )}
-            </div>
+            </Field>
           ) : <div />}
         </div>
         {type === 'Deposit' && (
@@ -363,25 +350,19 @@ function AddEventModal({
           <AccountSelect accounts={accounts} value={toAccount} onChange={setToAccount}
             label="To account" kinds={type === 'TaxSkim' ? ['bank'] : ['bank', 'outside']} />
         )}
-        <div>
-          <label className={labelCls}>Source / destination note</label>
+        <Field label="Source / destination note">
           <input value={source} onChange={(e) => setSource(e.target.value)} className={inputCls} placeholder="Cash App sales" />
-        </div>
-        <div>
-          <label className={labelCls}>Notes</label>
+        </Field>
+        <Field label="Notes">
           <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls} />
-        </div>
+        </Field>
         {type === 'Deposit' && (
           <p className="text-xs text-gray-400">
             Every deposit buys shadow VOO the same day — that's the benchmark you're trying to beat.
           </p>
         )}
-        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
-        <div className="flex justify-end">
-          <button type="submit" disabled={busy} className={primaryBtnCls}>
-            {busy ? 'Saving…' : 'Add event'}
-          </button>
-        </div>
+        <FormError message={formError} />
+        <ModalFooter busy={busy} label="Add event" />
       </form>
     </Modal>
   );
@@ -391,34 +372,21 @@ function EditEventModal({ event, onClose }: { event: CashEvent; onClose: () => v
   const { updateCashEvent } = useData();
   const [date, setDate] = useState(event.date);
   const [notes, setNotes] = useState(event.notes ?? '');
-  const [formError, setFormError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError(null);
-    setBusy(true);
-    try {
-      await updateCashEvent(event.id, { date, notes: notes || null });
-      onClose();
-    } catch (err) {
-      setFormError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const { busy, formError, submit } = useModalForm(async () => {
+    await updateCashEvent(event.id, { date, notes: notes || null });
+    onClose();
+  });
 
   return (
     <Modal isOpen onClose={onClose} title={`Edit ${event.type} — ${formatCurrency(event.amount)}`}>
       <form onSubmit={submit} className="space-y-3">
-        <div>
-          <label className={labelCls}>Date</label>
+        <Field label="Date">
           <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
-        </div>
-        <div>
-          <label className={labelCls}>Notes</label>
+        </Field>
+        <Field label="Notes">
           <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls} />
-        </div>
+        </Field>
         <p className="text-xs text-gray-400">
           Amount and type can't change — the twin, running balance, and reserve math key off them.
           Delete and re-add if the money is wrong.
@@ -427,12 +395,8 @@ function EditEventModal({ event, onClose }: { event: CashEvent; onClose: () => v
           {event.type === 'Buy' &&
             ' The position lot keeps its own buy date — edit it from Positions if both should move.'}
         </p>
-        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
-        <div className="flex justify-end">
-          <button type="submit" disabled={busy} className={primaryBtnCls}>
-            {busy ? 'Saving…' : 'Save changes'}
-          </button>
-        </div>
+        <FormError message={formError} />
+        <ModalFooter busy={busy} label="Save changes" />
       </form>
     </Modal>
   );

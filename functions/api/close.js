@@ -23,7 +23,7 @@ export async function onRequestGet(context) {
   const url = new URL(request.url);
   const ticker = (url.searchParams.get('ticker') ?? 'VOO').trim().toUpperCase();
   const date = url.searchParams.get('date') ?? '';
-  if (!/^[A-Z.\-]{1,10}$/.test(ticker) || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+  if (!/^[A-Z.-]{1,10}$/.test(ticker) || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return json({ error: 'ticker and date=YYYY-MM-DD required' }, 400);
   }
 

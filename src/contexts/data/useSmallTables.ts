@@ -33,7 +33,7 @@ export function useSmallTables(args: {
       ...prev,
       settings: Object.fromEntries((data ?? []).map((r: any) => [r.key, r.value])),
     }));
-  }, []);
+  }, [setState]);
 
   const refreshWatchlist = useCallback(async () => {
     const client = db();
@@ -42,7 +42,7 @@ export function useSmallTables(args: {
     );
     if (err) throw err;
     setState((prev) => ({ ...prev, watchlist: (data ?? []).map(mapWatchlistItem) }));
-  }, []);
+  }, [setState]);
 
   const updateSetting = useCallback(
     async (key: string, value: unknown) => {
@@ -151,7 +151,7 @@ export function useSmallTables(args: {
       incomeScenarios: (scen.data ?? []).map(mapIncomeScenario),
       scenarioRotations: (rots.data ?? []).map(mapScenarioRotation),
     }));
-  }, []);
+  }, [setState]);
 
   const addScenario = useCallback(
     async (s: Omit<IncomeScenario, 'id' | 'createdAt'>) => {
@@ -254,7 +254,7 @@ export function useSmallTables(args: {
         overrideSetAt: { ...prev.overrideSetAt, [ticker]: set_at },
       }));
     },
-    [],
+    [setState],
   );
 
   const updateParkedPrices = useCallback(
@@ -281,7 +281,7 @@ export function useSmallTables(args: {
         ),
       }));
     },
-    [refresh],
+    [refresh, setState],
   );
 
   const setOverrides = useCallback(
@@ -304,7 +304,7 @@ export function useSmallTables(args: {
         },
       }));
     },
-    [],
+    [setState],
   );
 
   const clearOverride = useCallback(
@@ -319,7 +319,7 @@ export function useSmallTables(args: {
         return { ...prev, overrides, overrideSetAt };
       });
     },
-    [],
+    [setState],
   );
 
   return {

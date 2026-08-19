@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { Modal } from '../ui/Modal';
 import { TotalField } from '../ui/TotalField';
+import { Field } from '../ui/Field';
+import { FormError, ModalFooter, useModalForm } from '../ui/useModalForm';
 import { useData } from '../../contexts/DataContext';
 import type { ParkedSale } from '../../lib/engine';
 import { roundCents } from '../../lib/engine';
 import { useNotional } from '../../lib/useNotional';
-import { cn, formatCurrency, inputCls, labelCls, primaryBtnCls } from '../../lib/utils';
+import { cn, formatCurrency, inputCls, money } from '../../lib/utils';
 import { fmtSh } from './shared';
 
 export function EditSaleModal({ sale: s, onClose }: { sale: ParkedSale; onClose: () => void }) {
@@ -24,68 +26,50 @@ export function EditSaleModal({ sale: s, onClose }: { sale: ParkedSale; onClose:
   const [ltShares, setLtShares] = useState(s.ltShares != null ? String(s.ltShares) : '');
   const [funded, setFunded] = useState(s.fundedChallenge);
   const [notes, setNotes] = useState(s.notes ?? '');
-  const [formError, setFormError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   const numBasis = Number(basis);
   const gainPreview = snapshotMode
     ? null
     : basis !== '' && numBasis >= 0 ? s.proceeds - numBasis : null;
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError(null);
+  const { busy, formError, submit } = useModalForm(async () => {
     if (snapshotMode) {
       const sh = Number(shares);
       const pr = Number(price);
-      if (!sh || sh <= 0) return setFormError('Enter the shares sold.');
-      if (!pr || pr <= 0) return setFormError('Enter the sale price.');
+      if (!sh || sh <= 0) throw new Error('Enter the shares sold.');
+      if (!pr || pr <= 0) throw new Error('Enter the sale price.');
       // Only a real number change goes through the destructive undo+re-apply;
       // funded/notes-only edits patch the record in place.
       const numbersChanged =
         Math.abs(sh - s.shares) > 1e-9 ||
         Math.abs(pr - s.pricePerShare) > 1e-9 ||
         date !== s.date;
-      setBusy(true);
-      try {
-        if (numbersChanged) {
-          await editParkedSaleAmounts(s.id, {
-            shares: sh,
-            pricePerShare: pr,
-            date,
-            fundedChallenge: funded,
-            notes: notes || null,
-          });
-        } else {
-          await updateParkedSale(s.id, { fundedChallenge: funded, notes: notes || null });
-        }
-        onClose();
-      } catch (err) {
-        setFormError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setBusy(false);
+      if (numbersChanged) {
+        await editParkedSaleAmounts(s.id, {
+          shares: sh,
+          pricePerShare: pr,
+          date,
+          fundedChallenge: funded,
+          notes: notes || null,
+        });
+      } else {
+        await updateParkedSale(s.id, { fundedChallenge: funded, notes: notes || null });
       }
+      onClose();
       return;
     }
     if (ltShares !== '' && Number(ltShares) > s.shares + 1e-9) {
-      return setFormError(`Long-term shares can't exceed the ${fmtSh(s.shares)} sh sold.`);
+      throw new Error(`Long-term shares can't exceed the ${fmtSh(s.shares)} sh sold.`);
     }
-    setBusy(true);
-    try {
-      await updateParkedSale(s.id, {
-        date,
-        costBasis: basis === '' ? null : roundCents(numBasis),
-        ltShares: ltShares === '' ? null : Number(ltShares),
-        fundedChallenge: funded,
-        notes: notes || null,
-      });
-      onClose();
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+    await updateParkedSale(s.id, {
+      date,
+      costBasis: basis === '' ? null : roundCents(numBasis),
+      ltShares: ltShares === '' ? null : Number(ltShares),
+      fundedChallenge: funded,
+      notes: notes || null,
+    });
+    onClose();
+  });
 
   return (
     <Modal isOpen onClose={onClose} title={`Edit sale — ${s.ticker} (${fmtSh(s.shares)} sh, ${formatCurrency(s.proceeds)})`}>
@@ -93,20 +77,17 @@ export function EditSaleModal({ sale: s, onClose }: { sale: ParkedSale; onClose:
         {snapshotMode ? (
           <>
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className={labelCls}>Date</label>
+              <Field label="Date">
                 <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
-              </div>
-              <div>
-                <label className={labelCls}>Shares</label>
+              </Field>
+              <Field label="Shares">
                 <input type="number" step="any" min="0.00000001" required value={shares}
                   onChange={(e) => setShares(e.target.value)} className={inputCls} />
-              </div>
-              <div>
-                <label className={labelCls}>Price ($)</label>
+              </Field>
+              <Field label="Price ($)">
                 <input type="number" step="any" min="0" required value={price}
                   onChange={(e) => setPrice(e.target.value)} className={inputCls} />
-              </div>
+              </Field>
               <TotalField value={total} onChange={setTotal} label="Total proceeds ($)" />
             </div>
             <p className="text-xs text-gray-400">
@@ -118,20 +99,17 @@ export function EditSaleModal({ sale: s, onClose }: { sale: ParkedSale; onClose:
         ) : (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <label className={labelCls}>Date</label>
+              <Field label="Date">
                 <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
-              </div>
-              <div>
-                <label className={labelCls}>Cost basis ($)</label>
+              </Field>
+              <Field label="Cost basis ($)">
                 <input type="number" step="any" min="0" value={basis} placeholder="unknown"
                   onChange={(e) => setBasis(e.target.value)} className={inputCls} />
-              </div>
-              <div>
-                <label className={labelCls}>Long-term shares (of {fmtSh(s.shares)})</label>
+              </Field>
+              <Field label={`Long-term shares (of ${fmtSh(s.shares)})`}>
                 <input type="number" step="any" min="0" value={ltShares} placeholder="unknown"
                   onChange={(e) => setLtShares(e.target.value)} className={inputCls} />
-              </div>
+              </Field>
             </div>
             <p className="text-xs text-gray-400">
               Recorded before undo support — numbers only; shares and lots don't change.
@@ -142,7 +120,7 @@ export function EditSaleModal({ sale: s, onClose }: { sale: ParkedSale; onClose:
           <p className="text-sm text-gray-600">
             Realized gain:{' '}
             <span className={cn('font-medium tabular-nums', gainPreview >= 0 ? 'text-green-600' : 'text-red-600')}>
-              {formatCurrency(roundCents(gainPreview))}
+              {money(gainPreview)}
             </span>
           </p>
         )}
@@ -155,14 +133,11 @@ export function EditSaleModal({ sale: s, onClose }: { sale: ParkedSale; onClose:
           This flag is bookkeeping only — it does not create or remove ledger deposits. If a
           deposit exists or is missing on the Cash Ledger, fix it there.
         </p>
-        <div>
-          <label className={labelCls}>Notes</label>
+        <Field label="Notes">
           <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls} />
-        </div>
-        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
-        <div className="flex justify-end">
-          <button type="submit" disabled={busy} className={primaryBtnCls}>{busy ? 'Saving…' : 'Save'}</button>
-        </div>
+        </Field>
+        <FormError message={formError} />
+        <ModalFooter busy={busy} label="Save" />
       </form>
     </Modal>
   );

@@ -7,11 +7,14 @@ import { AccountSelect } from '../components/ui/AccountSelect';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { ErrorCard } from '../components/ui/ErrorCard';
 import { SkeletonTable } from '../components/ui/SkeletonTable';
+import { Card, TableCard, theadCls } from '../components/ui/Card';
+import { Field } from '../components/ui/Field';
+import { FormError, ModalFooter, useModalForm } from '../components/ui/useModalForm';
 import { useData } from '../contexts/DataContext';
 import { priceMapFor } from '../lib/alerts';
 import type { MilestoneRow } from '../lib/engine';
 import { accountTotal, cumulativeFloor, milestoneTable, roundCents, skimDue } from '../lib/engine';
-import { cn, formatCurrency, inputCls, labelCls, primaryBtnCls, todayISO } from '../lib/utils';
+import { cn, formatCurrency, inputCls, money, primaryBtnCls, todayISO } from '../lib/utils';
 
 export function Milestones() {
   const { lots, cashEvents, milestones, deleteMilestone, overrides, quotes, loading, error } = useData();
@@ -65,24 +68,30 @@ export function Milestones() {
         </div>
       )}
 
-      <div className="bg-white rounded-lg shadow-lg p-4 mb-4 density-aware-card flex flex-wrap items-baseline gap-x-6 gap-y-3">
+      <Card className="p-4 mb-4 density-aware-card flex flex-wrap items-baseline gap-x-6 gap-y-3">
         <div>
           <p className="text-xs font-medium text-gray-500">Banked floors (locked forever)</p>
           <p className="mt-0.5 text-2xl font-bold tabular-nums text-green-600">{formatCurrency(floor)}</p>
         </div>
         <div>
           <p className="text-xs font-medium text-gray-500">Account value</p>
-          <p className="mt-0.5 text-2xl font-bold tabular-nums text-gray-900">{formatCurrency(roundCents(account))}</p>
+          <p className="mt-0.5 text-2xl font-bold tabular-nums text-gray-900">{money(account)}</p>
         </div>
-      </div>
+      </Card>
 
       {loading ? (
         <SkeletonTable />
       ) : (
-        <div className="bg-white rounded-lg shadow-lg overflow-x-auto">
+        <TableCard
+          footer={
+            <p className="px-4 py-3 text-xs text-gray-400 border-t border-gray-100">
+              $1M is the aspiration marker. Past $800k the ladder keeps doubling — $1.6M, $3.2M — same 25% rule.
+            </p>
+          }
+        >
           <table className="w-full text-sm compact-table">
             <thead className="bg-gray-50 sticky top-0">
-              <tr className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+              <tr className={theadCls}>
                 <th className="px-4 py-3">Milestone</th>
                 <th className="px-4 py-3 text-right">Skim (25%)</th>
                 <th className="px-4 py-3">Date hit</th>
@@ -135,10 +144,7 @@ export function Milestones() {
               })}
             </tbody>
           </table>
-          <p className="px-4 py-3 text-xs text-gray-400 border-t border-gray-100">
-            $1M is the aspiration marker. Past $800k the ladder keeps doubling — $1.6M, $3.2M — same 25% rule.
-          </p>
-        </div>
+        </TableCard>
       )}
 
       {deleting && (
@@ -179,62 +185,47 @@ function RecordBankingModal({
   const [vooAccountId, setVooAccountId] = useState(outsideAccounts[0]?.id ?? '');
   const vooQuote = overrides['VOO'] ?? quotes['VOO'];
   const [vooPrice, setVooPrice] = useState(vooQuote ? String(vooQuote) : '');
-  const [formError, setFormError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError(null);
+  const { busy, formError, submit } = useModalForm(async () => {
     const banked = Number(amount);
-    if (!banked || banked <= 0) return setFormError('Banked amount must be positive.');
+    if (!banked || banked <= 0) throw new Error('Banked amount must be positive.');
     if (recordVoo && (!vooAccountId || !Number(vooPrice) || Number(vooPrice) <= 0)) {
-      return setFormError('Recording the VOO purchase needs the account and the VOO price paid.');
+      throw new Error('Recording the VOO purchase needs the account and the VOO price paid.');
     }
-    setBusy(true);
-    try {
-      await recordMilestone(
-        {
-          level: row.level,
-          accountValueAtHit: Number(valueAtHit),
-          dateHit,
-          amountBanked: roundCents(banked),
-          parkedDestination: destination || null,
-        },
-        recordVoo ? { accountId: vooAccountId, price: Number(vooPrice) } : undefined,
-      );
-      onDone();
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+    await recordMilestone(
+      {
+        level: row.level,
+        accountValueAtHit: Number(valueAtHit),
+        dateHit,
+        amountBanked: roundCents(banked),
+        parkedDestination: destination || null,
+      },
+      recordVoo ? { accountId: vooAccountId, price: Number(vooPrice) } : undefined,
+    );
+    onDone();
+  });
 
   return (
     <Modal isOpen onClose={onClose} title={`Bank the ${formatCurrency(row.level)} milestone`}>
       <form onSubmit={submit} className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls}>Account value at hit</label>
+          <Field label="Account value at hit">
             <input type="number" step="0.01" required value={valueAtHit}
               onChange={(e) => { setValueAtHit(e.target.value); setAmount(String(skimDue(Number(e.target.value) || 0))); }}
               className={inputCls} />
-          </div>
-          <div>
-            <label className={labelCls}>Amount banked (25% = {formatCurrency(skimDue(Number(valueAtHit) || 0))})</label>
+          </Field>
+          <Field label={`Amount banked (25% = ${formatCurrency(skimDue(Number(valueAtHit) || 0))})`}>
             <input type="number" step="0.01" min="0.01" required value={amount}
               onChange={(e) => setAmount(e.target.value)} className={inputCls} />
-          </div>
+          </Field>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls}>Date</label>
+          <Field label="Date">
             <input type="date" required value={dateHit} onChange={(e) => setDateHit(e.target.value)} className={inputCls} />
-          </div>
-          <div>
-            <label className={labelCls}>Where parked</label>
+          </Field>
+          <Field label="Where parked">
             <input value={destination} onChange={(e) => setDestination(e.target.value)} className={inputCls} />
-          </div>
+          </Field>
         </div>
         <label className="flex items-center gap-2 text-sm text-gray-700">
           <input type="checkbox" checked={recordVoo} onChange={(e) => setRecordVoo(e.target.checked)}
@@ -245,11 +236,10 @@ function RecordBankingModal({
           <div className="grid grid-cols-2 gap-3">
             <AccountSelect accounts={accounts} value={vooAccountId} onChange={setVooAccountId}
               label="Pile account" kinds={['outside']} allowNone={false} />
-            <div>
-              <label className={labelCls}>VOO price paid ($)</label>
+            <Field label="VOO price paid ($)">
               <input type="number" step="any" min="0.01" value={vooPrice}
                 onChange={(e) => setVooPrice(e.target.value)} className={inputCls} />
-            </div>
+            </Field>
           </div>
         )}
         {recordVoo && Number(amount) > 0 && Number(vooPrice) > 0 && (
@@ -262,10 +252,8 @@ function RecordBankingModal({
           <Landmark className="h-4 w-4 flex-shrink-0" />
           <span>Writes the MilestoneBank event to the Cash Ledger. This money never comes back to the trading account.</span>
         </div>
-        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
-        <div className="flex justify-end">
-          <button type="submit" disabled={busy} className={primaryBtnCls}>{busy ? 'Recording…' : 'Bank it'}</button>
-        </div>
+        <FormError message={formError} />
+        <ModalFooter busy={busy} label="Bank it" busyLabel="Recording…" />
       </form>
     </Modal>
   );

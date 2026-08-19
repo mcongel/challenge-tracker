@@ -215,7 +215,6 @@ export function useParkedSales(args: {
         throw new Error(`Only ${p.shares} shares parked; cannot trim ${shares}`);
       }
       const positionLots = parkedLots.filter((l) => l.parkedPositionId === parkedId);
-      let done = false;
       try {
         // The sale starts UNFUNDED and is marked funded only after the
         // Deposit + twin actually land — so the record never claims a ledger
@@ -259,16 +258,11 @@ export function useParkedSales(args: {
             );
           }
         }
-        done = true;
       } finally {
         // Refresh even on failure — a mid-trim error leaves a recorded sale
-        // whose Undo affordance must be visible immediately. But a refresh
-        // failure must not replace the guidance error with a fetch error.
-        try {
-          await refresh();
-        } catch (refreshErr) {
-          if (done) throw refreshErr;
-        }
+        // whose Undo affordance must be visible immediately. refresh() never
+        // rejects (fetch failures land in the context's error banner).
+        await refresh();
       }
     },
     [refresh, parked, parkedLots, parkedLotAdjustments, trimCore, insertDepositWithTwin],

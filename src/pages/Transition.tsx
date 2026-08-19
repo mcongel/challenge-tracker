@@ -10,12 +10,15 @@ import { Modal } from '../components/ui/Modal';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { ErrorCard } from '../components/ui/ErrorCard';
 import { SkeletonTable } from '../components/ui/SkeletonTable';
+import { Card, TableCard, theadCls } from '../components/ui/Card';
+import { Field } from '../components/ui/Field';
+import { FormError, ModalFooter, useModalForm } from '../components/ui/useModalForm';
 import { useData } from '../contexts/DataContext';
 import type { IncomeScenario, ScenarioProjection, ScenarioRotation } from '../lib/engine';
-import { isArchivedPosition, projectScenario, roundCents } from '../lib/engine';
+import { isArchivedPosition, projectScenario } from '../lib/engine';
 import {
   cn, compactUsd, errorMessage, formatCurrency, formatPercent, inputCls, inputToPct, labelCls,
-  pctToInput, primaryBtnCls, secondaryBtnCls, todayISO,
+  money, pctToInput, primaryBtnCls, secondaryBtnCls, todayISO,
 } from '../lib/utils';
 import { useChartColors } from '../lib/useIsDark';
 
@@ -139,10 +142,10 @@ export function Transition() {
         />
       ) : (
         <div className="space-y-4">
-          <div className="bg-white rounded-lg shadow-lg density-aware-card overflow-hidden">
+          <Card className="density-aware-card overflow-hidden">
             <table className="w-full text-sm compact-table">
               <thead className="bg-gray-50">
-                <tr className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                <tr className={theadCls}>
                   <th className="px-4 py-2">Scenario</th>
                   <th className="px-4 py-2 text-right">Target</th>
                   <th className="px-4 py-2">Reached</th>
@@ -203,11 +206,11 @@ export function Transition() {
                 })}
               </tbody>
             </table>
-          </div>
+          </Card>
 
           {selected && projection && (
             <>
-              <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6 density-aware-card">
+              <Card className="p-4 sm:p-6 density-aware-card">
                 <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
                   <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
                     {selected.name} — after-tax income by year
@@ -240,7 +243,7 @@ export function Transition() {
                       return (
                         <p key={sym} className="text-xs text-gray-500">
                           {sym}: projected ROC through {projection.horizon.endYear} ≈{' '}
-                          {formatCurrency(roundCents(roc))} of {formatCurrency(roundCents(basis))} basis
+                          {money(roc)} of {money(basis)} basis
                           {basis > 0 && ` (${formatPercent(roc / basis, 0)})`} — ROC beyond basis becomes
                           capital gain.
                         </p>
@@ -257,23 +260,25 @@ export function Transition() {
                     {' '}— set rates on the Income screen to include them.
                   </p>
                 )}
-              </div>
+              </Card>
 
-              <div className="bg-white rounded-lg shadow-lg">
-                <div className="px-4 pt-4 flex items-center justify-between">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-                    Planned rotations
-                  </p>
-                  <button onClick={() => setRotationModal('new')}
-                    className={cn(secondaryBtnCls, 'text-xs px-2.5 py-1')}>
-                    Add rotation
-                  </button>
-                </div>
-                {/* Only the table scrolls sideways — the toolbar above stays put. */}
-                <div className="overflow-x-auto">
+              {/* Only the table scrolls sideways — the toolbar above stays put. */}
+              <TableCard
+                toolbar={
+                  <div className="px-4 pt-4 flex items-center justify-between">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+                      Planned rotations
+                    </p>
+                    <button onClick={() => setRotationModal('new')}
+                      className={cn(secondaryBtnCls, 'text-xs px-2.5 py-1')}>
+                      Add rotation
+                    </button>
+                  </div>
+                }
+              >
                 <table className="w-full text-sm compact-table">
                   <thead className="bg-gray-50">
-                    <tr className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                    <tr className={theadCls}>
                       <th className="px-4 py-2">Date</th>
                       <th className="px-4 py-2">Sell</th>
                       <th className="px-4 py-2">Buy</th>
@@ -309,10 +314,10 @@ export function Transition() {
                             <span className="ml-1 text-xs text-gray-400">@ {formatPercent(r.buyYieldPct)}</span>
                           </td>
                           <td className="px-4 py-2 text-right tabular-nums text-gray-600">
-                            {pv ? formatCurrency(roundCents(pv.netProceeds)) : '—'}
+                            {pv ? money(pv.netProceeds) : '—'}
                           </td>
                           <td className="px-4 py-2 text-right tabular-nums text-gray-600">
-                            {pv && pv.capitalGainsTax > 0 ? formatCurrency(roundCents(pv.capitalGainsTax)) : '—'}
+                            {pv && pv.capitalGainsTax > 0 ? money(pv.capitalGainsTax) : '—'}
                           </td>
                           <td className="px-4 py-2">
                             {(pv?.warnings ?? []).map((w) => {
@@ -345,8 +350,7 @@ export function Transition() {
                     )}
                   </tbody>
                 </table>
-                </div>
-              </div>
+              </TableCard>
             </>
           )}
         </div>
@@ -512,92 +516,71 @@ function ScenarioFormModal({
   const [qualified, setQualified] = useState(pctToInput(scenario?.qualifiedRate));
   const [ordinary, setOrdinary] = useState(pctToInput(scenario?.ordinaryRate));
   const [capGain, setCapGain] = useState(pctToInput(scenario?.capitalGainRate));
-  const [formError, setFormError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError(null);
-    if (!name.trim()) return setFormError('Name the scenario.');
+  const { busy, formError, submit } = useModalForm(async () => {
+    if (!name.trim()) throw new Error('Name the scenario.');
     if (target !== '' && !(Number(target) > 0)) {
-      return setFormError('Target income must be above zero — leave it blank for no target.');
+      throw new Error('Target income must be above zero — leave it blank for no target.');
     }
     const rates = [inputToPct(qualified), inputToPct(ordinary), inputToPct(capGain)];
     if (rates.some((r) => r != null && (Number.isNaN(r) || r < 0 || r >= 1))) {
-      return setFormError('Rates are percentages between 0 and 99.');
+      throw new Error('Rates are percentages between 0 and 99.');
     }
-    setBusy(true);
-    try {
-      await onSave({
-        name: name.trim(),
-        description: description || null,
-        targetAnnualIncome: target === '' ? null : Number(target),
-        targetYear: targetYear === '' ? null : Number(targetYear),
-        qualifiedRate: rates[0],
-        ordinaryRate: rates[1],
-        capitalGainRate: rates[2],
-      });
-      onClose();
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+    await onSave({
+      name: name.trim(),
+      description: description || null,
+      targetAnnualIncome: target === '' ? null : Number(target),
+      targetYear: targetYear === '' ? null : Number(targetYear),
+      qualifiedRate: rates[0],
+      ordinaryRate: rates[1],
+      capitalGainRate: rates[2],
+    });
+    onClose();
+  });
 
   return (
     <Modal isOpen onClose={onClose} title={scenario ? `Edit ${scenario.name}` : 'New scenario'}>
       <form onSubmit={submit} className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls}>Name</label>
+          <Field label="Name">
             <input required value={name} onChange={(e) => setName(e.target.value)}
               className={inputCls} placeholder="Retire 2030" autoFocus />
-          </div>
-          <div>
-            <label className={labelCls}>Description</label>
+          </Field>
+          <Field label="Description">
             <input value={description} onChange={(e) => setDescription(e.target.value)} className={inputCls} />
-          </div>
-          <div>
-            <label className={labelCls}>Target income ($/yr, after-tax)</label>
+          </Field>
+          <Field label="Target income ($/yr, after-tax)">
             <input type="number" step="any" min="0" value={target}
               onChange={(e) => setTarget(e.target.value)} className={inputCls} placeholder="e.g. 40000" />
-          </div>
-          <div>
-            <label className={labelCls}>Retirement year</label>
+          </Field>
+          <Field label="Retirement year">
             <input type="number" step="1" min="2026" max="2100" value={targetYear}
               onChange={(e) => setTargetYear(e.target.value)} className={inputCls} placeholder="e.g. 2030" />
-          </div>
+          </Field>
         </div>
         <p className="text-xs font-medium text-gray-500 pt-1">
           Tax rates in this scenario — retired brackets usually differ from working ones. Blank uses
           the Tax Reserve settings.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div>
-            <label className={labelCls}>Qualified (%)</label>
+          <Field label="Qualified (%)">
             <input type="number" step="any" min="0" max="99" value={qualified}
               onChange={(e) => setQualified(e.target.value)} className={inputCls}
               placeholder={`settings ${Math.round(settings.dividend.qualified * 100)}%`} />
-          </div>
-          <div>
-            <label className={labelCls}>Ordinary (%)</label>
+          </Field>
+          <Field label="Ordinary (%)">
             <input type="number" step="any" min="0" max="99" value={ordinary}
               onChange={(e) => setOrdinary(e.target.value)} className={inputCls}
               placeholder={`settings ${Math.round(settings.dividend.ordinary * 100)}%`} />
-          </div>
-          <div>
-            <label className={labelCls}>Capital gains LT (%)</label>
+          </Field>
+          <Field label="Capital gains LT (%)">
             <input type="number" step="any" min="0" max="99" value={capGain}
               onChange={(e) => setCapGain(e.target.value)} className={inputCls}
               placeholder={`settings ${Math.round(settings.lt * 100)}%`} />
-          </div>
+          </Field>
         </div>
-        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className={secondaryBtnCls}>Cancel</button>
-          <button type="submit" disabled={busy} className={primaryBtnCls}>{busy ? 'Saving…' : 'Save'}</button>
-        </div>
+        <FormError message={formError} />
+        <ModalFooter busy={busy} label="Save" onCancel={onClose} />
       </form>
     </Modal>
   );
@@ -646,27 +629,23 @@ function RotationFormModal({
     ),
   );
   const [notes, setNotes] = useState(rotation?.notes ?? '');
-  const [formError, setFormError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   const mixSum = Object.values(mix).map((x) => Number(x) || 0).reduce((a, b) => a + b, 0);
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError(null);
-    if (!symbol.trim()) return setFormError('Enter the income asset to buy.');
+  const { busy, formError, submit } = useModalForm(async () => {
+    if (!symbol.trim()) throw new Error('Enter the income asset to buy.');
     const y = Number(yieldPct);
-    if (!y || y <= 0) return setFormError('Enter the assumed starting yield.');
-    if (Math.abs(mixSum - 100) > 0.01) return setFormError('The classification mix must total 100.');
+    if (!y || y <= 0) throw new Error('Enter the assumed starting yield.');
+    if (Math.abs(mixSum - 100) > 0.01) throw new Error('The classification mix must total 100.');
     const isCash = source === 'cash';
     if (isCash && (!Number(cashAmount) || Number(cashAmount) <= 0)) {
-      return setFormError('Enter the new-cash amount.');
+      throw new Error('Enter the new-cash amount.');
     }
     if (!isCash && sellMode === 'pct' && (!Number(sellPct) || Number(sellPct) <= 0 || Number(sellPct) > 100)) {
-      return setFormError('Percent to sell must be between 0 and 100.');
+      throw new Error('Percent to sell must be between 0 and 100.');
     }
     if (!isCash && sellMode === 'shares' && (!Number(sellShares) || Number(sellShares) <= 0)) {
-      return setFormError('Enter the shares to sell.');
+      throw new Error('Enter the shares to sell.');
     }
     const payload: Omit<ScenarioRotation, 'id'> = {
       scenarioId,
@@ -685,24 +664,16 @@ function RotationFormModal({
       ),
       notes: notes || null,
     };
-    setBusy(true);
-    try {
-      if (rotation) await updateRotation(rotation.id, payload);
-      else await addRotation(payload);
-      onClose();
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+    if (rotation) await updateRotation(rotation.id, payload);
+    else await addRotation(payload);
+    onClose();
+  });
 
   return (
     <Modal isOpen onClose={onClose} title={rotation ? 'Edit rotation' : 'Add rotation'}>
       <form onSubmit={submit} className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls}>Source</label>
+          <Field label="Source">
             <select value={source} onChange={(e) => setSource(e.target.value)} className={inputCls}>
               <option value="cash">New cash</option>
               {sourceOptions.map((p) => (
@@ -711,18 +682,16 @@ function RotationFormModal({
                 </option>
               ))}
             </select>
-          </div>
-          <div>
-            <label className={labelCls}>Rotation date</label>
+          </Field>
+          <Field label="Rotation date">
             <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
-          </div>
+          </Field>
         </div>
         {source === 'cash' ? (
-          <div>
-            <label className={labelCls}>Cash amount ($)</label>
+          <Field label="Cash amount ($)">
             <input type="number" step="any" min="0.01" value={cashAmount}
               onChange={(e) => setCashAmount(e.target.value)} className={inputCls} />
-          </div>
+          </Field>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:items-end">
             <div className="flex gap-3 text-sm text-gray-600">
@@ -738,36 +707,31 @@ function RotationFormModal({
               </label>
             </div>
             {sellMode === 'pct' ? (
-              <div>
-                <label className={labelCls}>Percent to sell</label>
+              <Field label="Percent to sell">
                 <input type="number" step="any" min="0.01" max="100" value={sellPct}
                   onChange={(e) => setSellPct(e.target.value)} className={inputCls} placeholder="e.g. 50" />
-              </div>
+              </Field>
             ) : (
-              <div>
-                <label className={labelCls}>Shares to sell</label>
+              <Field label="Shares to sell">
                 <input type="number" step="any" min="0.00000001" value={sellShares}
                   onChange={(e) => setSellShares(e.target.value)} className={inputCls} />
-              </div>
+              </Field>
             )}
           </div>
         )}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div>
-            <label className={labelCls}>Buy symbol</label>
+          <Field label="Buy symbol">
             <input required value={symbol} onChange={(e) => setSymbol(e.target.value)}
               className={inputCls} placeholder="SCHD" />
-          </div>
-          <div>
-            <label className={labelCls}>Starting yield (%)</label>
+          </Field>
+          <Field label="Starting yield (%)">
             <input type="number" step="any" min="0.01" required value={yieldPct}
               onChange={(e) => setYieldPct(e.target.value)} className={inputCls} placeholder="e.g. 3.5" />
-          </div>
-          <div>
-            <label className={labelCls}>Div growth (%/yr)</label>
+          </Field>
+          <Field label="Div growth (%/yr)">
             <input type="number" step="any" value={growth}
               onChange={(e) => setGrowth(e.target.value)} className={inputCls} />
-          </div>
+          </Field>
         </div>
         <div>
           <p className={cn(labelCls, 'flex items-center justify-between')}>
@@ -790,15 +754,11 @@ function RotationFormModal({
             ))}
           </div>
         </div>
-        <div>
-          <label className={labelCls}>Notes</label>
+        <Field label="Notes">
           <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls} />
-        </div>
-        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className={secondaryBtnCls}>Cancel</button>
-          <button type="submit" disabled={busy} className={primaryBtnCls}>{busy ? 'Saving…' : 'Save'}</button>
-        </div>
+        </Field>
+        <FormError message={formError} />
+        <ModalFooter busy={busy} label="Save" onCancel={onClose} />
       </form>
     </Modal>
   );

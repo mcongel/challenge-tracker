@@ -7,15 +7,18 @@ import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { ErrorCard } from '../components/ui/ErrorCard';
 import { SplitModal } from '../components/SplitModal';
 import { SkeletonTable } from '../components/ui/SkeletonTable';
+import { TableCard, theadCls } from '../components/ui/Card';
+import { Field } from '../components/ui/Field';
+import { FormError, ModalFooter, useModalForm } from '../components/ui/useModalForm';
 import { useData } from '../contexts/DataContext';
 import { priceMapFor } from '../lib/alerts';
 import type { CloseAllocation, PositionLot } from '../lib/engine';
 import {
-  addDays, closeShares, costBasis, daysHeld, longTermDate, marketValue, roundCents,
+  addDays, closeShares, costBasis, daysHeld, longTermDate, marketValue,
   unrealized, unrealizedPct, washSaleConflicts,
 } from '../lib/engine';
 import {
-  cn, errorMessage, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls,
+  cn, errorMessage, formatCurrency, formatPercent, inputCls, labelCls, money, primaryBtnCls,
   secondaryBtnCls, todayISO,
 } from '../lib/utils';
 import { useNotional } from '../lib/useNotional';
@@ -68,10 +71,10 @@ export function Positions() {
           hint="Each buy becomes its own lot. Closing moves it to the Trade Log and writes the Sell to the Cash Ledger."
         />
       ) : (
-        <div className="bg-white rounded-lg shadow-lg overflow-x-auto">
+        <TableCard>
           <table className="w-full text-sm compact-table">
             <thead className="bg-gray-50 sticky top-0">
-              <tr className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+              <tr className={theadCls}>
                 <th className="px-4 py-3">Lot</th>
                 <th className="px-4 py-3 text-right">Shares</th>
                 <th className="px-4 py-3 text-right">Avg cost</th>
@@ -143,13 +146,13 @@ export function Positions() {
                         <td className="px-4 py-2 text-gray-500 tabular-nums pl-8">{lot.buyDate}</td>
                         <td className="px-4 py-2 text-right tabular-nums">{lot.shares}</td>
                         <td className="px-4 py-2 text-right tabular-nums">{formatCurrency(lot.avgCost)}</td>
-                        <td className="px-4 py-2 text-right tabular-nums">{formatCurrency(roundCents(costBasis(lot)))}</td>
+                        <td className="px-4 py-2 text-right tabular-nums">{money(costBasis(lot))}</td>
                         <td className="px-4 py-2 text-right tabular-nums text-gray-500">
                           {hasPrice ? formatCurrency(price) : '—'}
                         </td>
-                        <td className="px-4 py-2 text-right tabular-nums">{formatCurrency(roundCents(marketValue(lot, price)))}</td>
+                        <td className="px-4 py-2 text-right tabular-nums">{money(marketValue(lot, price))}</td>
                         <td className={cn('px-4 py-2 text-right tabular-nums', u >= 0 ? 'text-green-600' : 'text-red-600')}>
-                          {formatCurrency(roundCents(u))}
+                          {money(u)}
                         </td>
                         <td className={cn('px-4 py-2 text-right tabular-nums', u >= 0 ? 'text-green-600' : 'text-red-600')}>
                           {formatPercent(unrealizedPct(lot, price))}
@@ -182,7 +185,7 @@ export function Positions() {
               })}
             </tbody>
           </table>
-        </div>
+        </TableCard>
       )}
 
       <AddPositionModal isOpen={addOpen} onClose={() => setAddOpen(false)} />
@@ -207,67 +210,47 @@ function EditLotModal({ lot, onClose }: { lot: PositionLot; onClose: () => void 
   const [exitDate, setExitDate] = useState(lot.exitDate ?? '');
   const [buyDate, setBuyDate] = useState(lot.buyDate);
   const [thesis, setThesis] = useState(lot.thesis ?? '');
-  const [formError, setFormError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError(null);
+  const { busy, formError, submit } = useModalForm(async () => {
     if (!Number(exitTarget) || Number(exitTarget) <= 0) {
-      return setFormError('Exit target must be a positive price — Rule 8 keeps it written.');
+      throw new Error('Exit target must be a positive price — Rule 8 keeps it written.');
     }
-    setBusy(true);
-    try {
-      await updateLotDetails(lot.id, {
-        exitTarget: Number(exitTarget),
-        exitDate: exitDate || null,
-        buyDate,
-        thesis: thesis || null,
-      });
-      onClose();
-    } catch (err) {
-      setFormError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+    await updateLotDetails(lot.id, {
+      exitTarget: Number(exitTarget),
+      exitDate: exitDate || null,
+      buyDate,
+      thesis: thesis || null,
+    });
+    onClose();
+  });
 
   return (
     <Modal isOpen onClose={onClose} title={`Edit ${lot.ticker} lot`}>
       <form onSubmit={submit} className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls}>Exit target ($)</label>
+          <Field label="Exit target ($)">
             <input type="number" step="any" min="0.01" required value={exitTarget}
               onChange={(e) => setExitTarget(e.target.value)} className={inputCls} />
-          </div>
-          <div>
-            <label className={labelCls}>Buy date</label>
+          </Field>
+          <Field label="Buy date">
             <input type="date" required value={buyDate}
               onChange={(e) => setBuyDate(e.target.value)} className={inputCls} />
-          </div>
-          <div>
-            <label className={labelCls}>Out by (date, optional)</label>
+          </Field>
+          <Field label="Out by (date, optional)" hint="calendar exit — alerts as it closes in">
             <input type="date" value={exitDate}
               onChange={(e) => setExitDate(e.target.value)} className={inputCls} />
-            <p className="mt-0.5 text-xs text-gray-400">calendar exit — alerts as it closes in</p>
-          </div>
+          </Field>
         </div>
-        <div>
-          <label className={labelCls}>Thesis</label>
+        <Field label="Thesis">
           <input value={thesis} onChange={(e) => setThesis(e.target.value)} className={inputCls} />
-        </div>
+        </Field>
         <p className="text-xs text-gray-400">
           Shares and cost can't change — they anchor the Buy on the Cash Ledger and the basis math.
           A buy-date change moves the long-term clock and, when the lot is linked to its Buy row,
           moves that ledger date with it.
         </p>
-        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
-        <div className="flex justify-end">
-          <button type="submit" disabled={busy} className={primaryBtnCls}>
-            {busy ? 'Saving…' : 'Save changes'}
-          </button>
-        </div>
+        <FormError message={formError} />
+        <ModalFooter busy={busy} label="Save changes" />
       </form>
     </Modal>
   );
@@ -320,8 +303,6 @@ function AddPositionModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
   const [exitTarget, setExitTarget] = useState('');
   const [exitDate, setExitDate] = useState('');
   const [thesis, setThesis] = useState('');
-  const [formError, setFormError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   // Rule 7 — one stock at a time. Warn (not block) so a same-day rotation
   // can be entered in either order.
@@ -342,45 +323,34 @@ function AddPositionModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
     ),
   ];
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError(null);
+  const { busy, formError, submit } = useModalForm(async () => {
     if (!Number(exitTarget)) {
-      return setFormError('Exit on the target — Rule 8. Write the target before the entry.');
+      throw new Error('Exit on the target — Rule 8. Write the target before the entry.');
     }
-    setBusy(true);
-    try {
-      await addLot({
-        ticker: ticker.toUpperCase(),
-        buyDate,
-        shares: Number(shares),
-        avgCost: Number(avgCost),
-        exitTarget: Number(exitTarget),
-        exitDate: exitDate || null,
-        bailPoint: null,
-        thesis: thesis || null,
-      });
-      setTicker(''); reset(); setExitTarget(''); setExitDate(''); setThesis('');
-      onClose();
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+    await addLot({
+      ticker: ticker.toUpperCase(),
+      buyDate,
+      shares: Number(shares),
+      avgCost: Number(avgCost),
+      exitTarget: Number(exitTarget),
+      exitDate: exitDate || null,
+      bailPoint: null,
+      thesis: thesis || null,
+    });
+    setTicker(''); reset(); setExitTarget(''); setExitDate(''); setThesis('');
+    onClose();
+  });
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Add position">
       <form onSubmit={submit} className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls}>Ticker</label>
+          <Field label="Ticker">
             <input required value={ticker} onChange={(e) => setTicker(e.target.value)} className={inputCls} placeholder="NBIS" />
-          </div>
-          <div>
-            <label className={labelCls}>Buy date</label>
+          </Field>
+          <Field label="Buy date">
             <input type="date" required value={buyDate} onChange={(e) => setBuyDate(e.target.value)} className={inputCls} />
-          </div>
+          </Field>
         </div>
 
         {washCitations.length > 0 && (
@@ -395,31 +365,26 @@ function AddPositionModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div>
-            <label className={labelCls}>Shares</label>
+          <Field label="Shares">
             <input type="number" step="any" min="0.00000001" required value={shares}
               onChange={(e) => setShares(e.target.value)} className={inputCls} />
-          </div>
-          <div>
-            <label className={labelCls}>Avg cost ($)</label>
+          </Field>
+          <Field label="Avg cost ($)">
             <input type="number" step="any" min="0" required value={avgCost}
               onChange={(e) => setPrice(e.target.value)} className={inputCls} />
-          </div>
+          </Field>
           <TotalField value={total} onChange={setTotal} label="Total cost ($)" />
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls}>Exit target ($) — required</label>
+          <Field label="Exit target ($) — required">
             <input type="number" step="0.01" min="0.01" required value={exitTarget}
               onChange={(e) => setExitTarget(e.target.value)} className={inputCls}
               placeholder="the catalyst move you're selling into" />
-          </div>
-          <div>
-            <label className={labelCls}>Out by (date, optional)</label>
+          </Field>
+          <Field label="Out by (date, optional)" hint="e.g. the session before the print">
             <input type="date" value={exitDate}
               onChange={(e) => setExitDate(e.target.value)} className={inputCls} />
-            <p className="mt-0.5 text-xs text-gray-400">e.g. the session before the print</p>
-          </div>
+          </Field>
         </div>
 
         {otherOpenTickers.length > 0 && (
@@ -435,18 +400,13 @@ function AddPositionModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
 
         <p className="text-xs text-gray-400">
           Exit on the target — Rule 8. The buy also writes itself to the Cash Ledger
-          ({shares && avgCost ? formatCurrency(roundCents(Number(shares) * Number(avgCost))) : '$—'}).
+          ({shares && avgCost ? money(Number(shares) * Number(avgCost)) : '$—'}).
         </p>
-        <div>
-          <label className={labelCls}>Thesis / catalyst</label>
+        <Field label="Thesis / catalyst">
           <input value={thesis} onChange={(e) => setThesis(e.target.value)} className={inputCls} />
-        </div>
-        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
-        <div className="flex justify-end">
-          <button type="submit" disabled={busy} className={primaryBtnCls}>
-            {busy ? 'Saving…' : 'Open position'}
-          </button>
-        </div>
+        </Field>
+        <FormError message={formError} />
+        <ModalFooter busy={busy} label="Open position" />
       </form>
     </Modal>
   );
@@ -467,8 +427,6 @@ function ClosePositionModal({ ticker, onClose }: { ticker: string; onClose: () =
   const [allocs, setAllocs] = useState<Record<string, string>>({});
   const [fees, setFees] = useState('');
   const [exitReason, setExitReason] = useState('');
-  const [formError, setFormError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   const numShares = Number(shares);
   const numPrice = Number(price);
@@ -486,7 +444,7 @@ function ClosePositionModal({ ticker, onClose }: { ticker: string; onClose: () =
     try {
       preview = closeShares(lots, ticker, numShares, numPrice, closeDate, allocations);
     } catch (e) {
-      previewError = e instanceof Error ? e.message : String(e);
+      previewError = errorMessage(e);
     }
   }
   const realizedTotal = preview
@@ -506,49 +464,36 @@ function ClosePositionModal({ ticker, onClose }: { ticker: string; onClose: () =
     setCustomize(true);
   };
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError(null);
-    if (previewError) return setFormError(previewError);
-    if (!preview) return setFormError('Enter shares and price.');
+  const { busy, formError, submit } = useModalForm(async () => {
+    if (previewError) throw new Error(previewError);
+    if (!preview) throw new Error('Enter shares and price.');
     if (feeNum < 0 || feeNum >= preview.totalProceeds) {
-      return setFormError('Fees must be smaller than the gross proceeds.');
+      throw new Error('Fees must be smaller than the gross proceeds.');
     }
-    setBusy(true);
-    try {
-      await closePosition(ticker, numShares, numPrice, closeDate, allocations, feeNum || undefined, exitReason || null);
-      onClose();
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+    await closePosition(ticker, numShares, numPrice, closeDate, allocations, feeNum || undefined, exitReason || null);
+    onClose();
+  });
 
   return (
     <Modal isOpen onClose={onClose} title={`Close ${ticker}`}>
       <form onSubmit={submit} className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls}>Shares (of {totalShares})</label>
+          <Field label={`Shares (of ${totalShares})`}>
             <input type="number" step="any" min="0.00000001" required value={shares}
               onChange={(e) => setShares(e.target.value)} className={inputCls} />
-          </div>
-          <div>
-            <label className={labelCls}>Close date</label>
+          </Field>
+          <Field label="Close date">
             <input type="date" required value={closeDate} onChange={(e) => setCloseDate(e.target.value)} className={inputCls} />
-          </div>
-          <div>
-            <label className={labelCls}>Price / share ($)</label>
+          </Field>
+          <Field label="Price / share ($)">
             <input type="number" step="any" min="0.00000001" required value={price}
               onChange={(e) => setPrice(e.target.value)} className={inputCls} />
-          </div>
+          </Field>
           <TotalField value={total} onChange={setTotal} label="Total proceeds ($)" />
-          <div>
-            <label className={labelCls}>Fees ($, optional)</label>
+          <Field label="Fees ($, optional)">
             <input type="number" step="0.01" min="0" value={fees} placeholder="SEC/FINRA fees"
               onChange={(e) => setFees(e.target.value)} className={inputCls} />
-          </div>
+          </Field>
           <div>
             <label className={labelCls} title="One tap of self-knowledge — the pattern card reads these to judge whether your written targets are calibrated.">
               Why the exit?
@@ -594,11 +539,11 @@ function ClosePositionModal({ ticker, onClose }: { ticker: string; onClose: () =
           <div className="bg-gray-50 rounded-md px-3 py-2 text-sm space-y-1">
             <p className="text-gray-600">
               {preview.trades.length} trade{preview.trades.length > 1 ? 's' : ''} · proceeds{' '}
-              <span className="font-medium tabular-nums">{formatCurrency(roundCents(preview.totalProceeds - feeNum))}</span>
+              <span className="font-medium tabular-nums">{money(preview.totalProceeds - feeNum)}</span>
               {feeNum > 0 && <span className="text-gray-400"> (net of {formatCurrency(feeNum)} fees)</span>}{' '}
               · realized{' '}
               <span className={cn('font-medium tabular-nums', realizedTotal >= 0 ? 'text-green-600' : 'text-red-600')}>
-                {formatCurrency(roundCents(realizedTotal))}
+                {money(realizedTotal)}
               </span>
             </p>
             {realizedTotal < 0 && (
@@ -614,7 +559,8 @@ function ClosePositionModal({ ticker, onClose }: { ticker: string; onClose: () =
             </p>
           </div>
         )}
-        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
+        <FormError message={formError} />
+        {/* Not ModalFooter: submit also stays disabled until the preview computes. */}
         <div className="flex justify-end gap-2">
           <button type="button" onClick={onClose} className={secondaryBtnCls}>Cancel</button>
           <button type="submit" disabled={busy || !preview} className={primaryBtnCls}>
@@ -634,6 +580,8 @@ function PriceModal({ ticker, onClose }: { ticker: string; onClose: () => void }
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Deliberately NOT useModalForm: the Clear override button drives the same
+  // busy flag outside the submit path.
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const p = Number(price);
@@ -643,7 +591,7 @@ function PriceModal({ ticker, onClose }: { ticker: string; onClose: () => void }
       await setOverride(ticker, p);
       onClose();
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err));
+      setFormError(errorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -652,15 +600,14 @@ function PriceModal({ ticker, onClose }: { ticker: string; onClose: () => void }
   return (
     <Modal isOpen onClose={onClose} title={`Price — ${ticker}`}>
       <form onSubmit={submit} className="space-y-3">
-        <div>
-          <label className={labelCls}>Manual price ($)</label>
+        <Field label="Manual price ($)">
           <input type="number" step="0.01" min="0.01" required value={price} autoFocus
             onChange={(e) => setPrice(e.target.value)} className={inputCls} />
-        </div>
+        </Field>
         <p className="text-xs text-gray-400">
           Manual prices are pinned — they beat API quotes until cleared.
         </p>
-        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
+        <FormError message={formError} />
         <div className="flex justify-end gap-2">
           {overrides[ticker] !== undefined && (
             <button type="button" disabled={busy} className={secondaryBtnCls}

@@ -6,11 +6,14 @@ import { Modal } from '../components/ui/Modal';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { ErrorCard } from '../components/ui/ErrorCard';
 import { SkeletonTable } from '../components/ui/SkeletonTable';
+import { TableCard, theadCls } from '../components/ui/Card';
+import { Field } from '../components/ui/Field';
+import { FormError, ModalFooter, useModalForm } from '../components/ui/useModalForm';
 import { useData } from '../contexts/DataContext';
 import type { WatchlistItem } from '../lib/engine';
 import { addDays, daysBetween, washSaleConflicts, WASH_SALE_WINDOW_DAYS } from '../lib/engine';
 import {
-  cn, errorMessage, formatCurrency, inputCls, labelCls, primaryBtnCls, secondaryBtnCls, todayISO,
+  cn, formatCurrency, inputCls, labelCls, primaryBtnCls, todayISO,
 } from '../lib/utils';
 import { useIndustries } from '../lib/useIndustries';
 
@@ -74,10 +77,17 @@ export function Watchlist() {
           hint="Add the setups you're researching: the catalyst, its date, an entry zone, and the target you'd write at open. When a position closes, the rotation starts here."
         />
       ) : (
-        <div className="bg-white rounded-lg shadow-lg overflow-x-auto">
+        <TableCard
+          footer={
+            <p className="px-4 py-3 text-xs text-gray-400 border-t border-gray-100">
+              Research notes only — nothing here trades or touches the score. Prices are the same
+              delayed quotes as everywhere else; hit refresh in the header if the stamp looks stale.
+            </p>
+          }
+        >
           <table className="w-full text-sm compact-table">
             <thead className="bg-gray-50 sticky top-0">
-              <tr className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+              <tr className={theadCls}>
                 <th className="px-4 py-3">Ticker</th>
                 <th className="px-4 py-3">Catalyst</th>
                 <th className="px-4 py-3">When</th>
@@ -170,11 +180,7 @@ export function Watchlist() {
               })}
             </tbody>
           </table>
-          <p className="px-4 py-3 text-xs text-gray-400 border-t border-gray-100">
-            Research notes only — nothing here trades or touches the score. Prices are the same
-            delayed quotes as everywhere else; hit refresh in the header if the stamp looks stale.
-          </p>
-        </div>
+        </TableCard>
       )}
 
       {(adding || editing) && (
@@ -206,68 +212,53 @@ function CandidateModal({ item, onClose }: { item: WatchlistItem | null; onClose
     item?.plannedTarget != null ? String(item.plannedTarget) : '',
   );
   const [notes, setNotes] = useState(item?.notes ?? '');
-  const [formError, setFormError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError(null);
-    if (!ticker.trim()) return setFormError('Ticker required.');
+  const { busy, formError, submit } = useModalForm(async () => {
+    if (!ticker.trim()) throw new Error('Ticker required.');
     const target = plannedTarget === '' ? null : Number(plannedTarget);
     if (target != null && (Number.isNaN(target) || target <= 0)) {
-      return setFormError('Planned target must be a positive price.');
+      throw new Error('Planned target must be a positive price.');
     }
     const trigger = entryTrigger === '' ? null : Number(entryTrigger);
     if (trigger != null && (Number.isNaN(trigger) || trigger <= 0)) {
-      return setFormError('Entry trigger must be a positive price.');
+      throw new Error('Entry trigger must be a positive price.');
     }
-    setBusy(true);
-    try {
-      const payload = {
-        ticker: ticker.trim().toUpperCase(),
-        catalyst: catalyst || null,
-        catalystDate: catalystDate || null,
-        entryNote: entryNote || null,
-        entryTrigger: trigger,
-        plannedTarget: target,
-        notes: notes || null,
-      };
-      if (item) await updateWatchlistItem(item.id, payload);
-      else await addWatchlistItem(payload);
-      onClose();
-    } catch (err) {
-      setFormError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+    const payload = {
+      ticker: ticker.trim().toUpperCase(),
+      catalyst: catalyst || null,
+      catalystDate: catalystDate || null,
+      entryNote: entryNote || null,
+      entryTrigger: trigger,
+      plannedTarget: target,
+      notes: notes || null,
+    };
+    if (item) await updateWatchlistItem(item.id, payload);
+    else await addWatchlistItem(payload);
+    onClose();
+  });
 
   return (
     <Modal isOpen onClose={onClose} title={item ? `Edit ${item.ticker}` : 'Add candidate'}>
       <form onSubmit={submit} className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls}>Ticker</label>
+          <Field label="Ticker">
             <input required value={ticker} onChange={(e) => setTicker(e.target.value)}
               className={inputCls} placeholder="NBIS" autoFocus={!item} />
-          </div>
-          <div>
-            <label className={labelCls}>Catalyst date</label>
+          </Field>
+          <Field label="Catalyst date">
             <input type="date" value={catalystDate} onChange={(e) => setCatalystDate(e.target.value)}
               className={inputCls} />
-          </div>
+          </Field>
         </div>
-        <div>
-          <label className={labelCls}>Catalyst — what moves it?</label>
+        <Field label="Catalyst — what moves it?">
           <input value={catalyst} onChange={(e) => setCatalyst(e.target.value)}
             className={inputCls} placeholder="Q3 earnings; new fab ramp guidance" />
-        </div>
+        </Field>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div>
-            <label className={labelCls}>Entry zone</label>
+          <Field label="Entry zone">
             <input value={entryNote} onChange={(e) => setEntryNote(e.target.value)}
               className={inputCls} placeholder="55–58 on a pullback" />
-          </div>
+          </Field>
           <div>
             <label className={labelCls} title="At or below this price, the Dashboard fires the ENTRY alert.">
               Entry trigger ($)
@@ -276,28 +267,21 @@ function CandidateModal({ item, onClose }: { item: WatchlistItem | null; onClose
               onChange={(e) => setEntryTrigger(e.target.value)} className={inputCls}
               placeholder="alert at/below" />
           </div>
-          <div>
-            <label className={labelCls}>Planned target ($)</label>
+          <Field label="Planned target ($)">
             <input type="number" step="any" min="0.01" value={plannedTarget}
               onChange={(e) => setPlannedTarget(e.target.value)} className={inputCls}
               placeholder="the exit you'd write at open" />
-          </div>
+          </Field>
         </div>
-        <div>
-          <label className={labelCls}>Notes</label>
+        <Field label="Notes">
           <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls} />
-        </div>
+        </Field>
         <p className="text-xs text-gray-400">
           Drafting the target now is the point — Rule 8 wants it written before the money moves.
           It prefills nothing; the real target gets typed at open, with fresh eyes.
         </p>
-        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className={secondaryBtnCls}>Cancel</button>
-          <button type="submit" disabled={busy} className={primaryBtnCls}>
-            {busy ? 'Saving…' : item ? 'Save' : 'Add to bench'}
-          </button>
-        </div>
+        <FormError message={formError} />
+        <ModalFooter busy={busy} label={item ? 'Save' : 'Add to bench'} onCancel={onClose} />
       </form>
     </Modal>
   );

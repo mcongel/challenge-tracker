@@ -9,13 +9,16 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorCard } from '../components/ui/ErrorCard';
 import { SkeletonTable } from '../components/ui/SkeletonTable';
+import { Card, theadCls } from '../components/ui/Card';
+import { StatTile, toneOf } from '../components/ui/StatTile';
 import { useData } from '../contexts/DataContext';
 import { lotsByPositionId } from '../lib/engine';
 import {
   isArchivedPosition, parkedCostBasis, parkedMarketValue, roundCents, unlockSummary,
 } from '../lib/engine';
 import {
-  cn, compactUsd, formatCurrency, formatCurrencyWhole, formatPercent, primaryBtnCls,
+  cn, compactUsd, formatCurrency, formatCurrencyWhole, formatPercent, money, primaryBtnCls,
+  signedMoney,
 } from '../lib/utils';
 import { fmtSh } from '../components/parked/shared';
 import { AddHoldingModal } from '../components/parked/AddHoldingModal';
@@ -88,32 +91,20 @@ export function Bitcoin() {
       ) : (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
-            <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
-              <p className="text-xs font-medium text-gray-500">Bucket total</p>
-              <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums text-gray-900">
-                {formatCurrency(roundCents(total))}
-              </p>
-              <p className="text-xs text-gray-400 mt-0.5">not in the score, not in the pile</p>
-            </div>
-            <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
-              <p className="text-xs font-medium text-gray-500">Unrealized</p>
-              <p className={cn('mt-0.5 text-lg sm:text-xl font-bold tabular-nums',
-                total - totalBasis >= 0 ? 'text-green-600' : 'text-red-600')}>
-                {formatCurrency(roundCents(total - totalBasis))}
-              </p>
-              <p className="text-xs text-gray-400 mt-0.5">vs {formatCurrency(roundCents(totalBasis))} basis</p>
-            </div>
-            <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card col-span-2 sm:col-span-1">
-              <p className="text-xs font-medium text-gray-500">BTC</p>
-              <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums text-gray-900">
-                {btcPrice ? formatCurrencyWhole(btcPrice) : '—'}
-              </p>
-              <p className={cn('text-xs mt-0.5 tabular-nums',
-                btcDay?.changePct == null ? 'text-gray-400'
-                  : btcDay.changePct >= 0 ? 'text-green-600' : 'text-red-600')}>
-                {btcDay?.changePct == null ? 'live quote' : `${btcDay.changePct >= 0 ? '+' : ''}${btcDay.changePct.toFixed(2)}% today`}
-              </p>
-            </div>
+            <StatTile label="Bucket total" value={money(total)}
+              sub="not in the score, not in the pile" />
+            <StatTile label="Unrealized" value={money(total - totalBasis)}
+              tone={toneOf(total - totalBasis)}
+              sub={<>vs {money(totalBasis)} basis</>} />
+            <StatTile className="col-span-2 sm:col-span-1" label="BTC"
+              value={btcPrice ? formatCurrencyWhole(btcPrice) : '—'}
+              sub={
+                <span className={cn('tabular-nums',
+                  btcDay?.changePct == null ? 'text-gray-400'
+                    : btcDay.changePct >= 0 ? 'text-green-600' : 'text-red-600')}>
+                  {btcDay?.changePct == null ? 'live quote' : `${btcDay.changePct >= 0 ? '+' : ''}${btcDay.changePct.toFixed(2)}% today`}
+                </span>
+              } />
           </div>
 
           {valueHistory && valueHistory.length >= 2 ? (
@@ -123,10 +114,10 @@ export function Bitcoin() {
             chartSnapshots.length >= 2 && <BtcValueChart snapshots={chartSnapshots} />
           )}
 
-          <div className="bg-white rounded-lg shadow-lg overflow-x-auto">
+          <Card className="overflow-x-auto">
             <table className="w-full text-sm compact-table">
               <thead className="bg-gray-50 sticky top-0">
-                <tr className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                <tr className={theadCls}>
                   <th className="px-2 py-3 w-8" />
                   <th className="px-4 py-3">Ticker</th>
                   <th className="px-4 py-3">Account</th>
@@ -176,12 +167,12 @@ export function Bitcoin() {
                             )}
                           </td>
                           <td className="px-4 py-3 text-right tabular-nums font-medium">
-                            {formatCurrency(roundCents(value))}
+                            {money(value)}
                           </td>
                           <td className="px-4 py-3 text-right">
                             <span className={cn('tabular-nums font-medium',
                               value - basis >= 0 ? 'text-green-600' : 'text-red-600')}>
-                              {value - basis >= 0 ? '+' : '−'}{formatCurrency(Math.abs(roundCents(value - basis)))}
+                              {signedMoney(value - basis)}
                               {basis > 0 && (
                                 <span className="block text-xs font-normal">
                                   {formatPercent((value - basis) / basis)}
@@ -208,7 +199,7 @@ export function Bitcoin() {
                   })}
               </tbody>
             </table>
-          </div>
+          </Card>
           <p className="mt-3 text-xs text-gray-400">
             Rule 5 territory: this bucket is never trim fuel and never sells to feed the challenge.
             Lot dates still matter — a sale here would be a real taxable event, so Pile Taxes and
@@ -238,7 +229,7 @@ function BtcValueChart({ snapshots }: { snapshots: Snapshot[] }) {
     Value: roundCents(s.btcValue ?? 0),
   }));
   return (
-    <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6 mb-4">
+    <Card className="p-4 sm:p-6 mb-4">
       <p className="text-sm font-medium text-gray-700 mb-1">
         Bucket value over time
         <span className="ml-2 text-xs font-normal text-gray-400">
@@ -259,6 +250,6 @@ function BtcValueChart({ snapshots }: { snapshots: Snapshot[] }) {
           </AreaChart>
         </ResponsiveContainer>
       </div>
-    </div>
+    </Card>
   );
 }

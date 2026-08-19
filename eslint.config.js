@@ -13,6 +13,16 @@ export default tseslint.config(
     plugins: { 'react-hooks': reactHooks },
     rules: {
       ...reactHooks.configs.recommended.rules,
+      // The React-Compiler-era advisories flag legitimate house patterns
+      // (prefill-in-effect, mutated memo inputs) — this app doesn't run the
+      // compiler, so keep only the two classic high-signal hook rules hard.
+      'react-hooks/set-state-in-effect': 'off',
+      'react-hooks/preserve-manual-memoization': 'off',
+      'react-hooks/exhaustive-deps': 'warn',
+      // Guidance errors deliberately embed the cause's message in prose
+      // (errorMessage(err) inside the new message) — cause-chaining is
+      // redundant with the house pattern.
+      'preserve-caught-error': 'off',
       // tsc --noEmit owns unused checking (noUnusedLocals) — no double report.
       '@typescript-eslint/no-unused-vars': 'off',
       // The db layer is deliberately loosely typed at the row boundary.
@@ -23,8 +33,16 @@ export default tseslint.config(
     },
   },
   {
-    files: ['scripts/**/*.{mjs,ts}', 'functions/**/*.js'],
+    // daily-snapshot.ts is TypeScript — tsconfig.scripts.json owns it; the
+    // plain-JS block here would choke on its syntax.
+    files: ['scripts/**/*.mjs', 'functions/**/*.js'],
     extends: [js.configs.recommended],
-    languageOptions: { globals: { process: 'readonly', console: 'readonly', fetch: 'readonly', URL: 'readonly', Response: 'readonly', Request: 'readonly', caches: 'readonly' } },
+    languageOptions: {
+      globals: {
+        process: 'readonly', console: 'readonly', fetch: 'readonly', URL: 'readonly',
+        Response: 'readonly', Request: 'readonly', caches: 'readonly',
+        setTimeout: 'readonly', setInterval: 'readonly', clearTimeout: 'readonly',
+      },
+    },
   },
 );

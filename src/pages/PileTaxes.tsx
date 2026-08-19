@@ -5,12 +5,17 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { ErrorCard } from '../components/ui/ErrorCard';
 import { SkeletonTable } from '../components/ui/SkeletonTable';
+import { Card } from '../components/ui/Card';
+import { StatTile, toneOf } from '../components/ui/StatTile';
+import { FormError, useModalForm } from '../components/ui/useModalForm';
 import { useData } from '../contexts/DataContext';
 import type { PileTaxSetAside } from '../lib/engine';
 import {
   dividendTaxForYear, pileCapGainsYear, roundCents, taxYearOf,
 } from '../lib/engine';
-import { cn, formatCurrency, formatPercent, inputCls, secondaryBtnCls, todayISO } from '../lib/utils';
+import {
+  cn, formatCurrency, formatPercent, inputCls, money, secondaryBtnCls, signedMoney, todayISO,
+} from '../lib/utils';
 
 /** The pile's yearly tax bill and what's been parked against it. Estimate +
  * ledger only — deliberately NOT the Tax Reserve screen: that's the
@@ -69,28 +74,18 @@ export function PileTaxes() {
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('');
   const [deleting, setDeleting] = useState<PileTaxSetAside | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   const netGain = capGains.ltGain + capGains.stGain;
   const anythingThisYear = capGains.saleCount > 0 || capGains.unknownBasisCount > 0
     || divAmount > 0 || yearSetAsides.length > 0;
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError(null);
+  // Saving keeps the form on the page (it IS the ledger) and just clears it.
+  const { busy, formError, submit } = useModalForm(async () => {
     const amt = Number(amount);
-    if (!amt || amt <= 0) return setFormError('Enter the dollars you moved aside.');
-    setBusy(true);
-    try {
-      await addPileTaxSetAside({ taxYear: pileYear, date, amount: roundCents(amt), notes: notes || null });
-      setAmount(''); setNotes('');
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+    if (!amt || amt <= 0) throw new Error('Enter the dollars you moved aside.');
+    await addPileTaxSetAside({ taxYear: pileYear, date, amount: roundCents(amt), notes: notes || null });
+    setAmount(''); setNotes('');
+  });
 
   return (
     <div>
@@ -118,55 +113,46 @@ export function PileTaxes() {
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-            <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
-              <p className="text-xs font-medium text-gray-500">Realized sales</p>
-              <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums">
-                {capGains.saleCount > 0 ? (
-                  <span className={netGain >= 0 ? 'text-green-600' : 'text-red-600'}>
-                    {netGain >= 0 ? '+' : '−'}{formatCurrency(Math.abs(roundCents(netGain)))}
-                  </span>
-                ) : '—'}
-              </p>
-              <p className="text-xs text-gray-400 mt-0.5 tabular-nums">
-                {capGains.saleCount > 0
-                  ? `LT ${formatCurrency(capGains.ltGain)} · ST ${formatCurrency(capGains.stGain)} · est. tax ${formatCurrency(capGains.estTax)}`
-                  : 'no sales with basis this year'}
-                {capGains.unknownBasisCount > 0 && ` · ${capGains.unknownBasisCount} unknown-basis excluded`}
-              </p>
-            </div>
-            <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
-              <p className="text-xs font-medium text-gray-500">Dividends</p>
-              <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums">
-                {divAmount > 0 ? formatCurrency(roundCents(divAmount)) : '—'}
-              </p>
-              <p className="text-xs text-gray-400 mt-0.5 tabular-nums">
-                {divAmount > 0 ? `est. tax ${formatCurrency(roundCents(divTax.totalTax))}` : 'none this year'}
-                {divTax.unclassifiedAmount > 0 && (
-                  <span className="text-amber-700"> · {formatCurrency(roundCents(divTax.unclassifiedAmount))} unclassified</span>
-                )}
-                {divTax.rocOverflowAmount > 0 && (
-                  <span> · ROC beyond basis {formatCurrency(roundCents(divTax.rocOverflowAmount))}</span>
-                )}
-              </p>
-            </div>
-            <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
-              <p className="text-xs font-medium text-gray-500">Set aside for {pileYear}</p>
-              <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums text-gray-900">
-                {formatCurrency(setAsideTarget)}
-              </p>
-              <p className={cn('text-xs mt-0.5 tabular-nums',
-                recorded <= 0 ? 'text-gray-400' : remaining <= 0.005 ? 'text-green-600 font-medium' : 'text-amber-700')}>
-                {recorded <= 0
-                  ? 'nothing parked yet — record below'
-                  : remaining <= 0.005
-                    ? `✓ ${formatCurrency(recorded)} parked — covered`
-                    : `${formatCurrency(recorded)} parked · ${formatCurrency(remaining)} short`}
-              </p>
-            </div>
+            <StatTile label="Realized sales"
+              value={capGains.saleCount > 0 ? signedMoney(netGain) : '—'}
+              tone={capGains.saleCount > 0 ? toneOf(netGain) : undefined}
+              sub={
+                <span className="tabular-nums">
+                  {capGains.saleCount > 0
+                    ? `LT ${formatCurrency(capGains.ltGain)} · ST ${formatCurrency(capGains.stGain)} · est. tax ${formatCurrency(capGains.estTax)}`
+                    : 'no sales with basis this year'}
+                  {capGains.unknownBasisCount > 0 && ` · ${capGains.unknownBasisCount} unknown-basis excluded`}
+                </span>
+              } />
+            <StatTile label="Dividends"
+              value={divAmount > 0 ? money(divAmount) : '—'}
+              sub={
+                <span className="tabular-nums">
+                  {divAmount > 0 ? `est. tax ${money(divTax.totalTax)}` : 'none this year'}
+                  {divTax.unclassifiedAmount > 0 && (
+                    <span className="text-amber-700"> · {money(divTax.unclassifiedAmount)} unclassified</span>
+                  )}
+                  {divTax.rocOverflowAmount > 0 && (
+                    <span> · ROC beyond basis {money(divTax.rocOverflowAmount)}</span>
+                  )}
+                </span>
+              } />
+            <StatTile label={`Set aside for ${pileYear}`}
+              value={formatCurrency(setAsideTarget)}
+              sub={
+                <span className={cn('tabular-nums',
+                  recorded <= 0 ? 'text-gray-400' : remaining <= 0.005 ? 'text-green-600 font-medium' : 'text-amber-700')}>
+                  {recorded <= 0
+                    ? 'nothing parked yet — record below'
+                    : remaining <= 0.005
+                      ? `✓ ${formatCurrency(recorded)} parked — covered`
+                      : `${formatCurrency(recorded)} parked · ${formatCurrency(remaining)} short`}
+                </span>
+              } />
           </div>
 
           {/* The ledger: what actually moved. Estimates ask; this records. */}
-          <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6 density-aware-card mb-4">
+          <Card className="p-4 sm:p-6 density-aware-card mb-4">
             <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">
               Set-asides — {pileYear}
             </p>
@@ -208,13 +194,13 @@ export function PileTaxes() {
                   placeholder="where it's parked (e.g. Key Bank savings)" className={inputCls} />
                 <button type="submit" disabled={busy} className={secondaryBtnCls}>Add</button>
               </div>
+              <FormError message={formError} />
             </form>
-            {formError && <p className="mt-2 text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
             <p className="text-xs text-gray-400 mt-3">
               A record of money you actually moved — nothing transfers automatically, and this
               never touches the challenge account's reserve.
             </p>
-          </div>
+          </Card>
 
           <p className="text-xs text-gray-400">
             Estimated at ~{formatPercent(ltTaxRate, 0)} LT / ~{formatPercent(stTaxRate, 0)} ST

@@ -10,13 +10,16 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
 import { ErrorCard } from '../components/ui/ErrorCard';
 import { SkeletonTable } from '../components/ui/SkeletonTable';
+import { Card, TableCard, theadCls } from '../components/ui/Card';
+import { Field } from '../components/ui/Field';
+import { FormError } from '../components/ui/useModalForm';
 import { useData } from '../contexts/DataContext';
 import { priceMapFor } from '../lib/alerts';
 import {
   lead, leadPct, roundCents, rollingLeadDelta, shadowShares, shadowValue, totalScore,
 } from '../lib/engine';
 import {
-  cn, compactUsd, errorMessage, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls,
+  cn, compactUsd, errorMessage, formatCurrency, formatPercent, inputCls, money, primaryBtnCls,
   todayISO,
 } from '../lib/utils';
 
@@ -94,32 +97,32 @@ export function Benchmark() {
 
       {/* The race */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-        <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
+        <Card className="p-4 density-aware-card">
           <p className="text-xs font-medium text-gray-500">You (Total Score)</p>
-          <p className="mt-0.5 text-2xl font-bold tabular-nums text-gray-900">{formatCurrency(roundCents(score))}</p>
-        </div>
-        <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
+          <p className="mt-0.5 text-2xl font-bold tabular-nums text-gray-900">{money(score)}</p>
+        </Card>
+        <Card className="p-4 density-aware-card">
           <p className="text-xs font-medium text-gray-500">Shadow VOO</p>
           <p className="mt-0.5 text-2xl font-bold tabular-nums text-gray-900">
-            {shadow === null ? '—' : formatCurrency(roundCents(shadow))}
+            {shadow === null ? '—' : money(shadow)}
           </p>
           {shadow === null && <p className="text-xs text-gray-400 mt-0.5">set today's VOO price</p>}
-        </div>
-        <div className="bg-white rounded-lg shadow-lg p-4 density-aware-card">
+        </Card>
+        <Card className="p-4 density-aware-card">
           <p className="text-xs font-medium text-gray-500">Lead</p>
           {shadow === null ? (
             <p className="mt-0.5 text-2xl font-bold text-gray-400">—</p>
           ) : (
             <p className={cn('mt-0.5 text-2xl font-bold tabular-nums',
               lead(score, shadow) >= 0 ? 'text-green-600' : 'text-red-600')}>
-              {formatCurrency(roundCents(lead(score, shadow)))}
+              {money(lead(score, shadow))}
               <span className="ml-2 text-sm font-medium">{formatPercent(leadPct(score, shadow))}</span>
             </p>
           )}
-        </div>
+        </Card>
       </div>
 
-      <div className="bg-white rounded-lg shadow-lg p-4 mb-4 density-aware-card">
+      <Card className="p-4 mb-4 density-aware-card">
         <p className="text-xs font-medium text-gray-500">Rolling 12-month verdict</p>
         {delta === null ? (
           <p className="mt-0.5 text-sm text-gray-400">
@@ -127,17 +130,17 @@ export function Benchmark() {
           </p>
         ) : (
           <p className={cn('mt-0.5 text-lg sm:text-xl font-bold tabular-nums', delta >= 0 ? 'text-green-600' : 'text-red-600')}>
-            {delta >= 0 ? 'AHEAD' : 'BEHIND'} by {formatCurrency(roundCents(Math.abs(delta)))} over the trailing year
+            {delta >= 0 ? 'AHEAD' : 'BEHIND'} by {money(Math.abs(delta))} over the trailing year
             <span className="ml-2 text-xs font-normal text-gray-400">
               {delta >= 0 ? 'edge demonstrated — adding capital is investing' : 'the experiment is answering the question'}
             </span>
           </p>
         )}
-      </div>
+      </Card>
 
       {/* Lead over time — the gap as its own series, zero-anchored */}
       {leadData.length >= 2 && (
-        <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6 mb-4">
+        <Card className="p-4 sm:p-6 mb-4">
           <p className="text-sm font-medium text-gray-700 mb-1">
             Lead over time
             <span className="ml-2 text-xs font-normal text-gray-400">
@@ -169,12 +172,12 @@ export function Benchmark() {
               </AreaChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </Card>
       )}
 
       {/* Trading alpha — the account against its own deposits */}
       {alphaData.length >= 2 && (
-        <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6 mb-4">
+        <Card className="p-4 sm:p-6 mb-4">
           <p className="text-sm font-medium text-gray-700 mb-1">
             Trading alpha
             <span className="ml-2 text-xs font-normal text-gray-400">
@@ -200,7 +203,7 @@ export function Benchmark() {
               </LineChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </Card>
       )}
 
       {loading ? (
@@ -212,10 +215,18 @@ export function Benchmark() {
           hint="Each deposit on the Cash Ledger creates one automatically — amount ÷ that day's VOO price."
         />
       ) : (
-        <div className="bg-white rounded-lg shadow-lg overflow-x-auto">
+        <TableCard
+          footer={
+            <p className="px-4 py-3 text-xs text-gray-400 border-t border-gray-100">
+              Two honesty notes: the shadow ignores VOO dividends (~1.3%/yr — flatters you), and the raw
+              comparison ignores taxes (short-term gains ~28–30% vs ~21% long-term VOO — flatters you
+              too). The real hurdle is higher than the lead suggests.
+            </p>
+          }
+        >
           <table className="w-full text-sm compact-table">
             <thead className="bg-gray-50 sticky top-0">
-              <tr className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+              <tr className={theadCls}>
                 <th className="px-4 py-3">Deposit date</th>
                 <th className="px-4 py-3 text-right">Amount in</th>
                 <th className="px-4 py-3 text-right">VOO that day</th>
@@ -231,18 +242,13 @@ export function Benchmark() {
                   <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(d.vooPriceThatDay)}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{shadowShares(d).toFixed(6)}</td>
                   <td className="px-4 py-3 text-right tabular-nums font-medium">
-                    {vooToday ? formatCurrency(roundCents(shadowShares(d) * vooToday)) : '—'}
+                    {vooToday ? money(shadowShares(d) * vooToday) : '—'}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <p className="px-4 py-3 text-xs text-gray-400 border-t border-gray-100">
-            Two honesty notes: the shadow ignores VOO dividends (~1.3%/yr — flatters you), and the raw
-            comparison ignores taxes (short-term gains ~28–30% vs ~21% long-term VOO — flatters you
-            too). The real hurdle is higher than the lead suggests.
-          </p>
-        </div>
+        </TableCard>
       )}
 
       {priceOpen && (
@@ -271,6 +277,8 @@ function VooPriceModal({
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Deliberately NOT useModalForm: the clear-pin button is a second submit
+  // path sharing the same busy/error state, which the hook can't drive.
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const p = Number(price);
@@ -289,16 +297,15 @@ function VooPriceModal({
   return (
     <Modal isOpen onClose={onClose} title="VOO price today">
       <form onSubmit={submit} className="space-y-3">
-        <div>
-          <label className={labelCls}>Price ($)</label>
+        <Field label="Price ($)">
           <input type="number" step="0.01" min="0.01" required autoFocus value={price}
             onChange={(e) => setPrice(e.target.value)} className={inputCls} />
-        </div>
+        </Field>
         <p className="text-xs text-gray-400">
           Setting a price pins it — it beats the live quote until cleared. With no pin, the delayed
           quote feed prices the shadow automatically.
         </p>
-        {formError && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{formError}</p>}
+        <FormError message={formError} />
         <div className={cn('flex', pinned ? 'justify-between' : 'justify-end')}>
           {pinned && (
             <button
