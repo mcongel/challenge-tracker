@@ -146,6 +146,11 @@ export interface ParkedPosition {
   dividendFrequency?: DividendFrequency | null;
   /** Assumed annual dividend growth for projections, as a fraction. */
   dividendGrowthPct?: number | null;
+  /** May the quote feed price this row? Pile rows: always true. Retirement
+   * rows: true only for real fund tickers (JLGMX) — plan codes and annuity
+   * units (W146, TRAD) are priced by hand and their codes can collide with
+   * real listings. null = pre-migration row: quotable unless retirement. */
+  liveQuotes?: boolean | null;
   notes?: string | null;
 }
 

@@ -25,10 +25,17 @@ const dump = JSON.parse(readFileSync(file, 'utf-8'));
 
 const get = (k) => dump[k] ?? [];
 
+// For exports predating live_quotes: retirement rows restore manual (same
+// rule the migration applied), pile rows quotable — never the other way.
+const retirementIds = new Set(
+  get('accounts').filter((a) => a.kind === 'retirement').map((a) => a.id),
+);
+
 // camelCase export objects → snake_case rows, ids preserved.
 const TABLES = [
   ['accounts', get('accounts').map((a) => ({
-    id: a.id, name: a.name, broker: a.broker ?? null, kind: a.kind, notes: a.notes ?? null,
+    id: a.id, name: a.name, broker: a.broker ?? null, kind: a.kind,
+    retirement_flavor: a.retirementFlavor ?? null, notes: a.notes ?? null,
   })), 'id'],
   ['parked_positions', get('parked_positions').map((p) => ({
     id: p.id, ticker: p.ticker, account_id: p.accountId, category: p.category,
@@ -36,6 +43,7 @@ const TABLES = [
     buy_date: p.buyDate ?? null, trim_rank: p.trimRank ?? null,
     dividend_rate: p.dividendRate ?? null, dividend_frequency: p.dividendFrequency ?? null,
     dividend_growth_pct: p.dividendGrowthPct ?? null, notes: p.notes ?? null,
+    live_quotes: p.liveQuotes ?? !retirementIds.has(p.accountId),
   })), 'id'],
   ['parked_lots', get('parked_lots').map((l) => ({
     id: l.id, parked_position_id: l.parkedPositionId, date: l.date ?? null, source: l.source,

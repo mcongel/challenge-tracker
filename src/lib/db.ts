@@ -164,6 +164,7 @@ export const mapParked = (r: any): ParkedPosition => ({
   dividendRate: r.dividend_rate == null ? null : Number(r.dividend_rate),
   dividendFrequency: r.dividend_frequency ?? null,
   dividendGrowthPct: r.dividend_growth_pct == null ? null : Number(r.dividend_growth_pct),
+  liveQuotes: r.live_quotes ?? null,
   notes: r.notes,
 });
 

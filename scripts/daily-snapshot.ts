@@ -93,12 +93,18 @@ async function main(): Promise<void> {
     overrideRows.map((r) => [r.ticker, num(r.price)]),
   );
 
+  // Same rule as the app: the flag wins; legacy null rows fall back to the
+  // wall (pile quotes, retirement doesn't). Hand-priced plan codes and
+  // annuity units (W146, TRAD) never reach the market API.
+  const quotable = (r: Record<string, any>) =>
+    r.live_quotes ?? !retirementIds.has(r.account_id);
+
   const tickers = [
     ...new Set([
       ...lots.map((l) => l.ticker),
       // Archived (zero-share) positions keep history, not quotes.
-      ...parkedRows
-        .filter((r) => !isArchivedPosition({ shares: num(r.shares) }))
+      ...allParkedRows
+        .filter((r) => !isArchivedPosition({ shares: num(r.shares) }) && quotable(r))
         .map((r) => r.ticker),
       'VOO',
     ]),
@@ -130,7 +136,8 @@ async function main(): Promise<void> {
   const toPosition = (r: Record<string, any>): ParkedPosition => ({
     id: r.id, ticker: r.ticker, accountId: r.account_id, account: '', category: r.category,
     shares: num(r.shares), avgCost: num(r.avg_cost),
-    currentPrice: overrides[r.ticker] ?? quotes[r.ticker] ?? num(r.current_price),
+    currentPrice:
+      overrides[r.ticker] ?? (quotable(r) ? quotes[r.ticker] : undefined) ?? num(r.current_price),
   });
   const parked: ParkedPosition[] = parkedRows.map(toPosition);
   const retirementParked: ParkedPosition[] = allParkedRows

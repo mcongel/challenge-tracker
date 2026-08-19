@@ -22,7 +22,11 @@ export function EditParkedModal({
   const [trimRank, setTrimRank] = useState(p.trimRank != null ? String(p.trimRank) : '');
   const [category, setCategory] = useState<ParkedPosition['category']>(p.category);
   const [accountId, setAccountId] = useState(p.accountId);
+  const [liveQuotes, setLiveQuotes] = useState(p.liveQuotes ?? false);
   const [notes, setNotes] = useState(p.notes ?? '');
+  // Pile rows always quote; the choice only exists on the retirement page,
+  // where plan codes and annuity units must stay hand-priced.
+  const offerLiveQuotes = accountKinds.includes('retirement');
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // Vendor industry as a reference while re-categorizing (hint, never auto).
@@ -45,6 +49,7 @@ export function EditParkedModal({
         trimRank: trimRank === '' ? null : Number(trimRank),
         category,
         accountId,
+        ...(offerLiveQuotes ? { liveQuotes } : {}),
         notes: notes || null,
       });
       onClose();
@@ -120,6 +125,19 @@ export function EditParkedModal({
             </button>
           </span>
         </div>
+        {offerLiveQuotes && (
+          <label className="flex items-start gap-2 text-sm text-gray-700">
+            <input type="checkbox" checked={liveQuotes} onChange={(e) => setLiveQuotes(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-600" />
+            <span>
+              Real ticker — price from the daily quote feed
+              <span className="block text-xs text-gray-400">
+                Only for actual fund tickers (JLGMX). Leave off for plan codes and annuity
+                units (W146, TRAD) — the market prices a different thing under those letters.
+              </span>
+            </span>
+          </label>
+        )}
         <AccountSelect accounts={accounts} value={accountId} onChange={setAccountId}
           label="Account (e.g. after an ACATS transfer)" kinds={accountKinds} allowNone={false} />
         <p className="text-xs text-gray-400">
