@@ -1,6 +1,10 @@
 import { Link } from 'react-router-dom';
 import { useState } from 'react';
+import {
+  Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
+} from 'recharts';
 import { Plus, ScrollText, Trash2 } from 'lucide-react';
+import { useIsDark } from '../lib/useIsDark';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
@@ -15,8 +19,13 @@ import {
 import { useIndustries } from '../lib/useIndustries';
 import { useMemo } from 'react';
 import {
-  cn, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls, secondaryBtnCls, todayISO,
+  cn, compactUsd, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls,
+  secondaryBtnCls, todayISO,
 } from '../lib/utils';
+
+/** Polarity per bar — the house P&L pair (same steps the YTD number wears). */
+const GAIN = '#16a34a';
+const LOSS = '#dc2626';
 
 const EXIT_REASON_LABELS: Record<string, string> = {
   target_hit: 'target hit',
@@ -35,10 +44,27 @@ export function TradeLog() {
   const [deletingTradeId, setDeletingTradeId] = useState<string | null>(null);
   const [deletingOutsideId, setDeletingOutsideId] = useState<string | null>(null);
 
+  const isDark = useIsDark();
   const currentYear = taxYearOf(todayISO());
   const ytd = netRealizedYTD(trades, currentYear);
   const ordered = [...trades].sort((a, b) => b.closeDate.localeCompare(a.closeDate));
   const stats = tradeStats(trades);
+  // The rhythm the tax reserve runs on: net realized per calendar quarter.
+  // Same convention as YTD — wash-sale trades don't count.
+  const byQuarter = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const t of trades) {
+      if (t.washSale) continue;
+      const [y, mo] = t.closeDate.split('-').map(Number);
+      m.set(`${y} Q${Math.floor((mo - 1) / 3) + 1}`, (m.get(`${y} Q${Math.floor((mo - 1) / 3) + 1}`) ?? 0) + realizedGain(t));
+    }
+    return [...m.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([key, net]) => ({
+        quarter: `${key.slice(5)} '${key.slice(2, 4)}`,
+        net: roundCents(net),
+      }));
+  }, [trades]);
   // Vendor industry labels — the "win rate in WHAT?" dimension.
   const industries = useIndustries(trades.map((t) => t.ticker));
   const byIndustry = useMemo(() => {
@@ -81,6 +107,36 @@ export function TradeLog() {
         </div>
         <p className="text-xs text-gray-400">{trades.length} closed trade{trades.length === 1 ? '' : 's'}</p>
       </div>
+
+      {/* Net realized per quarter — the cadence the 30% skim actually runs on */}
+      {byQuarter.length >= 2 && (
+        <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6 mb-4">
+          <p className="text-sm font-medium text-gray-700 mb-1">
+            Realized by quarter
+            <span className="ml-2 text-xs font-normal text-gray-400">
+              net of basis, wash sales excluded — each green bar owes its 30%
+            </span>
+          </p>
+          <div className="h-40">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={byQuarter} margin={{ top: 8, right: 12, bottom: 0, left: 4 }}>
+                <CartesianGrid stroke={isDark ? '#334155' : '#e5e7eb'} vertical={false} />
+                <XAxis dataKey="quarter" stroke={isDark ? '#94a3b8' : '#6b7280'} tickLine={false}
+                  axisLine={false} tick={{ fontSize: 11 }} />
+                <YAxis stroke={isDark ? '#94a3b8' : '#6b7280'} tickLine={false} axisLine={false}
+                  tick={{ fontSize: 11 }} tickFormatter={compactUsd} width={52} />
+                <Tooltip formatter={(v) => formatCurrency(Number(v))} cursor={{ fill: 'transparent' }} />
+                <ReferenceLine y={0} stroke={isDark ? '#94a3b8' : '#6b7280'} />
+                <Bar dataKey="net" name="Net realized">
+                  {byQuarter.map((q) => (
+                    <Cell key={q.quarter} fill={q.net >= 0 ? GAIN : LOSS} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       {/* Know thyself — the pattern behind the closes. The best picking input
           there is: what YOUR trades actually do. */}

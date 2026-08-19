@@ -1,5 +1,10 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import {
+  Area, AreaChart, CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer,
+  Tooltip, XAxis, YAxis,
+} from 'recharts';
 import { Pencil, Swords } from 'lucide-react';
+import { useIsDark } from '../lib/useIsDark';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
@@ -10,8 +15,14 @@ import {
   lead, leadPct, roundCents, rollingLeadDelta, shadowShares, shadowValue, totalScore,
 } from '../lib/engine';
 import {
-  cn, errorMessage, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls, todayISO,
+  cn, compactUsd, errorMessage, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls,
+  todayISO,
 } from '../lib/utils';
+
+/** Polarity colors for the lead (ahead/behind) — the house P&L pair, both
+ * steps inside the validated lightness band on both surfaces. */
+const AHEAD = '#16a34a';
+const BEHIND = '#dc2626';
 
 export function Benchmark() {
   const {
@@ -19,12 +30,44 @@ export function Benchmark() {
     setOverride, clearOverride, loading, error,
   } = useData();
   const [priceOpen, setPriceOpen] = useState(false);
+  const isDark = useIsDark();
 
   const vooPinned = overrides['VOO'];
   const vooToday = vooPinned ?? quotes['VOO'];
   const score = totalScore(lots, priceMapFor(lots, overrides, quotes), cashEvents, milestones);
   const shadow = vooToday ? shadowValue(benchmarkDeposits, vooToday) : null;
   const delta = rollingLeadDelta(snapshots, todayISO());
+
+  // The race chart on the Dashboard shows two lines; the verdict is their
+  // GAP. One zero-anchored series makes widening or eroding unmissable.
+  const leadData = useMemo(
+    () => snapshots.map((s) => ({
+      date: s.date.slice(5),
+      Lead: roundCents(s.totalScore - s.shadowVooValue),
+    })),
+    [snapshots],
+  );
+  // Gradient split at zero: green above the line, red below (recharts offset
+  // technique — the same series changes color as it crosses).
+  const leadSplit = useMemo(() => {
+    const values = leadData.map((d) => d.Lead);
+    const max = Math.max(...values, 0);
+    const min = Math.min(...values, 0);
+    return max === min ? 1 : max / (max - min);
+  }, [leadData]);
+
+  // Trading alpha: is the account anything more than its deposits?
+  const alphaData = useMemo(
+    () => snapshots.map((s) => ({
+      date: s.date.slice(5),
+      'Account value': roundCents(s.accountValue),
+      'Net contributed': roundCents(s.netContributed),
+    })),
+    [snapshots],
+  );
+
+  const gridColor = isDark ? '#334155' : '#e5e7eb';
+  const axisColor = isDark ? '#94a3b8' : '#6b7280';
 
   return (
     <div>
@@ -92,6 +135,74 @@ export function Benchmark() {
           </p>
         )}
       </div>
+
+      {/* Lead over time — the gap as its own series, zero-anchored */}
+      {leadData.length >= 2 && (
+        <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6 mb-4">
+          <p className="text-sm font-medium text-gray-700 mb-1">
+            Lead over time
+            <span className="ml-2 text-xs font-normal text-gray-400">
+              Total Score − shadow VOO · green ahead, red behind
+            </span>
+          </p>
+          <div className="h-44">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={leadData} margin={{ top: 8, right: 12, bottom: 0, left: 4 }}>
+                <defs>
+                  <linearGradient id="leadFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset={leadSplit} stopColor={AHEAD} stopOpacity={0.2} />
+                    <stop offset={leadSplit} stopColor={BEHIND} stopOpacity={0.2} />
+                  </linearGradient>
+                  <linearGradient id="leadStroke" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset={leadSplit} stopColor={AHEAD} />
+                    <stop offset={leadSplit} stopColor={BEHIND} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke={gridColor} vertical={false} />
+                <XAxis dataKey="date" stroke={axisColor} tickLine={false} axisLine={false}
+                  tick={{ fontSize: 11 }} minTickGap={32} />
+                <YAxis stroke={axisColor} tickLine={false} axisLine={false}
+                  tick={{ fontSize: 11 }} tickFormatter={compactUsd} width={52} />
+                <Tooltip formatter={(v) => formatCurrency(Number(v))} />
+                <ReferenceLine y={0} stroke={axisColor} strokeDasharray="4 4" />
+                <Area type="monotone" dataKey="Lead" stroke="url(#leadStroke)" strokeWidth={2}
+                  fill="url(#leadFill)" dot={false} activeDot={{ r: 4 }} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {/* Trading alpha — the account against its own deposits */}
+      {alphaData.length >= 2 && (
+        <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6 mb-4">
+          <p className="text-sm font-medium text-gray-700 mb-1">
+            Trading alpha
+            <span className="ml-2 text-xs font-normal text-gray-400">
+              account value vs money in — the gap is what trading added
+            </span>
+          </p>
+          <div className="h-44">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={alphaData} margin={{ top: 8, right: 12, bottom: 0, left: 4 }}>
+                <CartesianGrid stroke={gridColor} vertical={false} />
+                <XAxis dataKey="date" stroke={axisColor} tickLine={false} axisLine={false}
+                  tick={{ fontSize: 11 }} minTickGap={32} />
+                <YAxis stroke={axisColor} tickLine={false} axisLine={false}
+                  tick={{ fontSize: 11 }} tickFormatter={compactUsd} width={52} />
+                <Tooltip formatter={(v) => formatCurrency(Number(v))} />
+                <Legend iconType="plainline" wrapperStyle={{ fontSize: 12 }} />
+                <Line type="monotone" dataKey="Account value" stroke={AHEAD} strokeWidth={2}
+                  dot={false} activeDot={{ r: 4 }} />
+                {/* A reference baseline, not a competitor — gray and stepped,
+                    since deposits move in jumps. */}
+                <Line type="stepAfter" dataKey="Net contributed" stroke={axisColor} strokeWidth={2}
+                  strokeDasharray="5 4" dot={false} activeDot={{ r: 4 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <SkeletonTable />
