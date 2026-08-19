@@ -23,6 +23,8 @@ import {
 import { categoryPillCls, fmtSh, SortHeader, unlockSentence } from '../components/parked/shared';
 import type { SortState } from '../components/parked/shared';
 import { PileValueChart } from '../components/parked/PileValueChart';
+import { ValueChart } from '../components/ValueChart';
+import { useValueHistory } from '../lib/useValueHistory';
 import { AddHoldingModal } from '../components/parked/AddHoldingModal';
 import { EditParkedModal } from '../components/parked/EditParkedModal';
 import { LotPanel } from '../components/parked/LotPanel';
@@ -52,7 +54,8 @@ const SORT_KEYS = Object.keys(NATURAL_DIR) as SortKey[];
 export function ParkedPile() {
   const {
     // Pile positions only — retirement reuses the machinery on its own page.
-    pileParked: allParked, parkedLots, parkedLotAdjustments, parkedSales, snapshots, accounts,
+    pileParked: allParked, btcParked, retirementAccountIds, parkedLots, parkedLotAdjustments,
+    parkedSales, snapshots, accounts,
     tickerNames, concentrationCap, updateSetting, accountCash, dayChange, cashEvents,
     contributionCap, ltTaxRate, stTaxRate, overrides, overrideSetAt, loading, error,
   } = useData();
@@ -105,6 +108,15 @@ export function ParkedPile() {
   const today = todayISO();
   const c = concentration(parked, concentrationCap);
   const totalBasis = parked.reduce((s, p) => s + parkedCostBasis(p), 0);
+
+  // Real history: shares held per past day (lots + sale add-backs) × actual
+  // closes — reaches back to the first dated lot, decades past the snapshots.
+  const btcTickers = useMemo(() => new Set(btcParked.map((p) => p.ticker)), [btcParked]);
+  const pileSales = useMemo(
+    () => parkedSales.filter((s) => !retirementAccountIds.has(s.accountId) && !btcTickers.has(s.ticker)),
+    [parkedSales, retirementAccountIds, btcTickers],
+  );
+  const valueHistory = useValueHistory(allParked, parkedLots, pileSales, c.total);
 
   // The funding answer, computed instead of tooltipped: which holdings have
   // long-term (Rule 5) shares ready NOW, worth how much, at what est. tax —
@@ -446,9 +458,15 @@ export function ParkedPile() {
         </div>
       )}
 
-      {/* Value history from the daily snapshots. Honesty note: this is VALUE,
-          not a return series — new money moves it too. */}
-      {snapshots.length >= 2 && <PileValueChart snapshots={snapshots} />}
+      {/* Value history reconstructed from the real records (lots × actual
+          closes); daily snapshots stay as the fallback while it loads or
+          when the price API is out. VALUE, not return — new money moves it. */}
+      {valueHistory && valueHistory.length >= 2 ? (
+        <ValueChart title="Pile value over time" data={valueHistory}
+          note="reconstructed from lots × real closes — new money moves this line too" />
+      ) : (
+        snapshots.length >= 2 && <PileValueChart snapshots={snapshots} />
+      )}
 
       {loading ? (
         <SkeletonTable />

@@ -19,6 +19,8 @@ import { fmtSh } from '../components/parked/shared';
 import { AddHoldingModal } from '../components/parked/AddHoldingModal';
 import { EditParkedModal } from '../components/parked/EditParkedModal';
 import { LotPanel } from '../components/parked/LotPanel';
+import { ValueChart } from '../components/ValueChart';
+import { useValueHistory } from '../lib/useValueHistory';
 
 /** The fourth pot: the bitcoin conviction bucket (category 'BTC' — BTC
  * itself plus thesis members like MSTR and BTCI). Split out of the pile by
@@ -27,7 +29,8 @@ import { LotPanel } from '../components/parked/LotPanel';
  * keep counting it. Same lot machinery as everything else. */
 export function Bitcoin() {
   const {
-    btcParked, parkedLots, accounts, tickerNames, overrides, quotes, dayChange, snapshots,
+    btcParked, parkedLots, parkedSales, retirementAccountIds, accounts, tickerNames, overrides,
+    quotes, dayChange, snapshots,
     loading, error,
   } = useData();
   const [addOpen, setAddOpen] = useState(false);
@@ -57,6 +60,13 @@ export function Bitcoin() {
     () => snapshots.filter((s) => s.btcValue != null && s.btcValue > 0),
     [snapshots],
   );
+  // Real history back to the first lot: shares held × actual closes.
+  const bucketTickers = useMemo(() => new Set(btcParked.map((p) => p.ticker)), [btcParked]);
+  const bucketSales = useMemo(
+    () => parkedSales.filter((s) => !retirementAccountIds.has(s.accountId) && bucketTickers.has(s.ticker)),
+    [parkedSales, retirementAccountIds, bucketTickers],
+  );
+  const valueHistory = useValueHistory(btcParked, parkedLots, bucketSales, total);
 
   return (
     <div>
@@ -112,7 +122,12 @@ export function Bitcoin() {
             </div>
           </div>
 
-          {chartSnapshots.length >= 2 && <BtcValueChart snapshots={chartSnapshots} />}
+          {valueHistory && valueHistory.length >= 2 ? (
+            <ValueChart title="Bucket value over time" data={valueHistory}
+              note="reconstructed from lots × real closes — buys move this line too" />
+          ) : (
+            chartSnapshots.length >= 2 && <BtcValueChart snapshots={chartSnapshots} />
+          )}
 
           <div className="bg-white rounded-lg shadow-lg overflow-x-auto">
             <table className="w-full text-sm compact-table">

@@ -20,3 +20,4 @@ export * from './parkedRoc';
 export * from './pileTax';
 export * from './parkedSaleRestore';
 export * from './transition';
+export * from './history';
