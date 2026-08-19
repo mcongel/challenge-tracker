@@ -116,7 +116,9 @@ export function ParkedPile() {
     () => parkedSales.filter((s) => !retirementAccountIds.has(s.accountId) && !btcTickers.has(s.ticker)),
     [parkedSales, retirementAccountIds, btcTickers],
   );
-  const valueHistory = useValueHistory(allParked, parkedLots, pileSales, c.total);
+  // Window floored at 2020 — the 2003 QCOM lots still count as held, but
+  // two decades of axis made the recent story unreadable (owner call).
+  const valueHistory = useValueHistory(allParked, parkedLots, pileSales, c.total, '2020-01-01');
 
   // The funding answer, computed instead of tooltipped: which holdings have
   // long-term (Rule 5) shares ready NOW, worth how much, at what est. tax —

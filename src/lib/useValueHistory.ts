@@ -19,6 +19,10 @@ export function useValueHistory(
   allLots: ParkedLot[],
   sales: ParkedSale[],
   liveTotal: number,
+  /** Earliest chart date — floors the window when ancient lots (2003 QCOM)
+   * would stretch it past usefulness. Shares bought before still count as
+   * held; only the axis starts here. */
+  startAt?: string,
 ): { date: string; value: number }[] | null {
   const [series, setSeries] = useState<CloseSeries | null>(null);
 
@@ -32,13 +36,14 @@ export function useValueHistory(
     () => [...new Set(events.map((e) => e.ticker))].sort(),
     [events],
   );
-  const from = useMemo(
-    () => events.reduce<string | null>(
+  const from = useMemo(() => {
+    const earliest = events.reduce<string | null>(
       (min, e) => (e.date !== null && (min === null || e.date < min) ? e.date : min),
       null,
-    ),
-    [events],
-  );
+    );
+    if (!earliest) return null;
+    return startAt && startAt > earliest ? startAt : earliest;
+  }, [events, startAt]);
 
   const key = `${tickers.join(',')}|${from}`;
   useEffect(() => {
