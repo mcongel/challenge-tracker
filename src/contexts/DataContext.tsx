@@ -14,7 +14,7 @@ import type {
   Trade,
 } from '../lib/engine';
 import {
-  accountTotal, adjustmentsForLots, aggregateLots, allocateRoc, BTC_CATEGORY, buildSaleSnapshot,
+  accountTotal, adjustmentsForLots, aggregateLots, allocateRoc, buildSaleSnapshot,
   closeShares,
   computeAccountCash, concentration, consumeLotsFifo, cumulativeFloor, isArchivedPosition,
   LT_TAX_RATE, netContributed, ORDINARY_DIVIDEND_TAX_RATE, pileTotal, planSaleRestore,
@@ -27,6 +27,8 @@ import type {
   PileTaxSetAside, ScenarioRotation, WatchlistItem,
 } from '../lib/engine';
 import { priceMapFor } from '../lib/alerts';
+import { splitParkedPots } from '../lib/engine';
+import { useQuotesEngine } from './data/useQuotesEngine';
 import { errorMessage, todayISO } from '../lib/utils';
 import {
   cashEventPayload,
@@ -329,17 +331,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<DataState>(EMPTY);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [quotes, setQuotes] = useState<Record<string, number>>({});
-  const [dayChange, setDayChange] = useState<
-    Record<string, { change: number | null; changePct: number | null }>
-  >({});
-  const [quotesAsOf, setQuotesAsOf] = useState<number | null>(null);
-  const [quotesError, setQuotesError] = useState(false);
-  /** First quote pass finished — success, failure, or nothing to fetch.
-   * Until then, price-derived numbers are cost/stale fallbacks that would
-   * repaint moments later; screens hold a placeholder instead of flashing. */
-  const [quotesSettled, setQuotesSettled] = useState(false);
-  const [tickerNames, setTickerNames] = useState<Record<string, string>>({});
 
   const refresh = useCallback(async () => {
     try {
@@ -488,160 +479,31 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [state.parked, isQuotable],
   );
 
-  const lastQuoteFetchAt = useRef(0);
-  const refreshQuotes = useCallback(async () => {
-    const tickers = [
-      ...new Set([
-        ...state.lots.map((l) => l.ticker),
-        // Hand-priced rows (plan codes, annuity units) never join — asking
-        // the market API for W146 or TRAD invites impostor listings.
-        ...state.parked
-          .filter((p) => !isArchivedPosition(p) && isQuotable(p))
-          .map((p) => p.ticker),
-        // Bench names too — the Watchlist's "price now" column is the point.
-        ...state.watchlist.map((w) => w.ticker),
-        'VOO',
-      ]),
-    ];
-    if (tickers.length === 0) {
-      setQuotesSettled(true);
-      return;
-    }
-    try {
-      const res = await fetch(`/api/quotes?tickers=${tickers.join(',')}`);
-      if (!res.ok) {
-        // Best-effort — overrides and cost fallbacks cover us — but the
-        // staleness stamp should turn amber rather than lie quietly.
-        setQuotesError(true);
-        return;
-      }
-      const body = (await res.json()) as {
-        quotes?: Record<string, { price: number; change?: number | null; changePct?: number | null }>;
-        asOf?: number;
-      };
-      const fresh = body.quotes;
-      if (fresh) {
-        // Merge instead of replace: a throttled fetch that misses a ticker
-        // shouldn't blank out the price we already had.
-        setQuotes((prev) => ({
-          ...prev,
-          ...Object.fromEntries(Object.entries(fresh).map(([t, q]) => [t, q.price])),
-        }));
-        setDayChange((prev) => ({
-          ...prev,
-          ...Object.fromEntries(
-            Object.entries(fresh).map(([t, q]) => [
-              t,
-              { change: q.change ?? null, changePct: q.changePct ?? null },
-            ]),
-          ),
-        }));
-        setQuotesAsOf(body.asOf ?? Date.now());
-        lastQuoteFetchAt.current = Date.now();
-        setQuotesError(false);
-        void persistQuotedPrices(fresh);
-      }
-    } catch {
-      // Local dev without the Pages Function, or the API is down — the UI
-      // shows an amber "quotes stale" stamp instead of an error.
-      setQuotesError(true);
-    } finally {
-      setQuotesSettled(true);
-    }
-  }, [state.lots, state.parked, state.watchlist, persistQuotedPrices, isQuotable]);
+  // Quote machinery lives in its own module — the provider only wires it up.
+  const {
+    quotes, dayChange, quotesAsOf, quotesError, quotesSettled, tickerNames, refreshQuotes,
+  } = useQuotesEngine({
+    ready: !loading && !error,
+    lots: state.lots,
+    parked: state.parked,
+    watchlist: state.watchlist,
+    isQuotable,
+    persistQuotedPrices,
+  });
 
-  const refreshQuotesRef = useRef(refreshQuotes);
-  useEffect(() => {
-    refreshQuotesRef.current = refreshQuotes;
-  }, [refreshQuotes]);
-
-  const quotesFetched = useRef(false);
-  useEffect(() => {
-    if (loading || error || quotesFetched.current) return;
-    quotesFetched.current = true;
-    void refreshQuotes();
-    // Names once per session — they're cached a week server-side. Hand-priced
-    // codes stay out here too: "TRAD" must not label itself as a SPAC.
-    const tickers = [
-      ...new Set([
-        ...state.lots.map((l) => l.ticker),
-        ...state.parked
-          .filter((p) => !isArchivedPosition(p) && isQuotable(p))
-          .map((p) => p.ticker),
-      ]),
-    ];
-    if (tickers.length > 0) {
-      void fetch(`/api/names?tickers=${tickers.join(',')}`)
-        .then((res) => (res.ok ? res.json() : null))
-        .then((body: { names?: Record<string, string> } | null) => {
-          if (body?.names) setTickerNames((prev) => ({ ...prev, ...body.names }));
-        })
-        .catch(() => {
-          /* best-effort */
-        });
-    }
-  }, [loading, error, refreshQuotes, state.lots, state.parked, isQuotable]);
-
-  // Keep an open tab honest: refetch every 30 minutes (the server cache TTL)
-  // and when the tab regains focus after going stale. Cache hits cost nothing.
-  useEffect(() => {
-    const THIRTY_MIN = 30 * 60 * 1000;
-    const FOCUS_STALE = 5 * 60 * 1000;
-    const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') void refreshQuotesRef.current();
-    }, THIRTY_MIN);
-    const onVisibility = () => {
-      if (
-        document.visibilityState === 'visible' &&
-        Date.now() - lastQuoteFetchAt.current > FOCUS_STALE
-      ) {
-        void refreshQuotesRef.current();
-      }
-    };
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
-  }, []);
-
-  // Live-priced view of every position — the context's `parked`. Hand-priced
-  // rows keep their stored price, full stop: quotes AND pins are keyed by
-  // ticker, and an annuity-unit row can share letters with a real listing
-  // (TRAD the annuity vs TRAD the SPAC, JLGMX units vs JLGMX shares) — the
-  // market's number is never that holding's value.
-  const mergedParked = useMemo(
+  // The pot walls — one pure split (see engine/parkedWalls.ts for the rules).
+  const pots = useMemo(
     () =>
-      state.parked.map((p) => {
-        if (!isQuotable(p)) return p;
-        const effective = state.overrides[p.ticker] ?? quotes[p.ticker];
-        return effective !== undefined ? { ...p, currentPrice: effective } : p;
+      splitParkedPots({
+        parked: state.parked,
+        overrides: state.overrides,
+        quotes,
+        retirementAccountIds,
+        isQuotable,
       }),
-    [state.parked, state.overrides, quotes, isQuotable],
+    [state.parked, state.overrides, quotes, retirementAccountIds, isQuotable],
   );
-
-  // The taxable universe: everything outside retirement. Income, taxes, and
-  // activity key off THIS — the bitcoin split below is a strategy wall, not
-  // a tax wall, so taxable math must keep seeing the BTC-bucket holdings.
-  const taxableParked = useMemo(
-    () => mergedParked.filter((p) => !retirementAccountIds.has(p.accountId)),
-    [mergedParked, retirementAccountIds],
-  );
-  // The pile proper vs the bitcoin conviction bucket — the fourth pot
-  // (owner decision 2026-08-19). Category 'BTC' is the owner's curation:
-  // BTC itself plus thesis members like MSTR and BTCI.
-  const pileParked = useMemo(
-    () => taxableParked.filter((p) => p.category !== BTC_CATEGORY),
-    [taxableParked],
-  );
-  const btcParked = useMemo(
-    () => taxableParked.filter((p) => p.category === BTC_CATEGORY),
-    [taxableParked],
-  );
-  const retirementParked = useMemo(
-    () => mergedParked.filter((p) => retirementAccountIds.has(p.accountId)),
-    [mergedParked, retirementAccountIds],
-  );
+  const { mergedParked, taxableParked, pileParked, btcParked, retirementParked } = pots;
 
   const snapshotAttempted = useRef(false);
   useEffect(() => {
