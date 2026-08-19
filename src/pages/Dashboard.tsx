@@ -59,7 +59,7 @@ export function Dashboard() {
   const score = totalScore(lots, priceMap, cashEvents, milestones);
   const vooToday = overrides['VOO'] ?? quotes['VOO'];
   const shadow = vooToday ? shadowValue(benchmarkDeposits, vooToday) : null;
-  const next = nextMilestone(account);
+  const next = nextMilestone(account, milestones);
   const ytd = netRealizedYTD(trades, taxYearOf(today));
   const alerts = activeAlerts({
     lots, cashEvents, trades, milestones, parked, carryforwards, overrides, quotes,

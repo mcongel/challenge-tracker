@@ -39,6 +39,26 @@ export const inputToPct = (s: string): number | null => (s === '' ? null : Numbe
 export const errorMessage = (err: unknown): string =>
   err instanceof Error ? err.message : String(err);
 
+/** localStorage that never throws. Safari private mode and storage-blocked
+ * contexts throw on any access — a lost UI preference must not blank a screen.
+ * Everything stored through here is preference only, never financial data. */
+export const safeStorage = {
+  get(key: string): string | null {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  },
+  set(key: string, value: string): void {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      /* quota or blocked storage — the preference just doesn't stick */
+    }
+  },
+};
+
 export function cn(...classes: (string | false | null | undefined)[]): string {
   return classes.filter(Boolean).join(' ');
 }

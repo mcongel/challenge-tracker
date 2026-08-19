@@ -9,7 +9,7 @@ import { EditSaleModal } from '../components/parked/EditSaleModal';
 import { useData } from '../contexts/DataContext';
 import type { DividendClassification, ParkedSale } from '../lib/engine';
 import { estimatedPileTax, roundCents } from '../lib/engine';
-import { cn, formatCurrency, formatPercent, inputCls } from '../lib/utils';
+import { cn, formatCurrency, formatPercent, inputCls, safeStorage } from '../lib/utils';
 
 /** Every pile event in one filterable stream. Pile only, never the score —
  * the challenge account's history lives on the Cash Ledger and Trade Log. */
@@ -97,14 +97,14 @@ export function Activity() {
   // values fall back to "all" so a vanished ticker can't empty the table.
   const [actFilters, setActFiltersState] = useState<{ account: string; ticker: string; kind: string }>(() => {
     try {
-      const stored = JSON.parse(localStorage.getItem('pileActivityFilters') ?? 'null');
+      const stored = JSON.parse(safeStorage.get('pileActivityFilters') ?? 'null');
       if (stored && typeof stored.account === 'string' && typeof stored.ticker === 'string' && typeof stored.kind === 'string') return stored;
     } catch { /* fall through to default */ }
     return { account: '', ticker: '', kind: '' };
   });
   const setActFilters = (f: { account: string; ticker: string; kind: string }) => {
     setActFiltersState(f);
-    localStorage.setItem('pileActivityFilters', JSON.stringify(f));
+    safeStorage.set('pileActivityFilters', JSON.stringify(f));
   };
 
   const activity = useMemo<ActivityRow[]>(() => {

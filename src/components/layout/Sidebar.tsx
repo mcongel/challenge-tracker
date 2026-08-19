@@ -21,7 +21,7 @@ import {
   ChevronRight,
   X,
 } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { cn, safeStorage } from '../../lib/utils';
 
 /** Grouped by the app's own walls: score math vs the other pots. The nav
  * teaches the architecture — a screen's section says whose book it keeps.
@@ -76,7 +76,7 @@ const COLLAPSE_KEY = 'sidebar-collapsed';
 
 function loadCollapsed(): Record<string, boolean> {
   try {
-    return JSON.parse(localStorage.getItem(COLLAPSE_KEY) ?? '{}');
+    return JSON.parse(safeStorage.get(COLLAPSE_KEY) ?? '{}');
   } catch {
     return {};
   }
@@ -96,7 +96,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const toggle = (label: string) => {
     setCollapsed((c) => {
       const next = { ...c, [label]: !c[label] };
-      localStorage.setItem(COLLAPSE_KEY, JSON.stringify(next));
+      safeStorage.set(COLLAPSE_KEY, JSON.stringify(next));
       return next;
     });
   };

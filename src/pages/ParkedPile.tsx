@@ -18,7 +18,7 @@ import {
 } from '../lib/engine';
 import type { PositionTotalReturn } from '../lib/engine';
 import {
-  cn, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls, secondaryBtnCls, todayISO,
+  cn, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls, safeStorage, secondaryBtnCls, todayISO,
 } from '../lib/utils';
 import { categoryPillCls, fmtSh, SortHeader, unlockSentence } from '../components/parked/shared';
 import type { SortState } from '../components/parked/shared';
@@ -69,10 +69,10 @@ export function ParkedPile() {
   /** Trim-fuel shortcut: prefill the Sell form with the unlocked shares. */
   const [trimPresetShares, setTrimPresetShares] = useState<number | null>(null);
   // Accordion — the summary lives in the header, so collapsed still informs.
-  const [fuelOpen, setFuelOpenState] = useState(() => localStorage.getItem('pileFuelOpen') === '1');
+  const [fuelOpen, setFuelOpenState] = useState(() => safeStorage.get('pileFuelOpen') === '1');
   const setFuelOpen = (v: boolean) => {
     setFuelOpenState(v);
-    localStorage.setItem('pileFuelOpen', v ? '1' : '0');
+    safeStorage.set('pileFuelOpen', v ? '1' : '0');
   };
   const [transferring, setTransferring] = useState<ParkedPosition | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -182,17 +182,17 @@ export function ParkedPile() {
   // SpokenFor's grouped accounts), by ticker (across accounts), or flat so a
   // column sort ranks the whole pile at once.
   const [groupBy, setGroupByState] = useState<GroupBy>(() => {
-    const stored = localStorage.getItem('pileGroupBy');
+    const stored = safeStorage.get('pileGroupBy');
     return stored === 'ticker' || stored === 'flat' ? stored : 'account';
   });
   const setGroupBy = (m: GroupBy) => {
     setGroupByState(m);
-    localStorage.setItem('pileGroupBy', m);
+    safeStorage.set('pileGroupBy', m);
   };
 
   const [sort, setSortState] = useState<SortState<SortKey>>(() => {
     try {
-      const stored = JSON.parse(localStorage.getItem('pileSort') ?? 'null');
+      const stored = JSON.parse(safeStorage.get('pileSort') ?? 'null');
       // Validate: a key retired by a later version must not survive here.
       if (stored?.key && SORT_KEYS.includes(stored.key)) return stored as SortState<SortKey>;
     } catch {
@@ -202,7 +202,7 @@ export function ParkedPile() {
   });
   const setSort = (s: SortState<SortKey>) => {
     setSortState(s);
-    localStorage.setItem('pileSort', JSON.stringify(s));
+    safeStorage.set('pileSort', JSON.stringify(s));
   };
   /** Click a header: first click sorts by its natural direction, then toggles. */
   const toggleSort = (key: SortKey) =>

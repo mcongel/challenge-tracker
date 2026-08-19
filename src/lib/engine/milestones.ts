@@ -24,9 +24,15 @@ export function skimDue(accountValueAtHit: number): number {
   return roundCents(SKIM_RATE * accountValueAtHit);
 }
 
-/** Smallest level above the account value; $100k floor. */
-export function nextMilestone(accountValue: number): number {
-  return milestoneLevels(accountValue).find((l) => l > accountValue) ?? BASE_LEVELS[0];
+/** Smallest un-banked level above the account value; $100k floor. Banked
+ * levels are skipped — after the $100k skim drops the account to ~$79k, the
+ * next milestone is $200k, not $100k again. */
+export function nextMilestone(accountValue: number, records: MilestoneRecord[] = []): number {
+  const banked = new Set(records.map((r) => r.level));
+  return (
+    milestoneLevels(accountValue, records).find((l) => l > accountValue && !banked.has(l)) ??
+    BASE_LEVELS[0]
+  );
 }
 
 export function cumulativeFloor(records: MilestoneRecord[]): number {

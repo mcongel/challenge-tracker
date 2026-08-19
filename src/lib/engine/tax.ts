@@ -5,9 +5,10 @@ import { netRealizedYTD } from './trades';
 
 export const RESERVE_RATE = 0.3;
 
-/** Loss carried into a tax year (positive number), 0 if none recorded. */
+/** Loss carried into a tax year (positive number), 0 if none recorded.
+ * Multiple rows for the same year sum — a duplicate entry must not vanish. */
 export function applicableCarryforward(carryforwards: LossCarryforward[], year: number): number {
-  return carryforwards.find((c) => c.taxYear === year)?.amount ?? 0;
+  return sum(carryforwards.filter((c) => c.taxYear === year).map((c) => c.amount));
 }
 
 /** 30% of (net realized YTD − carryforward), floored at zero. */

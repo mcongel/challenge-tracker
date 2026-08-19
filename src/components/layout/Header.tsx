@@ -5,7 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
 import { Modal } from '../ui/Modal';
 import { downloadJson, downloadTableCsv } from '../../lib/export';
-import { cn, secondaryBtnCls, todayISO } from '../../lib/utils';
+import { cn, safeStorage, secondaryBtnCls, todayISO } from '../../lib/utils';
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -20,7 +20,7 @@ export function Header({ onMenuClick }: HeaderProps) {
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark);
-    localStorage.setItem('theme', dark ? 'dark' : 'light');
+    safeStorage.set('theme', dark ? 'dark' : 'light');
   }, [dark]);
 
   const doRefresh = async () => {

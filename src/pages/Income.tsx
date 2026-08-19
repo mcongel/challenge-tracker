@@ -21,7 +21,7 @@ import {
 } from '../lib/engine';
 import {
   cn, compactUsd, formatCurrency, formatPercent, inputCls, labelCls, primaryBtnCls,
-  secondaryBtnCls, todayISO,
+  safeStorage, secondaryBtnCls, todayISO,
 } from '../lib/utils';
 import { useIsDark } from '../lib/useIsDark';
 
@@ -193,14 +193,14 @@ export function Income() {
 
   const [histSort, setHistSortState] = useState<SortState<HistSortKey>>(() => {
     try {
-      const stored = JSON.parse(localStorage.getItem('incomeHistSort') ?? 'null');
+      const stored = JSON.parse(safeStorage.get('incomeHistSort') ?? 'null');
       if (stored && HIST_KEYS.includes(stored.key) && (stored.dir === 'asc' || stored.dir === 'desc')) return stored;
     } catch { /* fall through to default */ }
     return { key: 'date', dir: 'desc' };
   });
   const setHistSort = (s: SortState<HistSortKey>) => {
     setHistSortState(s);
-    localStorage.setItem('incomeHistSort', JSON.stringify(s));
+    safeStorage.set('incomeHistSort', JSON.stringify(s));
   };
   const toggleHistSort = (key: HistSortKey) =>
     setHistSort(
@@ -234,14 +234,14 @@ export function Income() {
   // coming back to the same year's view repeatedly.
   const [histFilters, setHistFiltersState] = useState<{ year: string; ticker: string }>(() => {
     try {
-      const stored = JSON.parse(localStorage.getItem('incomeHistFilters') ?? 'null');
+      const stored = JSON.parse(safeStorage.get('incomeHistFilters') ?? 'null');
       if (stored && typeof stored.year === 'string' && typeof stored.ticker === 'string') return stored;
     } catch { /* fall through to default */ }
     return { year: '', ticker: '' };
   });
   const setHistFilters = (f: { year: string; ticker: string }) => {
     setHistFiltersState(f);
-    localStorage.setItem('incomeHistFilters', JSON.stringify(f));
+    safeStorage.set('incomeHistFilters', JSON.stringify(f));
   };
   const histYears = useMemo(
     () => [...new Set(histRows.map((r) => r.lot.date?.slice(0, 4)).filter(Boolean) as string[])]

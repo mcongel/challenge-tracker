@@ -29,6 +29,13 @@ describe('money — rounding boundary', () => {
     expect(roundCents(1455.11 * 0.3)).toBe(436.53);
     expect(roundCents(-4.680000000000291)).toBe(-4.68);
   });
+
+  it('rounds half away from zero symmetrically (Excel ROUND) — losses too', () => {
+    expect(roundCents(1.125)).toBe(1.13);
+    expect(roundCents(-1.125)).toBe(-1.13);
+    expect(roundCents(-2.675)).toBe(-2.68);
+    expect(roundCents(0)).toBe(0);
+  });
 });
 
 describe('positions — partial close', () => {
@@ -100,6 +107,17 @@ describe('milestones — the ratchet', () => {
     expect(nextMilestone(1_000_000)).toBe(1_600_000);
     expect(nextMilestone(0)).toBe(100_000);
   });
+
+  it('skips banked levels — after the $100k skim the next milestone is $200k', () => {
+    const banked = [
+      { level: 100_000, accountValueAtHit: 104_000, dateHit: '2027-01-10', amountBanked: 26_000 },
+    ];
+    // The skim drops the account below $100k; that level must not re-arm.
+    expect(nextMilestone(78_750, banked)).toBe(200_000);
+    expect(nextMilestone(150_000, banked)).toBe(200_000);
+    // Unbanked levels still surface normally.
+    expect(nextMilestone(78_750, [])).toBe(100_000);
+  });
 });
 
 describe('tax — carryforward and quarter timing', () => {
@@ -108,6 +126,10 @@ describe('tax — carryforward and quarter timing', () => {
     expect(reserveTarget(3_000, 5_000)).toBe(0);
     expect(applicableCarryforward([{ taxYear: 2027, amount: 4_000 }], 2027)).toBe(4_000);
     expect(applicableCarryforward([{ taxYear: 2027, amount: 4_000 }], 2026)).toBe(0);
+    // Duplicate rows for one year sum — a second entry must not vanish.
+    expect(applicableCarryforward(
+      [{ taxYear: 2027, amount: 4_000 }, { taxYear: 2027, amount: 1_000 }], 2027,
+    )).toBe(5_000);
   });
 
   it('a quarter is due starting the day AFTER it ends', () => {
