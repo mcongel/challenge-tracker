@@ -38,8 +38,9 @@ const ALERT_STYLES: Record<string, string> = {
 export function Dashboard() {
   const {
     // pileParked: the pile tile, CAP alert, and unlock line are pile rules —
-    // retirement money never moves them.
-    lots, cashEvents, trades, milestones, benchmarkDeposits, pileParked: parked, parkedLots,
+    // retirement and the bitcoin bucket never move them.
+    lots, cashEvents, trades, milestones, benchmarkDeposits, pileParked: parked, btcParked,
+    parkedLots,
     snapshots, carryforwards, overrides, quotes, contributionCap, concentrationCap, watchlist,
     loading, error, quotesSettled,
   } = useData();
@@ -217,6 +218,13 @@ export function Dashboard() {
               ? `next unlock: ${String(Number(nextUnlock.next.shares.toFixed(4)))} sh ${nextUnlock.ticker} on ${nextUnlock.next.date}`
               : 'context only — not in score'}
           </p>
+        </Link>
+        <Link to="/bitcoin" className="bg-white rounded-lg shadow-lg p-4 density-aware-card block hover:bg-gray-50 transition-colors">
+          <p className="text-xs font-medium text-gray-500">Bitcoin</p>
+          <p className="mt-0.5 text-xl font-bold tabular-nums text-gray-500">
+            {formatCurrency(roundCents(pileTotal(btcParked)))}
+          </p>
+          <p className="text-xs text-gray-400 mt-0.5">the conviction bucket — held, not traded</p>
         </Link>
       </div>
 

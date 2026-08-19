@@ -14,7 +14,8 @@ import type {
   Trade,
 } from '../lib/engine';
 import {
-  accountTotal, adjustmentsForLots, aggregateLots, allocateRoc, buildSaleSnapshot, closeShares,
+  accountTotal, adjustmentsForLots, aggregateLots, allocateRoc, BTC_CATEGORY, buildSaleSnapshot,
+  closeShares,
   computeAccountCash, concentration, consumeLotsFifo, cumulativeFloor, isArchivedPosition,
   LT_TAX_RATE, netContributed, ORDINARY_DIVIDEND_TAX_RATE, pileTotal, planSaleRestore,
   QUALIFIED_DIVIDEND_TAX_RATE, reservedTotal, round6, roundCents, shadowValue, spentCash,
@@ -123,10 +124,14 @@ const EMPTY: DataState = {
 interface DataContextValue extends DataState {
   loading: boolean;
   error: string | null;
-  /** The third wall: `parked` holds every position; these split it. Pile
-   * screens and pile math use pileParked; the Retirement page uses the rest.
-   * Mutations keep using `parked` — ids are ids. */
+  /** The walls: `parked` holds every position; these split it. taxableParked
+   * = everything outside retirement (income, taxes, and activity key off it);
+   * pileParked = taxable minus the BTC bucket (pile screens and pile math);
+   * btcParked = the bitcoin conviction bucket, its own fourth pot;
+   * retirementParked = the rest. Mutations keep using `parked` — ids are ids. */
+  taxableParked: ParkedPosition[];
   pileParked: ParkedPosition[];
+  btcParked: ParkedPosition[];
   retirementParked: ParkedPosition[];
   retirementAccountIds: Set<string>;
   /** Rule 12 cap from app_settings; null (feature off) if the row is missing. */
@@ -590,9 +595,23 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [state.parked, state.overrides, quotes, isQuotable],
   );
 
-  const pileParked = useMemo(
+  // The taxable universe: everything outside retirement. Income, taxes, and
+  // activity key off THIS — the bitcoin split below is a strategy wall, not
+  // a tax wall, so taxable math must keep seeing the BTC-bucket holdings.
+  const taxableParked = useMemo(
     () => mergedParked.filter((p) => !retirementAccountIds.has(p.accountId)),
     [mergedParked, retirementAccountIds],
+  );
+  // The pile proper vs the bitcoin conviction bucket — the fourth pot
+  // (owner decision 2026-08-19). Category 'BTC' is the owner's curation:
+  // BTC itself plus thesis members like MSTR and BTCI.
+  const pileParked = useMemo(
+    () => taxableParked.filter((p) => p.category !== BTC_CATEGORY),
+    [taxableParked],
+  );
+  const btcParked = useMemo(
+    () => taxableParked.filter((p) => p.category === BTC_CATEGORY),
+    [taxableParked],
   );
   const retirementParked = useMemo(
     () => mergedParked.filter((p) => retirementAccountIds.has(p.accountId)),
@@ -622,6 +641,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       parked_pile_value: roundCents(pileTotal(pileParked)),
       semi_ai_pct: Number(concentration(pileParked).semiPct.toFixed(6)),
       retirement_value: roundCents(pileTotal(retirementParked)),
+      btc_value: roundCents(pileTotal(btcParked)),
     };
     void db()
       .from('snapshots')
@@ -629,7 +649,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       .then(({ error: err }) => {
         if (!err) void refresh();
       });
-  }, [loading, error, state, quotes, pileParked, retirementParked, refresh]);
+  }, [loading, error, state, quotes, pileParked, btcParked, retirementParked, refresh]);
 
   /** Insert a Deposit cash event and its shadow-VOO twin as one converging
    * unit. Never leave a deposit without its twin — the benchmark would
@@ -2586,7 +2606,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     () => ({
       ...state,
       parked: mergedParked,
+      taxableParked,
       pileParked,
+      btcParked,
       retirementParked,
       retirementAccountIds,
       quotes,
@@ -2661,7 +2683,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       deleteRotation,
     }),
     [
-      state, mergedParked, pileParked, retirementParked, retirementAccountIds,
+      state, mergedParked, taxableParked, pileParked, btcParked, retirementParked, retirementAccountIds,
       quotes, dayChange, quotesAsOf, quotesError, quotesSettled, refreshQuotes, tickerNames,
       contributionCap,
       concentrationCap, ltTaxRate, stTaxRate, dividendTaxRates, updateSetting, updateSettings,

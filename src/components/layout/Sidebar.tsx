@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
+  Bitcoin,
   Building2,
   Wallet,
   TrendingUp,
@@ -55,6 +56,10 @@ export const NAV_SECTIONS: {
       { to: '/pile-taxes', label: 'Pile Taxes', icon: Receipt },
       { to: '/transition', label: 'Transition', icon: Sunrise },
     ],
+  },
+  {
+    label: 'Bitcoin',
+    items: [{ to: '/bitcoin', label: 'Bitcoin', icon: Bitcoin }],
   },
   {
     label: 'Retirement',

@@ -73,8 +73,9 @@ function SaleDetail({ sale: s }: { sale: ParkedSale }) {
 
 export function Activity() {
   const {
-    // Pile stream only — retirement history lives on the Retirement page.
-    pileParked: allParked, parkedLots, parkedSales: allSales,
+    // Taxable stream only — retirement history lives on the Retirement page.
+    // The bitcoin bucket stays in: its buys, sales, and cash are taxable acts.
+    taxableParked: allParked, parkedLots, parkedSales: allSales,
     parkedCashEvents: allCashEvents, accounts, retirementAccountIds,
     deleteParkedSale, undoParkedSale, accountCash, ltTaxRate, stTaxRate, loading, error,
   } = useData();

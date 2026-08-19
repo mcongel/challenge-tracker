@@ -294,4 +294,7 @@ export interface Snapshot {
   semiAiPct: number;
   /** The third pot's daily value; null before the retirement feature. */
   retirementValue?: number | null;
+  /** The fourth pot: the bitcoin conviction bucket's daily value; null
+   * before the split (those days it rode inside parkedPileValue). */
+  btcValue?: number | null;
 }

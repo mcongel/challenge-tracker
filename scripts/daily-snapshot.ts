@@ -10,8 +10,8 @@
  */
 import { createClient } from '@supabase/supabase-js';
 import {
-  accountTotal, concentration, cumulativeFloor, isArchivedPosition, netContributed, pileTotal,
-  reservedTotal, roundCents, shadowValue, totalScore,
+  accountTotal, BTC_CATEGORY, concentration, cumulativeFloor, isArchivedPosition, netContributed,
+  pileTotal, reservedTotal, roundCents, shadowValue, totalScore,
 } from '../src/lib/engine';
 import type {
   BenchmarkDeposit, CashEvent, MilestoneRecord, ParkedPosition, PositionLot,
@@ -68,12 +68,15 @@ async function main(): Promise<void> {
       load('price_overrides'),
       load('accounts'),
     ]);
-  // The third wall: retirement positions never enter parked_pile_value or the
-  // concentration figure — the day a 401k is added must not jump pile history.
+  // The walls: retirement positions never enter parked_pile_value or the
+  // concentration figure, and the bitcoin bucket is its own fourth pot
+  // (owner decision 2026-08-19) — out of the pile, into btc_value.
   const retirementIds = new Set(
     accountRows.filter((a) => a.kind === 'retirement').map((a) => a.id),
   );
-  const parkedRows = allParkedRows.filter((r) => !retirementIds.has(r.account_id));
+  const taxableRows = allParkedRows.filter((r) => !retirementIds.has(r.account_id));
+  const parkedRows = taxableRows.filter((r) => r.category !== BTC_CATEGORY);
+  const btcRows = taxableRows.filter((r) => r.category === BTC_CATEGORY);
 
   const cashEvents: CashEvent[] = cashRows.map((r) => ({
     id: r.id, date: r.date, type: r.type, amount: num(r.amount),
@@ -143,6 +146,7 @@ async function main(): Promise<void> {
       : num(r.current_price),
   });
   const parked: ParkedPosition[] = parkedRows.map(toPosition);
+  const btcParked: ParkedPosition[] = btcRows.map(toPosition);
   const retirementParked: ParkedPosition[] = allParkedRows
     .filter((r) => retirementIds.has(r.account_id))
     .map(toPosition);
@@ -160,6 +164,7 @@ async function main(): Promise<void> {
     parked_pile_value: roundCents(pileTotal(parked)),
     semi_ai_pct: Number(concentration(parked).semiPct.toFixed(6)),
     retirement_value: roundCents(pileTotal(retirementParked)),
+    btc_value: roundCents(pileTotal(btcParked)),
   };
 
   const { error } = await supabase

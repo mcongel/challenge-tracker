@@ -48,7 +48,9 @@ const WARNING_LABELS: Record<string, { label: string; cls: string; title: string
 
 export function Transition() {
   const {
-    incomeScenarios, scenarioRotations, pileParked: parked, parkedLots, parkedLotAdjustments,
+    // Taxable universe incl. the bitcoin bucket — transition-era rotations
+    // may sell anything taxable, and BTCI's income counts toward the ladder.
+    incomeScenarios, scenarioRotations, taxableParked: parked, parkedLots, parkedLotAdjustments,
     dividendTaxRates, ltTaxRate, stTaxRate,
     addScenario, updateScenario, deleteScenario, duplicateScenario, deleteRotation,
     loading, error,
@@ -604,7 +606,7 @@ function RotationFormModal({
   rotation: ScenarioRotation | null;
   onClose: () => void;
 }) {
-  const { pileParked: parked, addRotation, updateRotation } = useData();
+  const { taxableParked: parked, addRotation, updateRotation } = useData();
   const live = parked.filter((p) => !isArchivedPosition(p));
   // An existing rotation may reference a holding that has since been archived
   // — keep it selectable (labeled) so editing doesn't silently blank the source.

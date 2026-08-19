@@ -17,6 +17,7 @@ import { Activity } from './pages/Activity';
 import { Income } from './pages/Income';
 import { PileTaxes } from './pages/PileTaxes';
 import { Retirement } from './pages/Retirement';
+import { Bitcoin } from './pages/Bitcoin';
 import { Accounts } from './pages/Accounts';
 import { Transition } from './pages/Transition';
 import { Rules } from './pages/Rules';
@@ -63,6 +64,7 @@ function AppRoutes() {
         <Route path="/activity" element={<Activity />} />
         <Route path="/income" element={<Income />} />
         <Route path="/pile-taxes" element={<PileTaxes />} />
+        <Route path="/bitcoin" element={<Bitcoin />} />
         <Route path="/retirement" element={<Retirement />} />
         <Route path="/accounts" element={<Accounts />} />
         <Route path="/transition" element={<Transition />} />

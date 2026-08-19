@@ -8,18 +8,18 @@ import { cn } from '../lib/utils';
 /** First-run guidance. Renders only while setup steps remain; disappears for
  * good once the account is really running. */
 export function GettingStarted() {
-  const { exampleData, pileParked, parkedLots, cashEvents, lots, trades, clearExampleData, loading } = useData();
+  const { exampleData, taxableParked, parkedLots, cashEvents, lots, trades, clearExampleData, loading } = useData();
   const [confirmClear, setConfirmClear] = useState(false);
 
   if (loading) return null;
 
-  // Pile lots only: dates matter there for the funding-unlock countdowns.
-  // Retirement lots are legitimately undated (years of contributions) and
-  // their clocks are informational — never a setup nag.
-  const pileIds = new Set(pileParked.map((p) => p.id));
+  // Taxable lots only (pile + bitcoin bucket): dates drive the pile's
+  // funding-unlock countdowns and every taxable LT/ST split. Retirement lots
+  // are legitimately undated (years of contributions) — never a setup nag.
+  const taxableIds = new Set(taxableParked.map((p) => p.id));
   const missingDates = new Set(
     parkedLots
-      .filter((l) => !l.date && l.shares > 0 && pileIds.has(l.parkedPositionId))
+      .filter((l) => !l.date && l.shares > 0 && taxableIds.has(l.parkedPositionId))
       .map((l) => l.parkedPositionId),
   ).size;
   const exampleIds = new Set(exampleData.cashEvents.map((e) => e.id));

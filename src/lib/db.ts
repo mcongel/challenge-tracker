@@ -357,6 +357,7 @@ export const mapSnapshot = (r: any): Snapshot => ({
   semiAiPct: Number(r.semi_ai_pct),
   retirementValue: r.retirement_value === null || r.retirement_value === undefined
     ? null : Number(r.retirement_value),
+  btcValue: r.btc_value === null || r.btc_value === undefined ? null : Number(r.btc_value),
 });
 
 export const mapCarryforward = (r: any): LossCarryforward => ({

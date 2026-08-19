@@ -62,8 +62,9 @@ interface HistRow {
 
 export function Income() {
   const {
-    // Pile positions only — a Roth's dividends are nobody's 1099.
-    pileParked: parked, parkedLots: allLots, parkedLotAdjustments, dividendTaxRates,
+    // Taxable positions only — a Roth's dividends are nobody's 1099. The
+    // bitcoin bucket stays IN: BTCI's payouts are as taxable as any other.
+    taxableParked: parked, parkedLots: allLots, parkedLotAdjustments, dividendTaxRates,
     deleteParkedLot, allocateRocDividends, reclassifyDividends, loading, error,
   } = useData();
   const today = todayISO();
