@@ -5,21 +5,22 @@ import {
 } from 'recharts';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
-import { Modal } from '../components/ui/Modal';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { ErrorCard } from '../components/ui/ErrorCard';
 import { SkeletonTable } from '../components/ui/SkeletonTable';
 import { Card, TableCard, theadCls } from '../components/ui/Card';
 import { StatTile } from '../components/ui/StatTile';
-import { Field } from '../components/ui/Field';
-import { FormError, ModalFooter, useModalForm } from '../components/ui/useModalForm';
 import { CLASSIFICATION_LABELS, classificationPillCls, SortHeader } from '../components/parked/shared';
 import type { SortState } from '../components/parked/shared';
+import { HoldingRow } from '../components/income/HoldingRow';
+import { RateModal } from '../components/income/RateModal';
+import { ReclassifyModal } from '../components/income/ReclassifyModal';
+import type { HistRow } from '../components/income/shared';
 import { useData } from '../contexts/DataContext';
 import { lotsByPositionId } from '../lib/engine';
 import { Link } from 'react-router-dom';
 import type {
-  DividendClassification, DividendFrequency, ParkedLot, ParkedPosition, PositionIncomeSummary,
+  DividendClassification, ParkedPosition,
 } from '../lib/engine';
 import {
   dividendTaxYTD, isArchivedPosition, isUnallocatedRoc, positionIncomeSummary, roundCents,
@@ -41,16 +42,6 @@ const SERIES = {
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const monthLabel = (m: string) => `${MONTH_NAMES[Number(m.slice(5, 7)) - 1]} '${m.slice(2, 4)}`;
 
-const FREQUENCY_LABELS: Record<DividendFrequency, string> = {
-  daily: 'daily',
-  weekly: 'weekly',
-  semimonthly: 'twice a month',
-  monthly: 'monthly',
-  quarterly: 'quarterly',
-  semiannual: 'semiannual',
-  annual: 'annual',
-};
-
 type HistSortKey = 'date' | 'ticker' | 'amount' | 'classification';
 const HIST_NATURAL_DIR: Record<HistSortKey, 'asc' | 'desc'> = {
   date: 'desc', // history reads newest-first
@@ -59,12 +50,6 @@ const HIST_NATURAL_DIR: Record<HistSortKey, 'asc' | 'desc'> = {
   classification: 'asc',
 };
 const HIST_KEYS = Object.keys(HIST_NATURAL_DIR) as HistSortKey[];
-
-interface HistRow {
-  lot: ParkedLot;
-  ticker: string;
-  account: string;
-}
 
 export function Income() {
   const {
@@ -555,184 +540,5 @@ export function Income() {
         <RateModal position={editingRate} onClose={() => setEditingRate(null)} />
       )}
     </div>
-  );
-}
-
-function HoldingRow({
-  position: p, summary: s, anyRoc, onEditRate,
-}: {
-  position: ParkedPosition;
-  summary: PositionIncomeSummary;
-  anyRoc: boolean;
-  onEditRate: () => void;
-}) {
-  const proj = s.projection;
-  const archived = isArchivedPosition(p);
-  return (
-    <tr className={cn('hover:bg-gray-50', archived && 'text-gray-400')}>
-      <td className="px-4 py-2 font-medium text-gray-900">
-        {p.ticker}
-        <span className="ml-1 text-xs text-gray-400">{p.account}</span>
-        {archived && (
-          <span className="ml-1 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-gray-100 text-gray-500"
-            title="Fully trimmed or transferred away — history kept, nothing projected.">
-            closed
-          </span>
-        )}
-        {s.hasUnclassified && (
-          <span className="ml-1 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-800"
-            title="Some dividends are unclassified — estimates assume the qualified rate.">
-            unclassified
-          </span>
-        )}
-      </td>
-      <td className="px-4 py-2 text-right tabular-nums text-gray-600">
-        {s.yieldOnCost != null ? formatPercent(s.yieldOnCost) : '—'}
-      </td>
-      <td className="px-4 py-2 text-right tabular-nums text-gray-600">
-        {s.trailing12m > 0 ? money(s.trailing12m) : '—'}
-      </td>
-      <td className="px-4 py-2 text-right tabular-nums text-gray-600">
-        {proj ? money(proj.annualGross) : '—'}
-      </td>
-      <td className="px-4 py-2 text-right tabular-nums text-gray-600">
-        {proj?.nextPayment
-          ? `${proj.nextPayment.date} · est. ${money(proj.nextPayment.amount)}`
-          : '—'}
-      </td>
-      <td className="px-4 py-2">
-        {proj ? (
-          <span className={cn('inline-block rounded-full px-2 py-0.5 text-xs font-medium',
-            proj.source === 'actual' ? 'bg-green-50 text-green-700' : 'bg-indigo-50 text-indigo-700')}>
-            {proj.source === 'actual' ? 'actual' : 'manual rate'}
-          </span>
-        ) : archived ? (
-          <span className="text-xs text-gray-400">—</span>
-        ) : (
-          <button onClick={onEditRate} className="text-xs text-green-700 hover:underline font-medium">
-            set rate
-          </button>
-        )}
-      </td>
-      {anyRoc && (
-        <td className="px-4 py-2 text-right tabular-nums text-gray-600"
-          title={s.rocCumulative > 0 && s.adjustedCostBasis < s.costBasis
-            ? `Adjusted basis ${money(s.adjustedCostBasis)} (original ${money(s.costBasis)})`
-            : undefined}>
-          {s.rocCumulative > 0 ? money(s.rocCumulative) : '—'}
-        </td>
-      )}
-      <td className="px-2 py-2 text-right">
-        {!archived && (
-          <button onClick={onEditRate} className="p-2 sm:p-1 rounded hover:bg-gray-100"
-            aria-label="Edit dividend rate" title="Manual rate & frequency (used when there's no payment history)">
-            <Pencil className="h-3.5 w-3.5 text-gray-300 hover:text-gray-600" />
-          </button>
-        )}
-      </td>
-    </tr>
-  );
-}
-
-function ReclassifyModal({ row, onClose }: { row: HistRow; onClose: () => void }) {
-  const { reclassifyDividend } = useData();
-  const [classification, setClassification] = useState<DividendClassification>(
-    row.lot.classification ?? 'unclassified',
-  );
-  const [exDate, setExDate] = useState(row.lot.exDate ?? '');
-
-  const { busy, formError, submit } = useModalForm(async () => {
-    await reclassifyDividend(row.lot.id, classification, exDate || null);
-    onClose();
-  });
-
-  return (
-    <Modal isOpen onClose={onClose} title={`Reclassify ${row.ticker} dividend`}>
-      <form onSubmit={submit} className="space-y-3">
-        <p className="text-sm text-gray-600">
-          {row.lot.date ?? 'Undated'} · {formatCurrency(row.lot.amount)} ·{' '}
-          {row.lot.shares > 0 ? 'DRIP' : 'cash'}
-        </p>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Classification">
-            <select value={classification} className={inputCls}
-              onChange={(e) => setClassification(e.target.value as DividendClassification)}>
-              <option value="unclassified">Unclassified</option>
-              <option value="qualified">Qualified</option>
-              <option value="ordinary">Ordinary (non-qualified)</option>
-              <option value="return_of_capital">Return of capital</option>
-              <option value="capital_gain_dist">Capital gain distribution</option>
-            </select>
-          </Field>
-          <Field label="Ex-date (optional)">
-            <input type="date" value={exDate} onChange={(e) => setExDate(e.target.value)} className={inputCls} />
-          </Field>
-        </div>
-        <p className="text-xs text-gray-400">
-          Brokers reclassify distributions on the 1099 after year end — this records the correction
-          and flags the row so you know it was revised.
-        </p>
-        <FormError message={formError} />
-        <ModalFooter busy={busy} label="Save" onCancel={onClose} />
-      </form>
-    </Modal>
-  );
-}
-
-function RateModal({ position: p, onClose }: { position: ParkedPosition; onClose: () => void }) {
-  const { updateParked } = useData();
-  const [rate, setRate] = useState(p.dividendRate != null ? String(p.dividendRate) : '');
-  const [frequency, setFrequency] = useState<DividendFrequency>(p.dividendFrequency ?? 'quarterly');
-  const [growth, setGrowth] = useState(
-    p.dividendGrowthPct != null ? String(Math.round(p.dividendGrowthPct * 10000) / 100) : '',
-  );
-
-  const { busy, formError, submit } = useModalForm(async () => {
-    const r = rate === '' ? null : Number(rate);
-    if (r != null && (Number.isNaN(r) || r < 0)) throw new Error('Rate is annual dollars per share, ≥ 0.');
-    const g = growth === '' ? null : Number(growth) / 100;
-    if (g != null && (Number.isNaN(g) || g <= -1 || g >= 1)) {
-      throw new Error('Growth is an annual percentage between -99 and 99.');
-    }
-    await updateParked(p.id, {
-      dividendRate: r,
-      dividendFrequency: r == null ? null : frequency,
-      // Clearing the rate retires its projection companions too — a stale
-      // growth assumption must not keep compounding actual-history income.
-      dividendGrowthPct: r == null ? null : g,
-    });
-    onClose();
-  });
-
-  return (
-    <Modal isOpen onClose={onClose} title={`${p.ticker} dividend rate`}>
-      <form onSubmit={submit} className="space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <Field label="Annual rate ($/share)">
-            <input type="number" step="any" min="0" value={rate} autoFocus
-              onChange={(e) => setRate(e.target.value)} className={inputCls} placeholder="e.g. 2.48" />
-          </Field>
-          <Field label="Frequency">
-            <select value={frequency} className={inputCls}
-              onChange={(e) => setFrequency(e.target.value as DividendFrequency)}>
-              {(Object.keys(FREQUENCY_LABELS) as DividendFrequency[]).map((f) => (
-                <option key={f} value={f}>{FREQUENCY_LABELS[f]}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Div growth (%/yr)">
-            <input type="number" step="any" value={growth}
-              onChange={(e) => setGrowth(e.target.value)} className={inputCls}
-              placeholder="for projections" title="Assumed annual dividend growth — used by the Transition modeler." />
-          </Field>
-        </div>
-        <p className="text-xs text-gray-400">
-          A manual estimate for projections until real payments build a history — actuals take over
-          automatically once two dated payments exist. Clear the rate to exclude the holding.
-        </p>
-        <FormError message={formError} />
-        <ModalFooter busy={busy} label="Save" onCancel={onClose} />
-      </form>
-    </Modal>
   );
 }
