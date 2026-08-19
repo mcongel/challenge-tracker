@@ -63,8 +63,6 @@ export interface PositionLot {
   /** Calendar exit: out by this date's close no matter the price (e.g. the
    * session before an earnings print). Optional; fires the CALENDAR alert. */
   exitDate?: string | null;
-  /** Legacy — the pre-Xu downside exit. Optional since Rules v3 (2026-08-05). */
-  bailPoint?: number | null;
   thesis?: string | null;
   /** Exact link to the Buy cash event; null on legacy lots (fuzzy fallback). */
   buyEventId?: string | null;

@@ -20,7 +20,6 @@ const lot = (id: string, buyDate: string, shares: number, avgCost: number): Posi
   shares,
   avgCost,
   exitTarget: 100,
-  bailPoint: 10,
 });
 
 describe('money — rounding boundary', () => {

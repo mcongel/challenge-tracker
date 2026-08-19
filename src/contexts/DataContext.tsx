@@ -930,7 +930,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
               // The exit target is a price too — an unscaled target after a
               // split silences (or falsely fires) the exit alert forever.
               exit_target: lot.exitTarget / ratio,
-              bail_point: lot.bailPoint != null ? lot.bailPoint / ratio : null,
               thesis: lot.thesis ? `${lot.thesis} · ${note}` : note,
             })
             .eq('id', lot.id),

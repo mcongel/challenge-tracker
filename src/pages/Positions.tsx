@@ -334,7 +334,6 @@ function AddPositionModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
       avgCost: Number(avgCost),
       exitTarget: Number(exitTarget),
       exitDate: exitDate || null,
-      bailPoint: null,
       thesis: thesis || null,
     });
     setTicker(''); reset(); setExitTarget(''); setExitDate(''); setThesis('');

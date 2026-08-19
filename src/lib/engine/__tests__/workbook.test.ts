@@ -35,7 +35,6 @@ const nbisLot: PositionLot = {
   shares: 26.6,
   avgCost: 225.74,
   exitTarget: 290,
-  bailPoint: 190,
 };
 
 const muTrade: Trade = {

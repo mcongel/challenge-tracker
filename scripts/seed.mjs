@@ -115,7 +115,7 @@ if (withExamples) {
     { date: '2026-08-12', type: 'Buy', amount: 6004.68, ticker: 'NBIS', notes: 'EXAMPLE — matches Positions example row' },
   ]);
   await seedIfEmpty('position_lots', [
-    { ticker: 'NBIS', buy_date: '2026-08-10', shares: 26.6, avg_cost: 225.74, exit_target: 290, bail_point: 190, thesis: 'EXAMPLE ROW — AI infra momentum, target +28%.' },
+    { ticker: 'NBIS', buy_date: '2026-08-10', shares: 26.6, avg_cost: 225.74, exit_target: 290, thesis: 'EXAMPLE ROW — AI infra momentum, target +28%.' },
   ]);
   await seedIfEmpty('trades', [
     { ticker: 'MU', open_date: '2026-03-02', close_date: '2026-06-15', cost_basis: 1000, proceeds: 2455.11, wash_sale: false, notes: 'EXAMPLE ROW (realized MU gain lives in Cash App, not here)' },

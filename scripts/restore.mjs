@@ -93,7 +93,8 @@ const TABLES = [
   })), 'id'],
   ['position_lots', get('position_lots').map((l) => ({
     id: l.id, ticker: l.ticker, buy_date: l.buyDate, shares: l.shares, avg_cost: l.avgCost,
-    exit_target: l.exitTarget, exit_date: l.exitDate ?? null, bail_point: l.bailPoint ?? null,
+    // bail_point retired (Rules v3, column dropped 2026-08) — old backups' value is dead data.
+    exit_target: l.exitTarget, exit_date: l.exitDate ?? null,
     thesis: l.thesis ?? null, buy_event_id: l.buyEventId ?? null,
   })), 'id'],
   ['trades', get('trades').map((t) => ({
