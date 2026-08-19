@@ -8,13 +8,19 @@ import { cn } from '../lib/utils';
 /** First-run guidance. Renders only while setup steps remain; disappears for
  * good once the account is really running. */
 export function GettingStarted() {
-  const { exampleData, parkedLots, cashEvents, lots, trades, clearExampleData, loading } = useData();
+  const { exampleData, pileParked, parkedLots, cashEvents, lots, trades, clearExampleData, loading } = useData();
   const [confirmClear, setConfirmClear] = useState(false);
 
   if (loading) return null;
 
+  // Pile lots only: dates matter there for the funding-unlock countdowns.
+  // Retirement lots are legitimately undated (years of contributions) and
+  // their clocks are informational — never a setup nag.
+  const pileIds = new Set(pileParked.map((p) => p.id));
   const missingDates = new Set(
-    parkedLots.filter((l) => !l.date && l.shares > 0).map((l) => l.parkedPositionId),
+    parkedLots
+      .filter((l) => !l.date && l.shares > 0 && pileIds.has(l.parkedPositionId))
+      .map((l) => l.parkedPositionId),
   ).size;
   const exampleIds = new Set(exampleData.cashEvents.map((e) => e.id));
   const exampleLotIds = new Set(exampleData.lots.map((l) => l.id));
