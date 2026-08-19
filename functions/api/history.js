@@ -13,7 +13,9 @@
  * Response: { series: { TICKER: [[isoDate, close], …] }, interval, missing: [TICKER] }
  */
 const CACHE_TTL_SECONDS = 86_400;
-const MAX_TICKERS = 40;
+// Each ticker costs a Yahoo fetch plus cache ops, and Pages caps subrequests
+// per invocation — clients chunk their ticker lists to stay under this.
+const MAX_TICKERS = 12;
 const WEEKLY_SPAN_MS = 3 * 365 * 86_400_000;
 
 // Same alias table as quotes.js — the app says BTC, Yahoo says BTC-USD.

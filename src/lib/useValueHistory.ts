@@ -45,12 +45,22 @@ export function useValueHistory(
     if (tickers.length === 0 || !from) return;
     let cancelled = false;
     setSeries(null);
-    void fetch(`/api/history?tickers=${tickers.join(',')}&from=${from}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((body: { series?: CloseSeries } | null) => {
-        if (!cancelled && body?.series) setSeries(body.series);
-      })
-      .catch(() => { /* fall back to snapshots */ });
+    // Chunked: the endpoint caps tickers per call (Pages subrequest budget).
+    const CHUNK = 12;
+    const chunks: string[][] = [];
+    for (let i = 0; i < tickers.length; i += CHUNK) chunks.push(tickers.slice(i, i + CHUNK));
+    void (async () => {
+      try {
+        const merged: CloseSeries = {};
+        for (const chunk of chunks) {
+          const res = await fetch(`/api/history?tickers=${chunk.join(',')}&from=${from}`);
+          if (!res.ok) return; // fall back to snapshots
+          const body = (await res.json()) as { series?: CloseSeries };
+          Object.assign(merged, body.series ?? {});
+        }
+        if (!cancelled) setSeries(merged);
+      } catch { /* fall back to snapshots */ }
+    })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
