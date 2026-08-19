@@ -176,6 +176,9 @@ export interface SaleSnapshotSlice {
   reclassifiedAt: string | null;
   rocAllocatedAt: string | null;
   rocOverflow: number | null;
+  /** Absent on snapshots predating the origin column — restore leaves the
+   * recreated lot's origin null and spentCash falls back to notes. */
+  origin?: 'purchase' | 'transfer' | 'milestone' | null;
   notes: string | null;
   adjustments: {
     /** Original row id — reused on recreation so retries are idempotent. */

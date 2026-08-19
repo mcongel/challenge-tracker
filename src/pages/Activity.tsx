@@ -9,7 +9,9 @@ import { CLASSIFICATION_LABELS, classificationPillCls, fmtSh } from '../componen
 import { EditSaleModal } from '../components/parked/EditSaleModal';
 import { useData } from '../contexts/DataContext';
 import type { DividendClassification, ParkedSale } from '../lib/engine';
-import { estimatedPileTax, roundCents } from '../lib/engine';
+import {
+  estimatedPileTax, lotCashImpact, roundCents, saleCashImpact, signedParkedCash,
+} from '../lib/engine';
 import { cn, formatCurrency, formatPercent, inputCls, safeStorage } from '../lib/utils';
 
 /** Every pile event in one filterable stream. Pile only, never the score —
@@ -35,6 +37,9 @@ interface ActivityRow {
   price: number | null;
   amount: number;
   amountCls: string;
+  /** Tracked-cash effect, straight from the engine's row-level functions —
+   * the running-balance walk must mirror computeAccountCash exactly. */
+  cashImpact: number;
   detail?: string;
   classification?: DividendClassification | null;
   sale?: ParkedSale;
@@ -116,7 +121,8 @@ export function Activity() {
       const pos = posById.get(l.parkedPositionId);
       if (!pos) continue;
       if (l.source === 'purchase') {
-        const isTransfer = Boolean(l.notes?.startsWith('ACATS from'));
+        const isTransfer = l.origin === 'transfer' ||
+          (l.origin == null && Boolean(l.notes?.startsWith('ACATS from')));
         rows.push({
           key: `lot-${l.id}`,
           date: l.date,
@@ -129,6 +135,7 @@ export function Activity() {
           price: l.price ?? null,
           amount: l.amount,
           amountCls: 'text-gray-900',
+          cashImpact: lotCashImpact(l),
           detail: l.notes ?? undefined,
         });
       } else {
@@ -147,6 +154,7 @@ export function Activity() {
           price: l.price ?? null,
           amount: l.amount,
           amountCls: 'text-green-600',
+          cashImpact: lotCashImpact(l),
           classification: l.classification ?? 'unclassified',
           detail: l.notes && l.notes !== 'reinvested' && l.notes !== 'cash' ? l.notes : undefined,
         });
@@ -165,6 +173,7 @@ export function Activity() {
         price: s.pricePerShare,
         amount: s.proceeds,
         amountCls: 'text-gray-900',
+        cashImpact: saleCashImpact(s),
         sale: s,
       });
     }
@@ -181,6 +190,7 @@ export function Activity() {
         price: null,
         amount: e.amount,
         amountCls: e.type === 'withdrawal' || e.type === 'fee' || e.amount < 0 ? 'text-red-600' : 'text-green-600',
+        cashImpact: signedParkedCash(e),
         detail: e.notes ?? undefined,
       });
     }
@@ -211,33 +221,16 @@ export function Activity() {
   // Running tracked-cash balance — only when a single account's FULL stream
   // is showing (a ticker/kind filter would hide rows the walk needs). Walked
   // backward from the live balance so the top row always matches the
-  // Accounts modal; each row's cash impact mirrors computeAccountCash:
-  // DRIP/ACATS/milestone rows moved no cash, a consuming sale's basis stays
-  // spent, and a funded sale's proceeds left for the challenge ledger.
+  // Accounts modal. Each row's impact was stamped at build time from the
+  // engine's row-level functions — the same rules computeAccountCash sums.
   const balanceEligible = Boolean(actAccount) && !actTicker && !actKind;
   const runningBalance = useMemo(() => {
     if (!balanceEligible) return new Map<string, number>();
-    const cashImpact = (r: ActivityRow): number => {
-      switch (r.kind) {
-        case 'cash':
-          return r.kindLabel === 'withdrawal' || r.kindLabel === 'fee' ? -r.amount : r.amount;
-        case 'buy':
-          return r.detail?.startsWith('Milestone') ? 0 : -r.amount;
-        case 'transfer':
-          return 0;
-        case 'dividend':
-          return r.kindLabel === 'DRIP' ? 0 : r.amount;
-        case 'sell': {
-          const consumed = r.sale?.consumedBasis ?? 0;
-          return (r.sale?.fundedChallenge ? 0 : r.amount) - consumed;
-        }
-      }
-    };
     const m = new Map<string, number>();
     let bal = accountCash(actAccount).balance;
     for (const r of filtered) {
       m.set(r.key, bal);
-      bal = roundCents(bal - cashImpact(r));
+      bal = roundCents(bal - r.cashImpact);
     }
     return m;
   }, [balanceEligible, filtered, accountCash, actAccount]);

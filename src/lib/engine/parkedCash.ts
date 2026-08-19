@@ -23,11 +23,33 @@ export function signedParkedCash(e: ParkedCashEvent): number {
 
 /** Lots that moved cash in this account. Transfer-created and milestone-bank
  * lots didn't (ACATS moves shares, not cash; milestone money came from the
- * challenge account) — they're identifiable by the notes the app writes.
- * Exported so trimCore can apply the SAME predicate when it records how much
- * cash-spending basis a sale consumed. */
-export const spentCash = (lot: Pick<ParkedLot, 'notes'>) =>
-  !(lot.notes && (/^ACATS from /.test(lot.notes) || /^Milestone /.test(lot.notes)));
+ * challenge account). The explicit origin column decides; rows predating it
+ * (null origin — including lots restored from old undo snapshots) fall back
+ * to the notes prefix the app used to write. THE single predicate — the
+ * FIFO's consumed-basis math and every activity view share it. */
+export const spentCash = (lot: Pick<ParkedLot, 'notes' | 'origin'>) =>
+  lot.origin != null
+    ? lot.origin === 'purchase'
+    : !(lot.notes && (/^ACATS from /.test(lot.notes) || /^Milestone /.test(lot.notes)));
+
+/** Cash impact of one lot on its account's tracked balance — the row-level
+ * inverse of computeAccountCash, exported so an activity walk can never
+ * disagree with the account total. Purchases spend (unless ACATS/milestone);
+ * DRIP dividends (price set) moved no cash; cash dividends credit. */
+export function lotCashImpact(
+  lot: Pick<ParkedLot, 'source' | 'amount' | 'price' | 'notes' | 'origin'>,
+): number {
+  if (lot.source === 'purchase') return spentCash(lot) ? -lot.amount : 0;
+  return lot.price != null ? 0 : lot.amount;
+}
+
+/** Cash impact of a sale: proceeds credit (unless they funded the challenge
+ * ledger instead), and the consumed purchase basis stays spent. */
+export function saleCashImpact(
+  sale: Pick<ParkedSale, 'proceeds' | 'fundedChallenge' | 'consumedBasis'>,
+): number {
+  return (sale.fundedChallenge ? 0 : sale.proceeds) - (sale.consumedBasis ?? 0);
+}
 
 export interface AccountCashBreakdown {
   balance: number;

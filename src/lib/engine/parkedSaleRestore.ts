@@ -65,6 +65,7 @@ export function buildSaleSnapshot(
       reclassifiedAt: lot.reclassifiedAt ?? null,
       rocAllocatedAt: lot.rocAllocatedAt ?? null,
       rocOverflow: lot.rocOverflow ?? null,
+      origin: lot.origin ?? null,
       notes: lot.notes ?? null,
       adjustments: preAdjustments
         .filter((a) => a.shareLotId === c.id)
@@ -122,6 +123,7 @@ export interface SaleRestorePlan {
     reclassifiedAt: string | null;
     rocAllocatedAt: string | null;
     rocOverflow: number | null;
+    origin: 'purchase' | 'transfer' | 'milestone' | null;
     notes: string | null;
   }[];
   /** Absolute targets for surviving lots. */
@@ -212,6 +214,7 @@ export function planSaleRestore(
         reclassifiedAt: slice.reclassifiedAt,
         rocAllocatedAt: slice.rocAllocatedAt,
         rocOverflow: slice.rocOverflow,
+        origin: slice.origin ?? null,
         notes: slice.notes,
       });
     } else {

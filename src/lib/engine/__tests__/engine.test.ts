@@ -384,6 +384,53 @@ describe('parked cash — tracked balance with auto-flows', () => {
     expect(result.purchases).toBeCloseTo(842.34, 9);
     expect(result.balance).toBeCloseTo(-342.37, 9);
   });
+
+  it('spentCash: explicit origin wins; null origin falls back to the notes prefix', async () => {
+    const { spentCash } = await import('../parkedCash');
+    expect(spentCash({ origin: 'purchase', notes: 'ACATS from Stash' })).toBe(true); // origin beats notes
+    expect(spentCash({ origin: 'transfer', notes: null })).toBe(false);
+    expect(spentCash({ origin: 'milestone', notes: null })).toBe(false);
+    expect(spentCash({ origin: null, notes: 'ACATS from Stash 2026-08-06' })).toBe(false);
+    expect(spentCash({ origin: null, notes: 'Milestone 100000 bank' })).toBe(false);
+    expect(spentCash({ notes: null })).toBe(true);
+  });
+
+  it('row-level impacts mirror the account totals: lots, sales, cash events', async () => {
+    const { lotCashImpact, saleCashImpact, signedParkedCash } = await import('../parkedCash');
+    // Purchases spend; ACATS/milestone lots do not.
+    expect(lotCashImpact({ source: 'purchase', amount: 400, price: 100, notes: null, origin: null })).toBe(-400);
+    expect(lotCashImpact({ source: 'purchase', amount: 90, price: null, notes: 'x', origin: 'transfer' })).toBe(0);
+    expect(lotCashImpact({ source: 'purchase', amount: 80, price: null, notes: 'x', origin: 'milestone' })).toBe(0);
+    // DRIP (price set, even a sold relic) moved no cash; cash dividends credit.
+    expect(lotCashImpact({ source: 'dividend', amount: 15, price: 150, notes: null, origin: null })).toBe(0);
+    expect(lotCashImpact({ source: 'dividend', amount: 25, price: null, notes: null, origin: null })).toBe(25);
+    // Sales: proceeds unless funded away; consumed basis stays spent.
+    expect(saleCashImpact({ proceeds: 499.97, fundedChallenge: false, consumedBasis: 123.98 })).toBeCloseTo(376 - 0.01, 9);
+    expect(saleCashImpact({ proceeds: 2000, fundedChallenge: true, consumedBasis: null })).toBe(0);
+    // Cash events: withdrawals/fees debit, everything else credits as signed.
+    expect(signedParkedCash({ id: 'x', accountId: 'a', date: 'd', type: 'withdrawal', amount: 50 })).toBe(-50);
+    expect(signedParkedCash({ id: 'x', accountId: 'a', date: 'd', type: 'adjustment', amount: -90 })).toBe(-90);
+  });
+
+  it('a transfer plus its compensating adjustment leaves source cash unchanged', async () => {
+    const { computeAccountCash } = await import('../parkedCash');
+    const acct = 'src';
+    // Before: one purchase lot 842.34 → balance −842.34. Transfer consumes
+    // 123.98 of basis (lot shrinks to 718.36) and the app writes the
+    // −123.98 adjustment. Net: still −842.34.
+    const result = computeAccountCash(acct, {
+      parkedCashEvents: [
+        { id: 'adj', accountId: acct, date: '2026-08-19', type: 'adjustment', amount: -123.98, notes: 'ACATS to IRA — purchase basis stays spent here' },
+      ],
+      parkedSales: [],
+      parked: [{ id: 'p1', ticker: 'MU', accountId: acct, account: 'Src', category: 'Semiconductors', shares: 2.988, avgCost: 240.4, currentPrice: 969.48 }],
+      parkedLots: [
+        { id: 'l1', parkedPositionId: 'p1', date: '2025-11-06', source: 'purchase', shares: 2.988, amount: 718.36 },
+      ],
+      cashEvents: [],
+    });
+    expect(result.balance).toBeCloseTo(-842.34, 9);
+  });
 });
 
 describe('wash sale — crypto exemption', () => {

@@ -37,6 +37,10 @@ export interface ParkedLot {
    * (estimated capital gain). Never derived from adjustment rows — trims and
    * transfers legitimately scale or cascade those away. */
   rocOverflow?: number | null;
+  /** How the shares arrived: purchase spent this account's cash; transfer
+   * (ACATS) and milestone (challenge money) did not. null/undefined = legacy
+   * row — spentCash falls back to the notes prefix. */
+  origin?: 'purchase' | 'transfer' | 'milestone' | null;
   notes?: string | null;
 }
 

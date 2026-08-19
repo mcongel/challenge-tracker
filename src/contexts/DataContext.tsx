@@ -1442,9 +1442,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const positionAdjustments = adjustmentsForLots(positionLots, state.parkedLotAdjustments);
 
       const fromName = p.account;
-      const { updates, deletes, adjustmentUpdates, consumed } = consumeLotsFifo(
-        positionLots, shares, positionAdjustments,
-      );
+      const { updates, deletes, adjustmentUpdates, consumed, cashSpendingBasisConsumed } =
+        consumeLotsFifo(positionLots, shares, positionAdjustments);
 
       // Destination position: merge into an existing one or create it.
       const dest = state.parked.find(
@@ -1504,6 +1503,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
               reclassifiedAt: src?.reclassifiedAt ?? null,
               rocAllocatedAt: src?.rocAllocatedAt ?? null,
               rocOverflow: src?.rocOverflow ?? null,
+              origin: 'transfer',
               notes: `ACATS from ${fromName} ${date}`,
             });
           }),
@@ -1555,6 +1555,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         const { error: err } = await client.from('parked_lots').delete().in('id', deletes);
         if (err) throw err;
       }
+      // The source's tracked cash derives "spent" from CURRENT lot amounts,
+      // so shrinking them just credited the transferred basis back — but
+      // ACATS moves shares, not cash. A compensating adjustment (the same
+      // heal mechanism reconcile uses) keeps the original purchase spent.
+      const transferredBasis = roundCents(cashSpendingBasisConsumed);
+      if (transferredBasis > 0) {
+        const toName = state.accounts.find((a) => a.id === toAccountId)?.name ?? 'destination';
+        const { error: cashErr } = await client.from('parked_cash_events').insert(
+          parkedCashEventPayload({
+            accountId: p.accountId,
+            date,
+            type: 'adjustment',
+            amount: -transferredBasis,
+            notes: `ACATS to ${toName} — purchase basis stays spent here`,
+          }),
+        );
+        if (cashErr) throw cashErr;
+      }
       // A full transfer moves the holding, not just shares — transition
       // rotations that sell it must follow to the destination, or the
       // source-position delete/archive silently kills the what-if.
@@ -1568,7 +1586,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       await Promise.all([recomputeParkedAggregate(destId), recomputeParkedAggregate(parkedId)]);
       await refresh();
     },
-    [refresh, state.parked, state.parkedLots, state.parkedLotAdjustments, recomputeParkedAggregate],
+    [refresh, state.parked, state.parkedLots, state.parkedLotAdjustments, state.accounts, recomputeParkedAggregate],
   );
 
   const accountCash = useCallback(
@@ -1993,6 +2011,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             reclassified_at: u.reclassifiedAt,
             roc_allocated_at: u.rocAllocatedAt,
             roc_overflow: u.rocOverflow,
+            origin: u.origin,
             notes: u.notes,
           })),
           { onConflict: 'id', ignoreDuplicates: true },
@@ -2324,6 +2343,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             shares,
             price: voo.price,
             amount: roundCents(m.amountBanked),
+            origin: 'milestone',
             notes: `Milestone ${m.level} bank`,
           }),
         );

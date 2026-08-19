@@ -215,6 +215,7 @@ export const mapParkedLot = (r: any): ParkedLot => ({
   reclassifiedAt: r.reclassified_at,
   rocAllocatedAt: r.roc_allocated_at,
   rocOverflow: r.roc_overflow == null ? null : Number(r.roc_overflow),
+  origin: r.origin ?? null,
   notes: r.notes,
 });
 
@@ -230,6 +231,7 @@ export const parkedLotPayload = (l: Omit<ParkedLot, 'id'>) => ({
   reclassified_at: l.reclassifiedAt ?? null,
   roc_allocated_at: l.rocAllocatedAt ?? null,
   roc_overflow: l.rocOverflow ?? null,
+  origin: l.origin ?? null,
   notes: l.notes ?? null,
 });
 
