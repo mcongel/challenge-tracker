@@ -19,9 +19,11 @@ export function RowCard({
   /** Row-level buttons (edit/delete) — rendered as a right-aligned strip. */
   actions?: React.ReactNode;
 }) {
+  // active: uses the token, not a gray — raw gray-50 isn't in the dark
+  // shim's allowlist and tap-flashed near-white on phones.
   return (
     <div
-      className={cn('px-4 py-3', onClick && 'cursor-pointer active:bg-gray-50', className)}
+      className={cn('px-4 py-3', onClick && 'cursor-pointer active:bg-surface-muted', className)}
       onClick={onClick}
     >
       <div className="flex items-baseline justify-between gap-3">
