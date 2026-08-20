@@ -447,6 +447,40 @@ describe('parked cash — tracked balance with auto-flows', () => {
     expect(y2025.totalTax).toBeCloseTo(15, 9);
   });
 
+  it('trimFuelRows: never-trim excluded; rank first, semis-when-over-cap, then size', async () => {
+    const { trimFuelRows } = await import('../parkedTrimFuel');
+    const pos = (id: string, over: Record<string, unknown>) => ({
+      id, ticker: id, accountId: 'a', account: 'A', category: 'Other',
+      shares: 10, avgCost: 10, currentPrice: 100, ...over,
+    }) as import('../types').ParkedPosition;
+    const oldLot = (posId: string, shares: number, amount: number) => ({
+      id: `${posId}-l`, parkedPositionId: posId, date: '2020-01-01',
+      source: 'purchase' as const, shares, amount,
+    });
+    const parked = [
+      pos('NVDA', { category: 'Semiconductors' }),        // never-trim ticker: excluded
+      pos('RANKED', { trimRank: 1, currentPrice: 10 }),   // small but planned first
+      pos('SEMI', { category: 'Semiconductors', currentPrice: 50 }),
+      pos('BIG', { currentPrice: 500 }),                  // biggest ready value
+    ];
+    const lotsByPosition = new Map(parked.map((p) => [p.id, [oldLot(p.id, 10, 100)]]));
+    const args = {
+      parked, lotsByPosition, adjustments: [], today: '2026-08-19',
+      ltRate: 0.21, stRate: 0.29,
+    };
+    // Under the cap: rank first, then pure size (SEMI gets no jump).
+    expect(trimFuelRows({ ...args, overCap: false }).map((r) => r.p.id))
+      .toEqual(['RANKED', 'BIG', 'SEMI']);
+    // Over the cap: unranked semis jump the size order (double-duty trims).
+    expect(trimFuelRows({ ...args, overCap: true }).map((r) => r.p.id))
+      .toEqual(['RANKED', 'SEMI', 'BIG']);
+    // Tax math rides along: all long-term at 21%.
+    const big = trimFuelRows({ ...args, overCap: false }).find((r) => r.p.id === 'BIG')!;
+    expect(big.readyValue).toBe(5000);
+    expect(big.gain).toBeCloseTo(4900, 9);
+    expect(big.estTax).toBeCloseTo(4900 * 0.21, 9);
+  });
+
   it('splitParkedPots: live-price merge respects the quotable wall; four pots partition', async () => {
     const { splitParkedPots } = await import('../parkedWalls');
     const pos = (id: string, over: Record<string, unknown>) => ({

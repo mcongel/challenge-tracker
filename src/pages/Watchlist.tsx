@@ -7,6 +7,7 @@ import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { ErrorCard } from '../components/ui/ErrorCard';
 import { SkeletonTable } from '../components/ui/SkeletonTable';
 import { TableCard, theadCls } from '../components/ui/Card';
+import { RowCard, RowCardStat } from '../components/ui/RowCard';
 import { Field } from '../components/ui/Field';
 import { FormError, ModalFooter, useModalForm } from '../components/ui/useModalForm';
 import { useData } from '../contexts/DataContext';
@@ -54,6 +55,23 @@ export function Watchlist() {
   const openTickers = new Set(lots.map((l) => l.ticker));
   const industries = useIndustries(watchlist.map((w) => w.ticker));
 
+  // Per-row derived facts, computed once so the table and the phone cards
+  // render from the same numbers.
+  const rows = ordered.map((w) => {
+    const conflicts = washSaleConflicts(trades, saleRadar, w.ticker, today);
+    const washed = conflicts.trades.length > 0 || conflicts.outside.length > 0;
+    const washUntil = washed
+      ? addDays(
+          [...conflicts.trades.map((t) => t.closeDate),
+           ...conflicts.outside.map((s) => s.saleDate)].sort().at(-1)!,
+          WASH_SALE_WINDOW_DAYS,
+        )
+      : null;
+    const livePrice = overrides[w.ticker] ?? quotes[w.ticker];
+    const days = w.catalystDate ? daysBetween(today, w.catalystDate) : null;
+    return { w, washed, washUntil, livePrice, days };
+  });
+
   return (
     <div>
       <PageHeader
@@ -84,6 +102,72 @@ export function Watchlist() {
               delayed quotes as everywhere else; hit refresh in the header if the stamp looks stale.
             </p>
           }
+          cards={rows.map(({ w, washed, washUntil, livePrice, days }) => (
+            <RowCard
+              key={w.id}
+              title={
+                <span>
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <span className="font-medium">{w.ticker}</span>
+                    {openTickers.has(w.ticker) && (
+                      <span className="inline-block rounded-full bg-green-50 text-green-700 px-1.5 py-0.5 text-[10px] font-medium"
+                        title="Currently the open challenge position.">
+                        riding
+                      </span>
+                    )}
+                    {washed && (
+                      <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-50 text-amber-800 px-1.5 py-0.5 text-[10px] font-medium"
+                        title={`Sold at a loss within the last ${WASH_SALE_WINDOW_DAYS} days — buying before ${washUntil} disallows that loss (Rule 9).`}>
+                        <AlertTriangle className="h-3 w-3" /> wash until {washUntil}
+                      </span>
+                    )}
+                  </span>
+                  {industries[w.ticker] && (
+                    <span className="block text-xs font-normal text-gray-400">{industries[w.ticker]}</span>
+                  )}
+                </span>
+              }
+              value={livePrice != null ? formatCurrency(livePrice) : '—'}
+              actions={
+                <>
+                  <button onClick={() => setEditing(w)} className="p-2 rounded hover:bg-gray-100" aria-label="Edit candidate">
+                    <Pencil className="h-4 w-4 text-gray-300 hover:text-gray-600" />
+                  </button>
+                  <button onClick={() => setDeleting(w)} className="p-2 rounded hover:bg-red-50" aria-label="Remove candidate">
+                    <Trash2 className="h-4 w-4 text-gray-300 hover:text-red-600" />
+                  </button>
+                </>
+              }
+            >
+              <RowCardStat label="Catalyst">
+                {w.catalyst ?? <span className="text-gray-400">—</span>}
+                {w.catalystDate && (
+                  <span className="block">
+                    <span className="text-gray-600">{w.catalystDate}</span>
+                    {days != null && (
+                      <span className={cn('ml-1.5',
+                        days < 0 ? 'text-gray-400' : days <= 7 ? 'font-bold text-amber-700' : 'text-gray-400')}>
+                        {days < 0 ? `${-days}d ago` : days === 0 ? 'today' : `in ${days}d`}
+                      </span>
+                    )}
+                  </span>
+                )}
+              </RowCardStat>
+              <RowCardStat label="Entry zone">
+                {w.entryNote ?? <span className="text-gray-400">—</span>}
+                {w.entryTrigger != null && (
+                  <span className="block text-gray-400"
+                    title="Dashboard alert fires at/below this price.">
+                    alert ≤ {formatCurrency(w.entryTrigger)}
+                  </span>
+                )}
+              </RowCardStat>
+              <RowCardStat label="Planned target">
+                {w.plannedTarget != null ? formatCurrency(w.plannedTarget) : <span className="text-gray-400">—</span>}
+              </RowCardStat>
+              {w.notes && <p className="mt-1 text-xs text-gray-500 truncate">{w.notes}</p>}
+            </RowCard>
+          ))}
         >
           <table className="w-full text-sm compact-table">
             <thead className="bg-gray-50 sticky top-0">
@@ -99,18 +183,7 @@ export function Watchlist() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {ordered.map((w) => {
-                const conflicts = washSaleConflicts(trades, saleRadar, w.ticker, today);
-                const washed = conflicts.trades.length > 0 || conflicts.outside.length > 0;
-                const washUntil = washed
-                  ? addDays(
-                      [...conflicts.trades.map((t) => t.closeDate),
-                       ...conflicts.outside.map((s) => s.saleDate)].sort().at(-1)!,
-                      WASH_SALE_WINDOW_DAYS,
-                    )
-                  : null;
-                const livePrice = overrides[w.ticker] ?? quotes[w.ticker];
-                const days = w.catalystDate ? daysBetween(today, w.catalystDate) : null;
+              {rows.map(({ w, washed, washUntil, livePrice, days }) => {
                 return (
                   <tr key={w.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 font-medium">

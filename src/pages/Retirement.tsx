@@ -11,7 +11,8 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
 import { ErrorCard } from '../components/ui/ErrorCard';
 import { SkeletonTable } from '../components/ui/SkeletonTable';
-import { Card, theadCls } from '../components/ui/Card';
+import { Card, TableCard, theadCls } from '../components/ui/Card';
+import { RowCard, RowCardStat } from '../components/ui/RowCard';
 import { StatTile, toneOf } from '../components/ui/StatTile';
 import { FormError, ModalFooter, useModalForm } from '../components/ui/useModalForm';
 import { useData } from '../contexts/DataContext';
@@ -149,7 +150,91 @@ export function Retirement() {
 
           {chartSnapshots.length >= 2 && <RetirementValueChart snapshots={chartSnapshots} />}
 
-          <Card className="overflow-x-auto">
+          <TableCard
+            cards={groups.map((g) => (
+              <Fragment key={g.account.id}>
+                <div className="bg-gray-50 px-4 py-2">
+                  <span className="flex items-center gap-1.5 font-bold text-gray-700">
+                    {g.account.name}
+                    {g.account.retirementFlavor && (
+                      <span className="inline-block rounded-full bg-purple-50 text-purple-700 px-1.5 py-0.5 text-[10px] font-medium">
+                        {g.account.retirementFlavor}
+                      </span>
+                    )}
+                    <span className="text-xs font-normal text-gray-400 tabular-nums">
+                      · <span className="text-sm font-semibold text-gray-900">{money(g.positions.reduce((s, p) => s + parkedMarketValue(p), 0))}</span>
+                    </span>
+                  </span>
+                </div>
+                {g.positions
+                  .sort((a, b) => parkedMarketValue(b) - parkedMarketValue(a))
+                  .map((p) => {
+                    const value = parkedMarketValue(p);
+                    const basis = parkedCostBasis(p);
+                    const expanded = expandedId === p.id;
+                    return (
+                      <RowCard
+                        key={p.id}
+                        onClick={() => setExpandedId(expanded ? null : p.id)}
+                        title={
+                          <>
+                            <span className="flex items-center gap-1.5">
+                              {expanded
+                                ? <ChevronDown className="h-4 w-4 text-gray-400" />
+                                : <ChevronRight className="h-4 w-4 text-gray-300" />}
+                              {p.ticker}
+                              <span className={cn('inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium', categoryPillCls(p.category))}>
+                                {p.category}
+                              </span>
+                            </span>
+                            {tickerNames[p.ticker] && (
+                              <p className="text-xs font-normal text-gray-400 truncate">
+                                {tickerNames[p.ticker]}
+                              </p>
+                            )}
+                          </>
+                        }
+                        value={money(value)}
+                        actions={
+                          <button onClick={(e) => { e.stopPropagation(); setEditing(p); }}
+                            className="p-2 rounded hover:bg-gray-100" aria-label={`Edit ${p.ticker}`}>
+                            <Pencil className="h-4 w-4 text-gray-300 hover:text-gray-600" />
+                          </button>
+                        }
+                      >
+                        <RowCardStat label="Shares">{fmtSh(p.shares)}</RowCardStat>
+                        <RowCardStat label="Price">
+                          {formatCurrency(p.currentPrice)}
+                          {overrides[p.ticker] !== undefined && (
+                            <span className="ml-1 text-[10px] uppercase text-amber-800 font-bold"
+                              title="Pinned manual price — beats quotes. Clear it from Edit.">
+                              pin
+                            </span>
+                          )}
+                        </RowCardStat>
+                        <RowCardStat label="Unrealized">
+                          <span className={cn('font-medium',
+                            value - basis >= 0 ? 'text-green-600' : 'text-red-600')}>
+                            {signedMoney(value - basis)}
+                            {basis > 0 && (
+                              <span className="ml-1 font-normal">
+                                {formatPercent((value - basis) / basis)}
+                              </span>
+                            )}
+                          </span>
+                        </RowCardStat>
+                        {expanded && (
+                          <div className="-mx-4 mt-3 bg-gray-50 px-4 py-4" onClick={(e) => e.stopPropagation()}>
+                            <LotPanel position={p}
+                              summary={unlockSummary(lotsByPosition.get(p.id) ?? [], new Date().toISOString().slice(0, 10))} />
+                          </div>
+                        )}
+                      </RowCard>
+                    );
+                  })}
+              </Fragment>
+            ))}
+          >
             <table className="w-full text-sm compact-table">
               <thead className="bg-gray-50 sticky top-0">
                 <tr className={theadCls}>
@@ -255,7 +340,7 @@ export function Retirement() {
                 ))}
               </tbody>
             </table>
-          </Card>
+          </TableCard>
           <p className="mt-3 text-xs text-gray-400">
             Sales, taxes, and the 366-day clocks are informational curiosities here — retirement
             money is tax-sheltered and can't fund the challenge, so nothing on this page feeds

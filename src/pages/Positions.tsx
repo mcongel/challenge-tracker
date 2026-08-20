@@ -7,6 +7,8 @@ import { ErrorCard } from '../components/ui/ErrorCard';
 import { SplitModal } from '../components/SplitModal';
 import { SkeletonTable } from '../components/ui/SkeletonTable';
 import { TableCard, theadCls } from '../components/ui/Card';
+import { RowCard, RowCardStat } from '../components/ui/RowCard';
+import { SortHeader, useSortState } from '../components/ui/SortHeader';
 import { EditLotModal } from '../components/positions/EditLotModal';
 import { AddPositionModal } from '../components/positions/AddPositionModal';
 import { ClosePositionModal } from '../components/positions/ClosePositionModal';
@@ -22,6 +24,8 @@ import {
   cn, formatCurrency, formatPercent, money, primaryBtnCls, todayISO,
 } from '../lib/utils';
 import { useIndustries } from '../lib/useIndustries';
+
+type PosSortKey = 'ticker' | 'shares' | 'value' | 'unrealized' | 'target' | 'daysHeld';
 
 export function Positions() {
   const data = useData();
@@ -42,6 +46,47 @@ export function Positions() {
     for (const lot of lots) (m.get(lot.ticker) ?? m.set(lot.ticker, []).get(lot.ticker)!).push(lot);
     return [...m.entries()].sort(([a], [b]) => a.localeCompare(b));
   }, [lots]);
+
+  const { sort, toggleSort } = useSortState<PosSortKey>({
+    initial: { key: 'ticker', dir: 'asc' },
+    naturalDir: {
+      ticker: 'asc', shares: 'desc', value: 'desc',
+      unrealized: 'desc', target: 'asc', daysHeld: 'desc',
+    },
+    storageKey: 'positionsSort',
+  });
+  // Sorted view of the grouped lots: groups order by their aggregate (sum of
+  // shares/value/unrealized; nearest target; longest days held), lots inside a
+  // group by their own value. The default (ticker asc) reproduces byTicker's
+  // alphabetical order. Not memoized — priceMap is rebuilt every render anyway
+  // and the strategy caps this at a handful of lots.
+  const lotMetric = (lot: PositionLot): number => {
+    const price = priceMap[lot.ticker] ?? lot.avgCost;
+    switch (sort.key) {
+      case 'shares': return lot.shares;
+      case 'value': return marketValue(lot, price);
+      case 'unrealized': return unrealized(lot, price);
+      case 'target': return lot.exitTarget;
+      case 'daysHeld': return daysHeld(lot, today);
+      default: return 0;
+    }
+  };
+  const dirMul = sort.dir === 'asc' ? 1 : -1;
+  const sortedGroups = byTicker
+    .map(([ticker, tickerLots]): [string, PositionLot[]] => [
+      ticker,
+      sort.key === 'ticker'
+        ? tickerLots
+        : tickerLots.slice().sort((a, b) => (lotMetric(a) - lotMetric(b)) * dirMul),
+    ])
+    .sort((a, b) => {
+      if (sort.key === 'ticker') return a[0].localeCompare(b[0]) * dirMul;
+      const agg = (groupLots: PositionLot[]) =>
+        sort.key === 'target' ? Math.min(...groupLots.map(lotMetric))
+        : sort.key === 'daysHeld' ? Math.max(...groupLots.map(lotMetric))
+        : groupLots.reduce((s, l) => s + lotMetric(l), 0);
+      return (agg(a[1]) - agg(b[1])) * dirMul;
+    });
 
   return (
     <div>
@@ -69,26 +114,95 @@ export function Positions() {
           hint="Each buy becomes its own lot. Closing moves it to the Trade Log and writes the Sell to the Cash Ledger."
         />
       ) : (
-        <TableCard>
+        <TableCard
+          cards={sortedGroups.flatMap(([ticker, tickerLots]) => {
+            const hasOverride = overrides[ticker] !== undefined;
+            const hasPrice = hasOverride || quotes[ticker] !== undefined;
+            return tickerLots.map((lot) => {
+              const price = priceMap[ticker] ?? lot.avgCost;
+              const u = unrealized(lot, price);
+              return (
+                <RowCard
+                  key={lot.id}
+                  title={
+                    <span className="flex items-center gap-1.5">
+                      <span className="font-bold">{ticker}</span>
+                      <span className="text-xs font-normal text-gray-400 tabular-nums">{lot.buyDate}</span>
+                      {price >= lot.exitTarget && (
+                        <span className="inline-block rounded-full bg-green-50 text-green-600 px-1.5 py-0.5 text-[10px] font-bold uppercase">
+                          target hit
+                        </span>
+                      )}
+                    </span>
+                  }
+                  value={money(marketValue(lot, price))}
+                  actions={
+                    <>
+                      <button onClick={() => setCloseTicker(ticker)}
+                        className="p-2 rounded text-xs font-medium text-indigo-600 hover:bg-indigo-50">
+                        Close
+                      </button>
+                      <button onClick={() => setSplitTicker(ticker)}
+                        className="p-2 rounded text-xs font-medium text-gray-400 hover:bg-gray-100 flex items-center gap-0.5">
+                        <Scissors className="h-3 w-3" /> Split
+                      </button>
+                      <button onClick={() => setPriceTicker(ticker)}
+                        className="p-2 rounded text-xs font-medium text-gray-400 hover:bg-gray-100"
+                        title={hasOverride
+                          ? `Manual price (pinned — beats quotes${overrideSetAt[ticker] ? `, set ${overrideSetAt[ticker].slice(0, 10)}` : ''})`
+                          : hasPrice ? 'Delayed quote — tap to pin a manual price' : 'Set price'}>
+                        Price
+                      </button>
+                      <button onClick={() => setEditingLot(lot)} className="p-2 rounded hover:bg-gray-100"
+                        aria-label="Edit lot">
+                        <Pencil className="h-4 w-4 text-gray-300 hover:text-gray-600" />
+                      </button>
+                      <button onClick={() => setDeletingLot(lot)} className="p-2 rounded hover:bg-red-50"
+                        aria-label="Delete lot">
+                        <Trash2 className="h-4 w-4 text-gray-300 hover:text-red-600" />
+                      </button>
+                    </>
+                  }
+                >
+                  <RowCardStat label="Shares">{lot.shares}</RowCardStat>
+                  <RowCardStat label="Avg cost">{formatCurrency(lot.avgCost)}</RowCardStat>
+                  <RowCardStat label="Price">
+                    {hasPrice ? formatCurrency(price) : '—'}
+                    {hasOverride && <span className="ml-1 text-[10px] uppercase text-amber-800">pin</span>}
+                  </RowCardStat>
+                  <RowCardStat label="Unrealized" className={u >= 0 ? 'text-green-600' : 'text-red-600'}>
+                    {money(u)} ({formatPercent(unrealizedPct(lot, price))})
+                  </RowCardStat>
+                  <RowCardStat label="Target"
+                    className={price >= lot.exitTarget ? 'font-bold text-green-600' : undefined}>
+                    {formatCurrency(lot.exitTarget)}
+                    {lot.exitDate && <span className="ml-1 font-normal text-gray-400">by {lot.exitDate}</span>}
+                  </RowCardStat>
+                  <RowCardStat label="Days held">{daysHeld(lot, today)}</RowCardStat>
+                </RowCard>
+              );
+            });
+          })}
+        >
           <table className="w-full text-sm compact-table">
-            <thead className="bg-gray-50 sticky top-0">
+            <thead className="bg-gray-50 sticky top-0 group/head">
               <tr className={theadCls}>
-                <th className="px-4 py-3">Lot</th>
-                <th className="px-4 py-3 text-right">Shares</th>
+                <SortHeader<PosSortKey> label="Lot" sortKey="ticker" sort={sort} onSort={toggleSort} />
+                <SortHeader<PosSortKey> label="Shares" sortKey="shares" sort={sort} onSort={toggleSort} align="right" />
                 <th className="px-4 py-3 text-right">Avg cost</th>
                 <th className="px-4 py-3 text-right">Basis</th>
                 <th className="px-4 py-3 text-right">Price</th>
-                <th className="px-4 py-3 text-right">Value</th>
-                <th className="px-4 py-3 text-right">Unreal $</th>
+                <SortHeader<PosSortKey> label="Value" sortKey="value" sort={sort} onSort={toggleSort} align="right" />
+                <SortHeader<PosSortKey> label="Unreal $" sortKey="unrealized" sort={sort} onSort={toggleSort} align="right" />
                 <th className="px-4 py-3 text-right">Unreal %</th>
-                <th className="px-4 py-3 text-right">Days</th>
+                <SortHeader<PosSortKey> label="Days" sortKey="daysHeld" sort={sort} onSort={toggleSort} align="right" />
                 <th className="px-4 py-3">LT on</th>
-                <th className="px-4 py-3 text-right">Target</th>
+                <SortHeader<PosSortKey> label="Target" sortKey="target" sort={sort} onSort={toggleSort} align="right" />
                 <th className="px-2 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {byTicker.map(([ticker, tickerLots]) => {
+              {sortedGroups.map(([ticker, tickerLots]) => {
                 const hasOverride = overrides[ticker] !== undefined;
                 const hasPrice = hasOverride || quotes[ticker] !== undefined;
                 const subtotalValue = tickerLots.reduce(

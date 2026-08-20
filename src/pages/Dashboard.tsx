@@ -7,6 +7,7 @@ import {
 import { useData } from '../contexts/DataContext';
 import { lotsByPositionId } from '../lib/engine';
 import { activeAlerts } from '../lib/alerts';
+import { AlertHistory } from '../components/AlertHistory';
 import { useScoreSummary } from '../lib/useScoreSummary';
 import {
   isArchivedPosition, isNeverTrimFuel, lead, netContributed,
@@ -354,6 +355,9 @@ export function Dashboard() {
           </div>
         )}
       </Card>
+
+      {/* Reference, not workflow: what the email pipeline actually fired. */}
+      <AlertHistory />
     </div>
   );
 }

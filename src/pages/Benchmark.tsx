@@ -11,6 +11,7 @@ import { Modal } from '../components/ui/Modal';
 import { ErrorCard } from '../components/ui/ErrorCard';
 import { SkeletonTable } from '../components/ui/SkeletonTable';
 import { Card, TableCard, theadCls } from '../components/ui/Card';
+import { RowCard, RowCardStat } from '../components/ui/RowCard';
 import { Field } from '../components/ui/Field';
 import { FormError } from '../components/ui/useModalForm';
 import { useData } from '../contexts/DataContext';
@@ -214,6 +215,17 @@ export function Benchmark() {
         />
       ) : (
         <TableCard
+          cards={[...benchmarkDeposits].reverse().map((d) => (
+            <RowCard
+              key={d.id}
+              title={<span className="tabular-nums text-gray-600">{d.date}</span>}
+              value={vooToday ? money(shadowShares(d) * vooToday) : '—'}
+            >
+              <RowCardStat label="Amount in">{formatCurrency(d.amount)}</RowCardStat>
+              <RowCardStat label="VOO that day">{formatCurrency(d.vooPriceThatDay)}</RowCardStat>
+              <RowCardStat label="Shadow shares">{shadowShares(d).toFixed(6)}</RowCardStat>
+            </RowCard>
+          ))}
           footer={
             <p className="px-4 py-3 text-xs text-gray-400 border-t border-gray-100">
               Two honesty notes: the shadow ignores VOO dividends (~1.3%/yr — flatters you), and the raw

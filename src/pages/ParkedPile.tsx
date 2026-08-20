@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Archive, ArrowLeftRight, ChevronDown, ChevronRight, Divide, Pencil, Plus,
@@ -9,15 +9,17 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorCard } from '../components/ui/ErrorCard';
 import { SkeletonTable } from '../components/ui/SkeletonTable';
 import { Card, TableCard } from '../components/ui/Card';
+import { RowCard, RowCardStat } from '../components/ui/RowCard';
 import { StatTile, toneOf } from '../components/ui/StatTile';
 import { SplitModal } from '../components/SplitModal';
 import { useData } from '../contexts/DataContext';
+import { usePileTable } from '../lib/usePileTable';
 import { lotsByPositionId } from '../lib/engine';
 import type { ParkedPosition } from '../lib/engine';
 import {
-  adjustmentsForLots, concentration, contributionStatus, daysBetween, dividendsCollected,
-  estimatedPileTax, isArchivedPosition, isNeverTrimFuel, netContributed, parkedCostBasis,
-  parkedMarketValue, positionTotalReturn, SEMI_CATEGORY, trimPreview, unlockSummary,
+  concentration, contributionStatus, dividendsCollected, isArchivedPosition, netContributed,
+  nextUnlockRows, parkedCostBasis, parkedMarketValue, positionTotalReturn, SEMI_CATEGORY,
+  trimFuelRows, unlockSummary,
 } from '../lib/engine';
 import type { PositionTotalReturn } from '../lib/engine';
 import {
@@ -25,7 +27,6 @@ import {
   signedMoney, todayISO,
 } from '../lib/utils';
 import { categoryPillCls, fmtSh, SortHeader } from '../components/parked/shared';
-import type { SortState } from '../components/parked/shared';
 import { DayChangeCell, UnlockCell, UnrealCell } from '../components/parked/PileCells';
 import { CapModal } from '../components/parked/CapModal';
 import { PileValueChart } from '../components/parked/PileValueChart';
@@ -37,25 +38,6 @@ import { LotPanel } from '../components/parked/LotPanel';
 import { TransferModal } from '../components/parked/TransferModal';
 import { TrimModal } from '../components/parked/TrimModal';
 
-type GroupBy = 'account' | 'ticker' | 'flat';
-type SortKey =
-  | 'default' | 'label' | 'shares' | 'avgCost' | 'price' | 'dayChange' | 'value' | 'unreal'
-  | 'totalReturn' | 'unlock';
-/** First click on a header sorts the way you'd want: money and size biggest
- * first, names A–Z, unlocks soonest first. */
-const NATURAL_DIR: Record<SortKey, 'asc' | 'desc'> = {
-  default: 'desc',
-  label: 'asc',
-  shares: 'desc',
-  avgCost: 'desc',
-  price: 'desc',
-  dayChange: 'desc',
-  value: 'desc',
-  unreal: 'desc',
-  totalReturn: 'desc',
-  unlock: 'asc',
-};
-const SORT_KEYS = Object.keys(NATURAL_DIR) as SortKey[];
 
 export function ParkedPile() {
   const {
@@ -122,187 +104,27 @@ export function ParkedPile() {
   // two decades of axis made the recent story unreadable (owner call).
   const valueHistory = useValueHistory(allParked, parkedLots, pileSales, c.total, '2020-01-01');
 
-  // The funding answer, computed instead of tooltipped: which holdings have
-  // long-term (Rule 5) shares ready NOW, worth how much, at what est. tax —
-  // ordered by the plan (trim rank), then double-duty semis when over cap,
-  // then size. Never-trim holds are excluded by definition.
-  const trimFuel = useMemo(() => {
-    const rows = parked
-      .filter((p) => !isNeverTrimFuel(p))
-      .map((p) => {
-        const lots = lotsByPosition.get(p.id) ?? [];
-        const summ = unlockSummary(lots, today);
-        if (summ.unlockedShares <= 1e-9) return null;
-        const readyValue = summ.unlockedShares * p.currentPrice;
-        let gain: number | null = null;
-        let estTax: number | null = null;
-        if (lots.length > 0) {
-          try {
-            const prev = trimPreview(
-              lots, summ.unlockedShares, p.currentPrice, today,
-              adjustmentsForLots(lots, parkedLotAdjustments),
-            );
-            gain = prev.gain;
-            estTax = estimatedPileTax(
-              prev.gain, summ.unlockedShares, prev.ltShares + prev.unknownShares,
-              ltTaxRate, stTaxRate,
-            );
-          } catch { /* preview is best-effort */ }
-        }
-        return { p, unlockedShares: summ.unlockedShares, readyValue, gain, estTax };
-      })
-      .filter((r): r is NonNullable<typeof r> => r !== null)
-      .sort((a, b) => {
-        if (a.p.trimRank != null && b.p.trimRank != null) return a.p.trimRank - b.p.trimRank;
-        if (a.p.trimRank != null) return -1;
-        if (b.p.trimRank != null) return 1;
-        if (c.overCap) {
-          const aSemi = a.p.category === SEMI_CATEGORY ? 0 : 1;
-          const bSemi = b.p.category === SEMI_CATEGORY ? 0 : 1;
-          if (aSemi !== bSemi) return aSemi - bSemi;
-        }
-        return b.readyValue - a.readyValue;
-      });
-    return rows;
-  }, [parked, lotsByPosition, parkedLotAdjustments, today, ltTaxRate, stTaxRate, c.overCap]);
-  // What unlocks next among the still-locked (and not never-trim) holdings.
+  // The funding answer and the unlock calendar are engine math now —
+  // see engine/parkedTrimFuel.ts for the ordering strategy (and its tests).
+  const trimFuel = useMemo(
+    () => trimFuelRows({
+      parked, lotsByPosition, adjustments: parkedLotAdjustments, today,
+      ltRate: ltTaxRate, stRate: stTaxRate, overCap: c.overCap,
+    }),
+    [parked, lotsByPosition, parkedLotAdjustments, today, ltTaxRate, stTaxRate, c.overCap],
+  );
   const nextUnlocks = useMemo(
-    () =>
-      parked
-        .filter((p) => !isNeverTrimFuel(p))
-        .map((p) => ({ p, next: unlockSummary(lotsByPosition.get(p.id) ?? [], today).nextUnlock }))
-        .filter((x): x is { p: ParkedPosition; next: NonNullable<typeof x.next> } => x.next != null)
-        .sort((a, b) => a.next.date.localeCompare(b.next.date))
-        .slice(0, 3),
+    () => nextUnlockRows({ parked, lotsByPosition, today }),
     [parked, lotsByPosition, today],
   );
   const capRoom = contributionCap !== null
     ? contributionStatus(netContributed(cashEvents), contributionCap).remaining
     : null;
 
-  // Three lenses: by account (where things live — the default, matching
-  // SpokenFor's grouped accounts), by ticker (across accounts), or flat so a
-  // column sort ranks the whole pile at once.
-  const [groupBy, setGroupByState] = useState<GroupBy>(() => {
-    const stored = safeStorage.get('pileGroupBy');
-    return stored === 'ticker' || stored === 'flat' ? stored : 'account';
+  // Grouping lens + sort state + grouped rows, persisted — see lib/usePileTable.
+  const { groupBy, setGroupBy, sort, toggleSort, clearSort, groups } = usePileTable({
+    parked, accounts, lotsByPosition, dayChange, totalReturnByPosition, today,
   });
-  const setGroupBy = (m: GroupBy) => {
-    setGroupByState(m);
-    safeStorage.set('pileGroupBy', m);
-  };
-
-  const [sort, setSortState] = useState<SortState<SortKey>>(() => {
-    try {
-      const stored = JSON.parse(safeStorage.get('pileSort') ?? 'null');
-      // Validate: a key retired by a later version must not survive here.
-      if (stored?.key && SORT_KEYS.includes(stored.key)) return stored as SortState<SortKey>;
-    } catch {
-      /* fall through to default */
-    }
-    return { key: 'default', dir: 'desc' };
-  });
-  const setSort = (s: SortState<SortKey>) => {
-    setSortState(s);
-    safeStorage.set('pileSort', JSON.stringify(s));
-  };
-  /** Click a header: first click sorts by its natural direction, then toggles. */
-  const toggleSort = (key: SortKey) =>
-    setSort(
-      sort.key === key
-        ? { key, dir: sort.dir === 'asc' ? 'desc' : 'asc' }
-        : { key, dir: NATURAL_DIR[key] },
-    );
-
-  const sortValue = useCallback(
-    (p: ParkedPosition, key: SortKey): number | string => {
-      switch (key) {
-        case 'label':
-          return groupBy === 'ticker' ? p.account : p.ticker;
-        case 'shares':
-          return p.shares;
-        case 'avgCost':
-          return p.avgCost;
-        case 'price':
-          return p.currentPrice;
-        case 'dayChange':
-          // Sort by the day's percent move; unknown sinks to the bottom.
-          return dayChange[p.ticker]?.changePct ?? -Infinity;
-        case 'value':
-          return parkedMarketValue(p);
-        case 'unreal':
-          // By dollars — it's the figure the cell leads with.
-          return parkedMarketValue(p) - parkedCostBasis(p);
-        case 'totalReturn':
-          return totalReturnByPosition.get(p.id)?.total ?? -Infinity;
-        case 'unlock': {
-          // Soonest actionable first: fully unlocked, then by days to unlock,
-          // undated last (the app can't prove a holding period).
-          const s = unlockSummary(lotsByPosition.get(p.id) ?? [], today);
-          if (s.totalShares > 0 && s.unlockedShares >= s.totalShares - 1e-9) return -1;
-          if (s.nextUnlock) return daysBetween(today, s.nextUnlock.date);
-          return Number.MAX_SAFE_INTEGER;
-        }
-        default:
-          return 0;
-      }
-    },
-    [groupBy, lotsByPosition, today, dayChange, totalReturnByPosition],
-  );
-
-  const sortPositions = useCallback(
-    (positions: ParkedPosition[]) => {
-      if (sort.key === 'default') {
-        // Trim rank first (the plan), then biggest value.
-        return [...positions].sort((a, b) => {
-          if (a.trimRank != null && b.trimRank != null) return a.trimRank - b.trimRank;
-          if (a.trimRank != null) return -1;
-          if (b.trimRank != null) return 1;
-          return parkedMarketValue(b) - parkedMarketValue(a);
-        });
-      }
-      const flip = sort.dir === 'asc' ? 1 : -1;
-      return [...positions].sort((a, b) => {
-        const av = sortValue(a, sort.key);
-        const bv = sortValue(b, sort.key);
-        if (typeof av === 'string' || typeof bv === 'string') {
-          return String(av).localeCompare(String(bv)) * flip;
-        }
-        return (av - bv) * flip;
-      });
-    },
-    [sort, sortValue],
-  );
-
-  const groups = useMemo(() => {
-    if (groupBy === 'flat') {
-      return [{ key: 'all', label: '', positions: sortPositions(parked) }].filter(
-        (g) => g.positions.length > 0,
-      );
-    }
-    if (groupBy === 'account') {
-      return [...accounts]
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .map((a) => ({
-          key: a.id,
-          label: a.name,
-          positions: sortPositions(parked.filter((p) => p.accountId === a.id)),
-        }))
-        .filter((g) => g.positions.length > 0);
-    }
-    const tickers = [...new Set(parked.map((p) => p.ticker))];
-    return tickers
-      .map((t) => ({
-        key: t,
-        label: t,
-        positions: sortPositions(parked.filter((p) => p.ticker === t)),
-      }))
-      .sort(
-        (a, b) =>
-          b.positions.reduce((s, p) => s + parkedMarketValue(p), 0) -
-          a.positions.reduce((s, p) => s + parkedMarketValue(p), 0),
-      );
-  }, [groupBy, accounts, parked, sortPositions]);
   const anyPositions = groups.some((g) => g.positions.length > 0);
 
   return (
@@ -488,7 +310,7 @@ export function ParkedPile() {
               ))}
               {sort.key !== 'default' && (
                 <button
-                  onClick={() => setSort({ key: 'default', dir: 'desc' })}
+                  onClick={clearSort}
                   className="ml-2 rounded-full px-2.5 py-0.5 text-xs font-medium text-gray-400 hover:bg-gray-100"
                   title="Back to trim rank, then largest value"
                 >
@@ -497,6 +319,94 @@ export function ParkedPile() {
               )}
             </div>
           }
+          cards={groups.map((group) => (
+            <div key={group.key}>
+              {groupBy !== 'flat' && (
+                <p className="bg-gray-50 px-4 py-2 text-sm font-bold text-gray-700">
+                  {group.label}
+                  <span className="ml-2 text-sm font-semibold text-text-primary tabular-nums">
+                    {money(group.positions.reduce((s, p) => s + parkedMarketValue(p), 0))}
+                  </span>
+                </p>
+              )}
+              <div className="divide-y divide-gray-100">
+                {group.positions.map((p) => {
+                  const value = parkedMarketValue(p);
+                  const basis = parkedCostBasis(p);
+                  const summ = unlockSummary(lotsByPosition.get(p.id) ?? [], today);
+                  const expanded = expandedId === p.id;
+                  const tr = totalReturnByPosition.get(p.id);
+                  return (
+                    <RowCard
+                      key={p.id}
+                      onClick={() => setExpandedId(expanded ? null : p.id)}
+                      title={
+                        <span className="flex items-center gap-1.5">
+                          {groupBy === 'ticker' ? p.account : p.ticker}
+                          {groupBy !== 'ticker' && (
+                            <span className={cn('inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium', categoryPillCls(p.category))}>
+                              {p.category}
+                            </span>
+                          )}
+                          {p.trimRank != null && (
+                            <span className="inline-block rounded-full bg-gray-100 text-text-muted px-1.5 py-0.5 text-[10px] font-bold" title={`Trim rank ${p.trimRank}`}>
+                              #{p.trimRank}
+                            </span>
+                          )}
+                        </span>
+                      }
+                      value={money(value)}
+                      actions={
+                        /* The action strip must not toggle the card's expand. */
+                        <span className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                          <button onClick={() => setTrimming(p)} className="p-2 rounded hover:bg-green-50" aria-label={`Sell ${p.ticker}`} title="Sell shares (Rule 5 trim)">
+                            <Scissors className="h-4 w-4 text-gray-300 hover:text-green-700" />
+                          </button>
+                          <button onClick={() => setTransferring(p)} className="p-2 rounded hover:bg-gray-100" aria-label={`Transfer ${p.ticker}`} title="Transfer between accounts (ACATS)">
+                            <ArrowLeftRight className="h-4 w-4 text-gray-300 hover:text-gray-600" />
+                          </button>
+                          <button onClick={() => setSplitTicker(p.ticker)} className="p-2 rounded hover:bg-gray-100" aria-label={`Record split for ${p.ticker}`} title={`Record stock split — adjusts every ${p.ticker} holding (all accounts + any challenge lots)`}>
+                            <Divide className="h-4 w-4 text-gray-300 hover:text-gray-600" />
+                          </button>
+                          <button onClick={() => setEditing(p)} className="p-2 rounded hover:bg-gray-100" aria-label={`Edit ${p.ticker}`}>
+                            <Pencil className="h-4 w-4 text-gray-300 hover:text-gray-600" />
+                          </button>
+                        </span>
+                      }
+                    >
+                      {(groupBy === 'flat' || tickerNames[p.ticker]) && (
+                        <p className="mt-0.5 text-xs text-gray-400 truncate">
+                          {[groupBy === 'flat' ? p.account : null, tickerNames[p.ticker]].filter(Boolean).join(' · ')}
+                        </p>
+                      )}
+                      <RowCardStat label="Shares">{fmtSh(p.shares)}</RowCardStat>
+                      <RowCardStat label="Price">
+                        {formatCurrency(p.currentPrice)}
+                        {overrides[p.ticker] !== undefined && (
+                          <span className="ml-1 text-[10px] uppercase text-amber-800 font-bold">pin</span>
+                        )}
+                      </RowCardStat>
+                      <RowCardStat label="Today"><DayChangeCell move={dayChange[p.ticker]} /></RowCardStat>
+                      <RowCardStat label="Unrealized"><UnrealCell gain={value - basis} basis={basis} /></RowCardStat>
+                      {tr && (
+                        <RowCardStat label="Total return">
+                          <span className={cn('font-medium', tr.total >= 0 ? 'text-green-600' : 'text-red-600')}>
+                            {signedMoney(tr.total)}{tr.pct != null && ` (${formatPercent(tr.pct)})`}
+                          </span>
+                        </RowCardStat>
+                      )}
+                      <RowCardStat label="LT unlock"><UnlockCell summary={summ} price={p.currentPrice} /></RowCardStat>
+                      {expanded && (
+                        <div className="mt-3 -mx-4 bg-gray-50 px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                          <LotPanel position={p} summary={summ} />
+                        </div>
+                      )}
+                    </RowCard>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         >
           <table className="w-full text-sm compact-table">
             <thead className="bg-gray-50 sticky top-0 group/head">

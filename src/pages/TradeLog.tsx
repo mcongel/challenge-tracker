@@ -13,6 +13,8 @@ import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { ErrorCard } from '../components/ui/ErrorCard';
 import { SkeletonTable } from '../components/ui/SkeletonTable';
 import { Card, TableCard, theadCls } from '../components/ui/Card';
+import { RowCard, RowCardStat } from '../components/ui/RowCard';
+import { SortHeader, useSortState } from '../components/ui/SortHeader';
 import { Field } from '../components/ui/Field';
 import { FormError, ModalFooter, useModalForm } from '../components/ui/useModalForm';
 import { useData } from '../contexts/DataContext';
@@ -38,6 +40,8 @@ const EXIT_REASON_LABELS: Record<string, string> = {
   thesis_broke: 'thesis broke',
 };
 
+type TradeSortKey = 'closeDate' | 'ticker' | 'gain' | 'daysHeld';
+
 export function TradeLog() {
   const {
     trades, setTradeWashSale, deleteTrade, outsideSales, accounts, deleteOutsideSale,
@@ -51,7 +55,24 @@ export function TradeLog() {
   const { gridColor, axisColor } = useChartColors();
   const currentYear = taxYearOf(todayISO());
   const ytd = netRealizedYTD(trades, currentYear);
-  const ordered = [...trades].sort((a, b) => b.closeDate.localeCompare(a.closeDate));
+  // Sortable close list — newest close first stays the default. The same
+  // ordering feeds the table and the phone cards.
+  const { sort, toggleSort } = useSortState<TradeSortKey>({
+    initial: { key: 'closeDate', dir: 'desc' },
+    naturalDir: { closeDate: 'desc', ticker: 'asc', gain: 'desc', daysHeld: 'desc' },
+    storageKey: 'tradeLogSort',
+  });
+  const ordered = useMemo(() => {
+    const dir = sort.dir === 'asc' ? 1 : -1;
+    return [...trades].sort((a, b) => {
+      switch (sort.key) {
+        case 'ticker': return dir * a.ticker.localeCompare(b.ticker);
+        case 'gain': return dir * (realizedGain(a) - realizedGain(b));
+        case 'daysHeld': return dir * (tradeDaysHeld(a) - tradeDaysHeld(b));
+        default: return dir * a.closeDate.localeCompare(b.closeDate);
+      }
+    });
+  }, [trades, sort]);
   const stats = tradeStats(trades);
   // Net realized per calendar month — the quarterly skim taxes what these
   // add up to. Same convention as YTD: wash-sale trades don't count.
@@ -243,17 +264,71 @@ export function TradeLog() {
           hint="Trades appear here when positions are closed on the Positions screen."
         />
       ) : (
-        <TableCard>
+        <TableCard
+          cards={ordered.map((t) => {
+            const gain = realizedGain(t);
+            return (
+              <RowCard
+                key={t.id}
+                title={
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <span className="tabular-nums text-gray-600">{t.closeDate}</span>
+                    <span className="font-medium">{t.ticker}</span>
+                    <span className={cn('inline-block rounded-full px-2 py-0.5 text-xs font-medium',
+                      stLt(t) === 'LT' ? 'bg-teal-50 text-teal-700' : 'bg-indigo-50 text-indigo-700')}>
+                      {stLt(t)}
+                    </span>
+                    {t.washSale && (
+                      <span className="inline-block rounded-full bg-amber-50 text-amber-800 px-2 py-0.5 text-xs font-medium"
+                        title="Wash sale — loss disallowed">
+                        wash
+                      </span>
+                    )}
+                  </span>
+                }
+                value={
+                  <span className={gain >= 0 ? 'text-green-600' : 'text-red-600'}>
+                    {money(gain)}
+                  </span>
+                }
+                actions={
+                  <>
+                    <label className="flex items-center gap-1.5 p-2 text-xs text-gray-500">
+                      <input
+                        type="checkbox"
+                        checked={t.washSale}
+                        onChange={(e) => setTradeWashSale(t.id, e.target.checked).catch((err) =>
+                          setRowError(errorMessage(err)))}
+                        className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-600"
+                        title="Wash sale — loss disallowed"
+                      />
+                      Wash
+                    </label>
+                    <button onClick={() => setDeletingTradeId(t.id)} className="p-2 rounded hover:bg-red-50" aria-label="Delete trade">
+                      <Trash2 className="h-4 w-4 text-gray-300 hover:text-red-600" />
+                    </button>
+                  </>
+                }
+              >
+                <RowCardStat label="Days held">{tradeDaysHeld(t)}</RowCardStat>
+                <RowCardStat label="Proceeds / basis">
+                  {formatCurrency(t.proceeds)} / {formatCurrency(t.costBasis)}
+                </RowCardStat>
+                {t.notes && <p className="mt-1 text-xs text-gray-500 truncate">{t.notes}</p>}
+              </RowCard>
+            );
+          })}
+        >
           <table className="w-full text-sm compact-table">
-            <thead className="bg-gray-50 sticky top-0">
+            <thead className="bg-gray-50 sticky top-0 group/head">
               <tr className={theadCls}>
-                <th className="px-4 py-3">Ticker</th>
+                <SortHeader label="Ticker" sortKey="ticker" sort={sort} onSort={toggleSort} />
                 <th className="px-4 py-3">Open</th>
-                <th className="px-4 py-3">Close</th>
-                <th className="px-4 py-3 text-right">Days</th>
+                <SortHeader label="Close" sortKey="closeDate" sort={sort} onSort={toggleSort} />
+                <SortHeader label="Days" sortKey="daysHeld" sort={sort} onSort={toggleSort} align="right" />
                 <th className="px-4 py-3 text-right">Basis</th>
                 <th className="px-4 py-3 text-right">Proceeds</th>
-                <th className="px-4 py-3 text-right">Gain $</th>
+                <SortHeader label="Gain $" sortKey="gain" sort={sort} onSort={toggleSort} align="right" />
                 <th className="px-4 py-3 text-right">Gain %</th>
                 <th className="px-4 py-3">Term</th>
                 <th className="px-4 py-3">Wash</th>
@@ -339,6 +414,35 @@ export function TradeLog() {
               Outside sales — wash-sale radar only, never in the score
             </p>
           }
+          cards={[...outsideSales].reverse().map((s) => (
+            <RowCard
+              key={s.id}
+              title={
+                <span className="flex flex-wrap items-center gap-1.5">
+                  <span className="tabular-nums text-gray-600">{s.saleDate}</span>
+                  <span className="font-medium">{s.ticker}</span>
+                  {s.loss ? (
+                    <span className="inline-block rounded-full bg-red-50 text-red-700 px-2 py-0.5 text-xs font-medium">
+                      loss — 31-day window
+                    </span>
+                  ) : (
+                    <span className="inline-block rounded-full bg-gray-100 text-gray-500 px-2 py-0.5 text-xs font-medium">
+                      gain
+                    </span>
+                  )}
+                </span>
+              }
+              actions={
+                <button
+                  onClick={() => setDeletingOutsideId(s.id)}
+                  className="p-2 rounded hover:bg-red-50" aria-label="Delete outside sale">
+                  <Trash2 className="h-4 w-4 text-gray-300 hover:text-red-600" />
+                </button>
+              }
+            >
+              {s.notes && <p className="mt-1 text-xs text-gray-500 truncate">{s.notes}</p>}
+            </RowCard>
+          ))}
         >
           <table className="w-full text-sm compact-table">
             <tbody className="divide-y divide-gray-100">

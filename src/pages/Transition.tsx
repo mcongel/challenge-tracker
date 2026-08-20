@@ -6,6 +6,7 @@ import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { ErrorCard } from '../components/ui/ErrorCard';
 import { SkeletonTable } from '../components/ui/SkeletonTable';
 import { Card, TableCard, theadCls } from '../components/ui/Card';
+import { RowCard, RowCardStat } from '../components/ui/RowCard';
 import { ProjectionChart } from '../components/transition/ProjectionChart';
 import { CompareChart } from '../components/transition/CompareChart';
 import { ScenarioFormModal } from '../components/transition/ScenarioFormModal';
@@ -265,6 +266,72 @@ export function Transition() {
                       Add rotation
                     </button>
                   </div>
+                }
+                cards={
+                  selectedRotations.length === 0 ? (
+                    <p className="px-4 py-6 text-sm text-gray-400 text-center">
+                      No rotations yet — the projection shows today's holdings coasting as-is.
+                    </p>
+                  ) : (
+                    selectedRotations.map((r) => {
+                      const pv = previewById.get(r.id);
+                      const sellerLabel = r.sellHoldingId
+                        ? projection.holdingLabels[`pos:${r.sellHoldingId}`] ?? '?'
+                        : null;
+                      return (
+                        <RowCard
+                          key={r.id}
+                          title={
+                            <span className="flex items-baseline gap-2 flex-wrap">
+                              <span className="tabular-nums text-gray-500 font-normal">{r.rotationDate}</span>
+                              {r.sellHoldingId ? (
+                                <span className="font-medium text-gray-900">
+                                  {sellerLabel}
+                                  <span className="ml-1 text-xs font-normal text-gray-400">
+                                    {r.sellShares != null ? `${r.sellShares} sh` : formatPercent(r.sellPct ?? 0, 0)}
+                                  </span>
+                                </span>
+                              ) : (
+                                <span className="font-normal text-gray-600">new cash {formatCurrency(r.cashAmount ?? 0)}</span>
+                              )}
+                            </span>
+                          }
+                          value={pv ? money(pv.netProceeds) : '—'}
+                          actions={
+                            <>
+                              <button onClick={() => setRotationModal(r)} className="p-2 rounded hover:bg-gray-100" aria-label="Edit rotation">
+                                <Pencil className="h-4 w-4 text-gray-300 hover:text-gray-600" />
+                              </button>
+                              <button onClick={() => setDeletingRotation(r)} className="p-2 rounded hover:bg-red-50" aria-label="Delete rotation">
+                                <Trash2 className="h-4 w-4 text-gray-300 hover:text-red-600" />
+                              </button>
+                            </>
+                          }
+                        >
+                          <RowCardStat label="Buy">
+                            {r.buySymbol.toUpperCase()}
+                            <span className="ml-1 text-xs text-gray-400">@ {formatPercent(r.buyYieldPct)}</span>
+                          </RowCardStat>
+                          <RowCardStat label="Est. tax">
+                            {pv && pv.capitalGainsTax > 0 ? money(pv.capitalGainsTax) : '—'}
+                          </RowCardStat>
+                          {(pv?.warnings ?? []).length > 0 && (
+                            <div className="mt-1.5">
+                              {(pv?.warnings ?? []).map((w) => {
+                                const conf = WARNING_LABELS[w];
+                                return conf ? (
+                                  <span key={w} title={conf.title}
+                                    className={cn('mr-1 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium', conf.cls)}>
+                                    {conf.label}
+                                  </span>
+                                ) : null;
+                              })}
+                            </div>
+                          )}
+                        </RowCard>
+                      );
+                    })
+                  )
                 }
               >
                 <table className="w-full text-sm compact-table">

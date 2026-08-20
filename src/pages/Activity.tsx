@@ -8,6 +8,7 @@ import { SkeletonTable } from '../components/ui/SkeletonTable';
 import { CLASSIFICATION_LABELS, classificationPillCls, fmtSh } from '../components/parked/shared';
 import { EditSaleModal } from '../components/parked/EditSaleModal';
 import { TableCard, theadCls } from '../components/ui/Card';
+import { RowCard, RowCardStat } from '../components/ui/RowCard';
 import { useData } from '../contexts/DataContext';
 import type { DividendClassification, ParkedSale } from '../lib/engine';
 import {
@@ -277,7 +278,81 @@ export function Activity() {
         />
       ) : (
         /* Only the table scrolls sideways — the summary/filter bar above stays put. */
+        /* No column sorting here on purpose: the running balance walks backward from
+         * the live balance in reverse-chronological order, so any other sort would
+         * misalign every balance. */
         <TableCard
+          cards={
+            <>
+              {visible.map((r) => (
+                <RowCard
+                  key={r.key}
+                  title={
+                    <span className="flex items-center gap-1.5">
+                      <span className={cn('tabular-nums', r.date ? 'text-gray-600' : 'text-amber-800')}>
+                        {r.date ?? 'no date'}
+                      </span>
+                      <span className={cn('inline-block rounded-full px-2 py-0.5 text-xs font-medium', ACTIVITY_KIND_STYLES[r.kind])}>
+                        {r.kindLabel}
+                      </span>
+                      {r.ticker && <span className="font-medium">{r.ticker}</span>}
+                    </span>
+                  }
+                  value={<span className={r.amountCls}>{money(r.amount)}</span>}
+                  actions={
+                    r.sale && (
+                      <>
+                        {r.sale.consumed && (
+                          <button
+                            onClick={() => setUndoingSale(r.sale!)}
+                            disabled={!newestSnapshotSaleIds.has(r.sale.id)}
+                            className="p-2 rounded hover:bg-gray-100 disabled:opacity-30"
+                            aria-label="Undo sale"
+                            title={newestSnapshotSaleIds.has(r.sale.id)
+                              ? 'Undo — lots and basis come back exactly'
+                              : 'Undo newer sales of this holding first'}
+                          >
+                            <Undo2 className="h-4 w-4 text-gray-300 hover:text-gray-600" />
+                          </button>
+                        )}
+                        <button onClick={() => setEditingSale(r.sale!)} className="p-2 rounded hover:bg-gray-100" aria-label="Edit sale record">
+                          <Pencil className="h-4 w-4 text-gray-300 hover:text-gray-600" />
+                        </button>
+                        <button onClick={() => setDeletingSale(r.sale!)} className="p-2 rounded hover:bg-red-50" aria-label="Delete sale record">
+                          <Trash2 className="h-4 w-4 text-gray-300 hover:text-red-600" />
+                        </button>
+                      </>
+                    )
+                  }
+                >
+                  {r.sale ? (
+                    <div className="mt-1"><SaleDetail sale={r.sale} /></div>
+                  ) : (r.classification || r.detail) ? (
+                    <p className="mt-1 text-xs text-gray-500 truncate">
+                      {r.classification && (
+                        <span className={cn('mr-1 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium',
+                          classificationPillCls(r.classification))}>
+                          {CLASSIFICATION_LABELS[r.classification]}
+                        </span>
+                      )}
+                      {r.detail}
+                    </p>
+                  ) : null}
+                  {r.shares != null && r.shares > 0 && <RowCardStat label="Shares">{fmtSh(r.shares)}</RowCardStat>}
+                  {r.price != null && <RowCardStat label="Price">{formatCurrency(r.price)}</RowCardStat>}
+                  {balanceEligible && (
+                    <RowCardStat label="Balance"
+                      className={(runningBalance.get(r.key) ?? 0) < -0.005 ? 'text-red-600' : undefined}>
+                      {formatCurrency(runningBalance.get(r.key) ?? 0)}
+                    </RowCardStat>
+                  )}
+                </RowCard>
+              ))}
+              {visible.length === 0 && (
+                <p className="px-4 py-6 text-sm text-gray-400 text-center">Nothing matches the filters</p>
+              )}
+            </>
+          }
           toolbar={
             <div className="px-4 pt-3 pb-1 flex flex-wrap items-baseline justify-between gap-2">
               <p className="text-sm tabular-nums">

@@ -9,6 +9,7 @@ import { AccountSelect } from '../components/ui/AccountSelect';
 import { ErrorCard } from '../components/ui/ErrorCard';
 import { SkeletonTable } from '../components/ui/SkeletonTable';
 import { TableCard, theadCls } from '../components/ui/Card';
+import { RowCard, RowCardStat } from '../components/ui/RowCard';
 import { Field } from '../components/ui/Field';
 import { FormError, ModalFooter, useModalForm } from '../components/ui/useModalForm';
 import { useData } from '../contexts/DataContext';
@@ -105,6 +106,71 @@ export function TaxReserve() {
         />
       ) : (
         <TableCard
+          cards={
+            <>
+              {[...ended].reverse().map((c) => {
+                const label = formatQuarterLabel(c);
+                const due = c.moveOutNow > 0;
+                return (
+                  <RowCard
+                    key={label}
+                    className={due ? 'bg-yellow-50' : undefined}
+                    title={
+                      <>
+                        {label}
+                        <span className="ml-2 text-xs font-normal text-gray-400">ended {c.endDate}</span>
+                      </>
+                    }
+                    value={
+                      <span className={due ? 'text-yellow-700' : 'text-gray-400'}>
+                        {money(c.moveOutNow)}
+                      </span>
+                    }
+                    actions={
+                      due ? (
+                        <button
+                          onClick={() => setPendingSkim({ label, amount: c.moveOutNow })}
+                          className={cn(primaryBtnCls, 'py-1 px-2.5 text-xs')}
+                        >
+                          {`Mark moved ${money(c.moveOutNow)}`}
+                        </button>
+                      ) : (
+                        <span className="inline-block rounded-full bg-green-50 text-green-700 px-2 py-0.5 text-xs font-medium">
+                          Settled
+                        </span>
+                      )
+                    }
+                  >
+                    <RowCardStat label="Net realized YTD">{money(c.netRealizedYTD)}</RowCardStat>
+                    <RowCardStat label="Target (30%)">{money(c.reserveTarget)}</RowCardStat>
+                    <RowCardStat label="Already reserved">{money(c.alreadyReserved)}</RowCardStat>
+                  </RowCard>
+                );
+              })}
+              {/* The running quarter, muted like its table row — a preview, not a bill. */}
+              <RowCard
+                className="bg-gray-50"
+                title={
+                  <span className="text-gray-500">
+                    {formatQuarterLabel(current)}
+                    <span className="ml-2 text-xs font-normal text-gray-400">in progress</span>
+                  </span>
+                }
+                value={<span className="text-gray-400">{money(current.moveOutNow)}</span>}
+              >
+                <RowCardStat label="Net realized YTD" className="text-gray-500">
+                  {money(current.netRealizedYTD)}
+                </RowCardStat>
+                <RowCardStat label="Target (30%)" className="text-gray-500">
+                  {money(current.reserveTarget)}
+                </RowCardStat>
+                <RowCardStat label="Already reserved" className="text-gray-500">
+                  {money(current.alreadyReserved)}
+                </RowCardStat>
+                <p className="mt-1 text-xs text-gray-400">due {current.endDate}</p>
+              </RowCard>
+            </>
+          }
           footer={
             <>
               {heldIn.length > 0 && (

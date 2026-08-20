@@ -9,6 +9,7 @@ import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { ErrorCard } from '../components/ui/ErrorCard';
 import { SkeletonTable } from '../components/ui/SkeletonTable';
 import { Card, TableCard, theadCls } from '../components/ui/Card';
+import { RowCard, RowCardStat } from '../components/ui/RowCard';
 import { StatTile } from '../components/ui/StatTile';
 import { CLASSIFICATION_LABELS, classificationPillCls, SortHeader } from '../components/parked/shared';
 import type { SortState } from '../components/parked/shared';
@@ -339,10 +340,81 @@ export function Income() {
             )}
           </Card>
 
-          <Card className="overflow-x-auto mb-4">
-            <p className="px-4 pt-4 text-xs font-semibold uppercase tracking-wider text-gray-400">
-              Holdings
-            </p>
+          <TableCard
+            className="mb-4"
+            toolbar={
+              <p className="px-4 pt-4 text-xs font-semibold uppercase tracking-wider text-gray-400">
+                Holdings
+              </p>
+            }
+            cards={sortedSummaries.map(({ position: p, summary: s }) => {
+              const proj = s.projection;
+              const archived = isArchivedPosition(p);
+              return (
+                <RowCard
+                  key={p.id}
+                  title={
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      <span className={archived ? 'text-gray-400' : undefined}>{p.ticker}</span>
+                      <span className="text-xs font-normal text-gray-400">{p.account}</span>
+                      {archived && (
+                        <span className="inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-gray-100 text-gray-500"
+                          title="Fully trimmed or transferred away — history kept, nothing projected.">
+                          closed
+                        </span>
+                      )}
+                      {s.hasUnclassified && (
+                        <span className="inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-800"
+                          title="Some dividends are unclassified — estimates assume the qualified rate.">
+                          unclassified
+                        </span>
+                      )}
+                    </span>
+                  }
+                  value={proj ? money(proj.annualGross) : '—'}
+                  actions={!archived && (
+                    <button onClick={() => setEditingRate(p)} className="p-2 rounded hover:bg-gray-100"
+                      aria-label="Edit dividend rate" title="Manual rate & frequency (used when there's no payment history)">
+                      <Pencil className="h-3.5 w-3.5 text-gray-300 hover:text-gray-600" />
+                    </button>
+                  )}
+                >
+                  <RowCardStat label="Yield on cost">
+                    {s.yieldOnCost != null ? formatPercent(s.yieldOnCost) : '—'}
+                  </RowCardStat>
+                  <RowCardStat label="T12M">
+                    {s.trailing12m > 0 ? money(s.trailing12m) : '—'}
+                  </RowCardStat>
+                  <RowCardStat label="Next payment">
+                    {proj?.nextPayment
+                      ? `${proj.nextPayment.date} · est. ${money(proj.nextPayment.amount)}`
+                      : '—'}
+                  </RowCardStat>
+                  <RowCardStat label="Source">
+                    {proj ? (
+                      <span className={cn('inline-block rounded-full px-2 py-0.5 text-xs font-medium',
+                        proj.source === 'actual' ? 'bg-green-50 text-green-700' : 'bg-indigo-50 text-indigo-700')}>
+                        {proj.source === 'actual' ? 'actual' : 'manual rate'}
+                      </span>
+                    ) : archived ? '—' : (
+                      <button onClick={() => setEditingRate(p)} className="text-xs text-green-700 hover:underline font-medium">
+                        set rate
+                      </button>
+                    )}
+                  </RowCardStat>
+                  {anyRoc && s.rocCumulative > 0 && (
+                    <RowCardStat label="ROC">
+                      <span title={s.adjustedCostBasis < s.costBasis
+                        ? `Adjusted basis ${money(s.adjustedCostBasis)} (original ${money(s.costBasis)})`
+                        : undefined}>
+                        {money(s.rocCumulative)}
+                      </span>
+                    </RowCardStat>
+                  )}
+                </RowCard>
+              );
+            })}
+          >
             <table className="w-full text-sm compact-table">
               <thead className="bg-gray-50">
                 <tr className={theadCls}>
@@ -365,7 +437,7 @@ export function Income() {
                 ))}
               </tbody>
             </table>
-          </Card>
+          </TableCard>
 
           {/* Only the table scrolls sideways — the filter/reclassify bars above stay put. */}
           <TableCard
@@ -445,6 +517,55 @@ export function Income() {
                 {' '}· Total {money(filteredHist.reduce((t, r) => t + r.lot.amount, 0))}
               </p>
             )}
+            cards={filteredHist.length === 0 ? (
+              <p className="px-4 py-6 text-sm text-gray-400 text-center">
+                {sortedHist.length === 0 ? 'No dividends recorded yet' : 'No dividends match the filters'}
+              </p>
+            ) : filteredHist.map((r) => (
+              <RowCard
+                key={r.lot.id}
+                title={
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <span className={cn('tabular-nums', r.lot.date ? 'text-gray-600' : 'text-amber-800')}
+                      title={r.lot.exDate ? `Ex-date ${r.lot.exDate}` : undefined}>
+                      {r.lot.date ?? 'no date'}
+                    </span>
+                    <span>{r.ticker}</span>
+                    <span className={cn('inline-block rounded-full px-2 py-0.5 text-xs font-medium',
+                      classificationPillCls(r.lot.classification ?? 'unclassified'))}>
+                      {CLASSIFICATION_LABELS[r.lot.classification ?? 'unclassified']}
+                    </span>
+                    {r.lot.reclassifiedAt && (
+                      <History className="inline h-3.5 w-3.5 text-gray-400" aria-label="Reclassified" />
+                    )}
+                    {isUnallocatedRoc(r.lot) && (
+                      <span className="inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-800"
+                        title="This ROC hasn't been applied to lot basis yet — use the allocate button above.">
+                        unallocated
+                      </span>
+                    )}
+                  </span>
+                }
+                value={formatCurrency(r.lot.amount)}
+                actions={
+                  <>
+                    <button onClick={() => setReclassifying(r)} className="p-2 rounded hover:bg-gray-100"
+                      aria-label="Reclassify" title="Change classification (1099 correction)">
+                      <Pencil className="h-3.5 w-3.5 text-gray-300 hover:text-gray-600" />
+                    </button>
+                    <button onClick={() => setDeleting(r)} className="p-2 rounded hover:bg-red-50"
+                      aria-label="Delete dividend">
+                      <Trash2 className="h-3.5 w-3.5 text-gray-300 hover:text-red-600" />
+                    </button>
+                  </>
+                }
+              >
+                <p className="mt-1 text-xs text-gray-500">
+                  {r.lot.shares > 0 ? 'DRIP' : 'cash'}
+                  {r.account && ` · ${r.account}`}
+                </p>
+              </RowCard>
+            ))}
           >
             <table className="w-full text-sm compact-table">
               <thead className="bg-gray-50 group/head">

@@ -1,11 +1,15 @@
 /**
  * GET /api/names?tickers=MU,AMAT
  *
- * Company names via Finnhub's profile endpoint, proxied server-side. Names
- * barely change, so each ticker caches for 7 days — the Finnhub cost is one
- * call per ticker per week. Sequential with a retry on 429, same as quotes.
+ * Company names AND industries via Finnhub's profile endpoint, proxied
+ * server-side — one upstream call serves both, which halved the Finnhub
+ * spend vs the old per-ticker /api/profile fan-out. Profiles barely change,
+ * so each ticker caches for 7 days. Sequential with a retry on 429, same as
+ * quotes. (The cache stores the raw profile2 body, so entries written before
+ * industries existed already carry finnhubIndustry — no cache version bump.)
  *
- * Response: { names: { TICKER: "Micron Technology Inc" }, missing: [TICKER] }
+ * Response: { names: { TICKER: "Micron Technology Inc" },
+ *             industries: { TICKER: "Semiconductors" }, missing: [TICKER] }
  */
 const CACHE_TTL_SECONDS = 7 * 24 * 3600;
 const MAX_TICKERS = 40;
@@ -31,11 +35,15 @@ export async function onRequestGet(context) {
 
   const cache = caches.default;
   const names = {};
+  const industries = {};
   const missing = [];
 
   const readBody = async (response, ticker) => {
     try {
       const body = await response.json();
+      if (body && typeof body.finnhubIndustry === 'string' && body.finnhubIndustry.length > 0) {
+        industries[ticker] = body.finnhubIndustry;
+      }
       if (body && typeof body.name === 'string' && body.name.length > 0) {
         names[ticker] = body.name;
         return true;
@@ -92,7 +100,7 @@ export async function onRequestGet(context) {
     }
   }
 
-  return json({ names, missing });
+  return json({ names, industries, missing });
 }
 
 const cacheKey = (ticker) => new Request(`https://names-cache.internal/${ticker}`);
