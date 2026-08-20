@@ -39,7 +39,7 @@ Reference implementation: `Challenge_Account_Tracker.xlsx` in this repo — the 
 ### Trading guardrails (the Xu rules — full Xu since 2026-08-05)
 - No margin. No options. No crypto. No chasing stocks that have already run.
 - **One stock at a time**: the bankroll rides a single name with a near-term catalyst — full position, sell then rotate. The app warns loudly (doesn't block, to allow same-day rotations) when opening a ticker while another has open lots.
-- Every position requires an **exit target** entered at open — the catalyst move being sold into (Xu's 20–30%). The app refuses entry without it. **The bail point requirement was removed by owner decision 2026-08-05** (target-only exits, Xu style); the `bail_point` column remains nullable for history.
+- Every position requires an **exit target** entered at open — the catalyst move being sold into (Xu's 20–30%). The app refuses entry without it. **The bail point requirement was removed by owner decision 2026-08-05** (target-only exits, Xu style); the `bail_point` column was dropped entirely on 2026-08-19 — do not restore it.
 - Wash sale rule: selling at a loss then rebuying the same ticker within 31 days — in ANY account (Robinhood, Cash App, Stash) — disallows the loss. This applies in both directions — don't buy a name in the challenge account within 31 days of selling it at a loss anywhere else. The app should warn when a buy is entered for a ticker with a loss-sale in the past 31 days.
 
 ### Benchmark (the honest test)
@@ -58,7 +58,7 @@ Reference implementation: `Challenge_Account_Tracker.xlsx` in this repo — the 
 
 ### Position (open)
 - id, ticker, buyDate, shares, avgCost — **each purchase is its own lot** (a row); a ticker may have multiple open lots, displayed grouped with a per-ticker subtotal.
-- exitTarget (required), bailPoint (optional, legacy pre-Xu), thesis (text)
+- exitTarget (required), thesis (text)
 - buy_event_id (2026-08-16): exact link to the lot's Buy cash event — adding a lot creates both and links them; deleting a lot takes its exact ledger row; a buy-date edit moves both. Legacy lots (null) fall back to ticker+date+amount matching, only when unambiguous on both sides.
 - Derived per lot: costBasis = shares × avgCost; marketValue = shares × currentPrice; unrealized $ and %; daysHeld; longTermDate = buyDate + 366
 - **Partial close:** closing may take fewer shares than the lot holds — the closed portion becomes a Trade (proportional basis) and the lot's remaining shares stay open with original buyDate. Closing across multiple lots defaults to FIFO (oldest lot first), with per-lot override.
