@@ -9,7 +9,8 @@ import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { ErrorCard } from '../components/ui/ErrorCard';
 import { SkeletonTable } from '../components/ui/SkeletonTable';
 import { ContributionCapBadge } from '../components/ui/ContributionCapBadge';
-import { Card, theadCls } from '../components/ui/Card';
+import { Card, TableCard, theadCls } from '../components/ui/Card';
+import { RowCard, RowCardStat } from '../components/ui/RowCard';
 import { Field } from '../components/ui/Field';
 import { FormError, ModalFooter, useModalForm } from '../components/ui/useModalForm';
 import type { CashEvent, CashEventType } from '../lib/engine';
@@ -125,7 +126,52 @@ export function CashLedger() {
           hint="Start with the funding deposit. Adding a deposit also records that day's shadow VOO purchase for the benchmark."
         />
       ) : (
-        <Card className="overflow-x-auto">
+        <TableCard
+          cards={rows.map(({ event: e, balance }) => {
+            const note = [
+              accountName(accounts, e.accountId) && `from ${accountName(accounts, e.accountId)}`,
+              accountName(accounts, e.destinationAccountId) && `→ ${accountName(accounts, e.destinationAccountId)}`,
+              e.sourceDestination,
+              e.notes,
+            ].filter(Boolean).join(' · ');
+            return (
+              <RowCard
+                key={e.id}
+                title={
+                  <span className="flex items-center gap-1.5">
+                    <span className="tabular-nums text-gray-600">{e.date}</span>
+                    <span className={cn('inline-block rounded-full px-2 py-0.5 text-xs font-medium', TYPE_STYLES[e.type])}>
+                      {e.type}
+                    </span>
+                    {e.ticker && <span className="font-medium">{e.ticker}</span>}
+                  </span>
+                }
+                value={
+                  <span className={ADDS_CASH.includes(e.type) ? 'text-green-600' : undefined}>
+                    {ADDS_CASH.includes(e.type) ? '+' : '−'}{formatCurrency(e.amount)}
+                  </span>
+                }
+                actions={
+                  <>
+                    <button onClick={() => setEditing(e)} className="p-2 rounded hover:bg-gray-100" aria-label="Edit event">
+                      <Pencil className="h-4 w-4 text-gray-300 hover:text-gray-600" />
+                    </button>
+                    <button onClick={() => setDeletingId(e.id)} className="p-2 rounded hover:bg-red-50" aria-label="Delete event">
+                      <Trash2 className="h-4 w-4 text-gray-300 hover:text-red-600" />
+                    </button>
+                  </>
+                }
+              >
+                {note && <p className="mt-1 text-xs text-gray-500 truncate">{note}</p>}
+                <RowCardStat label="Running balance">
+                  <span className={cn('font-bold', balance < 0 ? 'text-red-600' : 'text-text-primary')}>
+                    {money(balance)}
+                  </span>
+                </RowCardStat>
+              </RowCard>
+            );
+          })}
+        >
           <table className="w-full text-sm compact-table">
             <thead className="bg-gray-50 sticky top-0">
               <tr className={theadCls}>
@@ -181,7 +227,7 @@ export function CashLedger() {
               ))}
             </tbody>
           </table>
-        </Card>
+        </TableCard>
       )}
 
       <AddEventModal isOpen={modalOpen} onClose={() => setModalOpen(false)} onAdd={addCashEvent} />
