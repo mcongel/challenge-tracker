@@ -34,19 +34,20 @@ export async function computeSheetBalances(args: {
 }): Promise<AccountBalance[]> {
   const { serviceKey, quotesBase } = args;
 
-  // Paged reads — PostgREST truncates at 1000 server-side.
+  // Paged reads — PostgREST truncates at 1000 server-side. Header shape
+  // depends on the key format: legacy service_role JWTs ('eyJ…') go in both
+  // apikey and Authorization; new-format secret keys ('sb_secret_…') are
+  // NOT JWTs and 401 if sent as a Bearer token — apikey alone is correct.
+  const trimmedKey = serviceKey.trim();
+  const headers: Record<string, string> = trimmedKey.startsWith('eyJ')
+    ? { apikey: trimmedKey, Authorization: `Bearer ${trimmedKey}`, 'Accept-Profile': 'challenge' }
+    : { apikey: trimmedKey, 'Accept-Profile': 'challenge' };
   const read = async (table: string, select: string): Promise<Record<string, any>[]> => {
     const rows: Record<string, any>[] = [];
     for (let offset = 0; ; offset += 1000) {
       const res = await fetch(
         `${SUPABASE_URL}/rest/v1/${table}?select=${select}&limit=1000&offset=${offset}`,
-        {
-          headers: {
-            apikey: serviceKey,
-            Authorization: `Bearer ${serviceKey}`,
-            'Accept-Profile': 'challenge',
-          },
-        },
+        { headers },
       );
       if (!res.ok) throw new Error(`${table}: ${res.status}`);
       const page = (await res.json()) as Record<string, any>[];
