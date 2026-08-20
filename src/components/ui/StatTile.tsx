@@ -14,15 +14,15 @@ export function StatTile({
   title?: string;
 }) {
   return (
-    <div className={cn('bg-white rounded-lg shadow-lg p-4 density-aware-card', className)} title={title}>
-      <p className="text-xs font-medium text-gray-500">{label}</p>
+    <div className={cn('bg-surface rounded-lg shadow-lg p-4 density-aware-card', className)} title={title}>
+      <p className="text-xs font-medium text-text-muted">{label}</p>
       <p
         className={cn(
           'mt-0.5 text-lg sm:text-xl font-bold tabular-nums',
           tone === 'pos' ? 'text-green-600'
           : tone === 'neg' ? 'text-red-600'
           : tone === 'muted' ? 'text-gray-700'
-          : 'text-gray-900',
+          : 'text-text-primary',
         )}
       >
         {value}

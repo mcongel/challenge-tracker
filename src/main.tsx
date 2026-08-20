@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { ThemeProvider } from './contexts/ThemeContext';
 import './index.css';
 
 createRoot(document.getElementById('root')!).render(
@@ -11,9 +12,11 @@ createRoot(document.getElementById('root')!).render(
         in the shell itself (Header, Sidebar, DataProvider, Login) would
         otherwise still white-page. */}
     <ErrorBoundary>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
+      <ThemeProvider>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </ThemeProvider>
     </ErrorBoundary>
   </StrictMode>,
 );

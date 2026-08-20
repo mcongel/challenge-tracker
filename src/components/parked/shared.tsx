@@ -1,6 +1,4 @@
-import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import type { DividendClassification, UnlockSummary } from '../../lib/engine';
-import { cn } from '../../lib/utils';
 
 /** Short pill labels for dividend tax character; unclassified reads as a
  * warning (amber) until the owner confirms what the broker actually paid. */
@@ -39,44 +37,10 @@ export const CATEGORY_SUGGESTIONS = [
  * 0.00052 BTC never displays as 0.0005-rounded-to-nothing. */
 export const fmtSh = (n: number) =>
   String(Number(n.toFixed(Math.abs(n) > 0 && Math.abs(n) < 0.01 ? 8 : 4)));
-/** Reused by other sortable tables (Income) — the thead needs `group/head`
- * for the idle-arrow hover reveal. */
-export interface SortState<K extends string = string> {
-  key: K;
-  dir: 'asc' | 'desc';
-}
-export function SortHeader<K extends string = string>({
-  label, sortKey, sort, onSort, align = 'left', title,
-}: {
-  label: string;
-  sortKey: K;
-  sort: SortState<K>;
-  onSort: (key: K) => void;
-  align?: 'left' | 'right';
-  title?: string;
-}) {
-  const active = sort.key === sortKey;
-  return (
-    <th className={cn('px-4 py-3', align === 'right' && 'text-right')} title={title}>
-      <button
-        type="button"
-        onClick={() => onSort(sortKey)}
-        className={cn(
-          'inline-flex items-center gap-1 uppercase tracking-wider font-semibold hover:text-gray-700',
-          align === 'right' && 'flex-row-reverse',
-          active ? 'text-green-700' : 'text-gray-500',
-        )}
-      >
-        {label}
-        {active ? (
-          sort.dir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
-        ) : (
-          <ArrowUpDown className="h-3 w-3 opacity-0 group-hover/head:opacity-100 text-gray-300" />
-        )}
-      </button>
-    </th>
-  );
-}
+/** SortHeader was promoted to the UI kit (it was never pile-specific);
+ * re-exported here so existing imports keep working. */
+export { SortHeader } from '../ui/SortHeader';
+export type { SortState } from '../ui/SortHeader';
 export function unlockSentence(s: UnlockSummary): string {
   if (s.totalShares <= 0) return 'No shares.';
   const parts: string[] = [];

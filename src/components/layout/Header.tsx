@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { BookOpen, Download, HelpCircle, LogOut, Menu, Moon, RefreshCw, Sun } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useTheme } from '../../contexts/ThemeContext';
 import { useData } from '../../contexts/DataContext';
 import { Modal } from '../ui/Modal';
 import { downloadJson, downloadTableCsv } from '../../lib/export';
-import { cn, safeStorage, secondaryBtnCls, todayISO } from '../../lib/utils';
+import { cn, secondaryBtnCls, todayISO } from '../../lib/utils';
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -14,14 +15,9 @@ interface HeaderProps {
 export function Header({ onMenuClick }: HeaderProps) {
   const { signOut } = useAuth();
   const { quotesAsOf, quotesError, refreshQuotes } = useData();
-  const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
+  const { dark, toggle: toggleTheme } = useTheme();
   const [refreshing, setRefreshing] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
-
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', dark);
-    safeStorage.set('theme', dark ? 'dark' : 'light');
-  }, [dark]);
 
   const doRefresh = async () => {
     setRefreshing(true);
@@ -33,17 +29,17 @@ export function Header({ onMenuClick }: HeaderProps) {
   };
 
   return (
-    <header className="h-14 flex items-center justify-between gap-2 px-3 sm:px-6 bg-white border-b border-gray-200 sticky top-0 z-30">
+    <header className="h-14 flex items-center justify-between gap-2 px-3 sm:px-6 bg-surface border-b border-border-base sticky top-0 z-30">
       <div className="flex items-center gap-2 min-w-0">
         <button
           onClick={onMenuClick}
           className="lg:hidden p-2.5 sm:p-2 rounded-md hover:bg-gray-100"
           aria-label="Open menu"
         >
-          <Menu className="h-5 w-5 text-gray-600" />
+          <Menu className="h-5 w-5 text-text-secondary" />
         </button>
         {/* Phones get the icons' full row — the drawer and bottom nav carry the name. */}
-        <span className="hidden sm:inline lg:hidden text-lg font-bold truncate text-gray-600 dark:text-slate-200">
+        <span className="hidden sm:inline lg:hidden text-lg font-bold truncate text-text-secondary dark:text-slate-200">
           Challenge Tracker
         </span>
       </div>
@@ -67,10 +63,10 @@ export function Header({ onMenuClick }: HeaderProps) {
         {/* Reference material lives up here, not in the nav — it's reading,
             not workflow. */}
         <Link to="/rules" className="p-2.5 sm:p-2 rounded-md hover:bg-gray-100" aria-label="Rules" title="Rules">
-          <BookOpen className="h-5 w-5 text-gray-500" />
+          <BookOpen className="h-5 w-5 text-text-muted" />
         </Link>
         <Link to="/help" className="p-2.5 sm:p-2 rounded-md hover:bg-gray-100" aria-label="Help" title="Help">
-          <HelpCircle className="h-5 w-5 text-gray-500" />
+          <HelpCircle className="h-5 w-5 text-text-muted" />
         </Link>
         <button
           onClick={doRefresh}
@@ -78,7 +74,7 @@ export function Header({ onMenuClick }: HeaderProps) {
           aria-label="Refresh prices"
           title="Refresh prices"
         >
-          <RefreshCw className={cn('h-5 w-5 text-gray-500', refreshing && 'animate-spin')} />
+          <RefreshCw className={cn('h-5 w-5 text-text-muted', refreshing && 'animate-spin')} />
         </button>
         <button
           onClick={() => setExportOpen(true)}
@@ -86,17 +82,17 @@ export function Header({ onMenuClick }: HeaderProps) {
           aria-label="Export data"
           title="Export data"
         >
-          <Download className="h-5 w-5 text-gray-500" />
+          <Download className="h-5 w-5 text-text-muted" />
         </button>
         <button
-          onClick={() => setDark((d) => !d)}
+          onClick={toggleTheme}
           className="p-2.5 sm:p-2 rounded-md hover:bg-gray-100"
           aria-label="Toggle dark mode"
         >
           {dark ? (
-            <Sun className="h-5 w-5 text-gray-500" />
+            <Sun className="h-5 w-5 text-text-muted" />
           ) : (
-            <Moon className="h-5 w-5 text-gray-500" />
+            <Moon className="h-5 w-5 text-text-muted" />
           )}
         </button>
         <button
@@ -105,7 +101,7 @@ export function Header({ onMenuClick }: HeaderProps) {
           aria-label="Sign out"
           title="Sign out"
         >
-          <LogOut className="h-5 w-5 text-gray-500" />
+          <LogOut className="h-5 w-5 text-text-muted" />
         </button>
       </div>
 
@@ -157,7 +153,7 @@ function ExportModal({ onClose }: { onClose: () => void }) {
           Download everything (JSON)
         </button>
         <div>
-          <p className="text-xs font-medium text-gray-500 mb-2">Or CSV per table</p>
+          <p className="text-xs font-medium text-text-muted mb-2">Or CSV per table</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {tables.map(([name, rows]) => (
               <button

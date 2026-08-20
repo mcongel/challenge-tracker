@@ -26,12 +26,12 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (!this.state.caught) return this.props.children;
     return (
-      <div className="bg-white rounded-lg shadow-lg p-6 max-w-lg mx-auto mt-8">
+      <div className="bg-surface rounded-lg shadow-lg p-6 max-w-lg mx-auto mt-8">
         <div className="flex gap-3">
           <AlertTriangle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-semibold text-gray-900">Something broke rendering this screen</p>
-            <p className="mt-1 text-sm text-gray-600">
+            <p className="text-sm font-semibold text-text-primary">Something broke rendering this screen</p>
+            <p className="mt-1 text-sm text-text-secondary">
               Your data is safe — this is a display crash, not a data problem. Another screen may
               work fine; reloading re-reads everything from the database.
             </p>

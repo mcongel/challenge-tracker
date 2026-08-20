@@ -14,7 +14,7 @@ const ITEMS = [
 /** Classes mirror SpokenFor's mobile bottom nav. */
 export function MobileBottomNav() {
   return (
-    <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t border-gray-200 dark:border-slate-700 shadow-lg z-40 flex">
+    <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-surface dark:bg-slate-900 border-t border-border-base dark:border-slate-700 shadow-lg z-40 flex">
       {ITEMS.map(({ to, label, icon: Icon }) => (
         <NavLink
           key={to}
@@ -25,7 +25,7 @@ export function MobileBottomNav() {
               'flex flex-col items-center justify-center min-w-0 flex-1 px-1 py-2 rounded-lg transition-all relative',
               isActive
                 ? 'text-green-600 dark:text-green-300'
-                : 'text-gray-500 dark:text-slate-400',
+                : 'text-text-muted dark:text-slate-400',
             )
           }
         >

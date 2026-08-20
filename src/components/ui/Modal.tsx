@@ -73,17 +73,17 @@ export function Modal({ isOpen, onClose, title, children }: ModalProps) {
           aria-labelledby={titleId}
           tabIndex={-1}
           onKeyDown={trapTab}
-          className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle w-full max-w-lg mx-2 sm:mx-0 focus:outline-none"
+          className="inline-block align-bottom bg-surface rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle w-full max-w-lg mx-2 sm:mx-0 focus:outline-none"
         >
-          <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+          <div className="bg-surface px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
             <div className="flex items-center justify-between mb-4">
-              <h3 id={titleId} className="text-lg font-medium text-gray-900">{title}</h3>
+              <h3 id={titleId} className="text-lg font-medium text-text-primary">{title}</h3>
               <button
                 onClick={onClose}
                 className="p-1 hover:bg-gray-100 rounded-md transition-colors"
                 aria-label="Close modal"
               >
-                <X className="h-5 w-5 text-gray-500" />
+                <X className="h-5 w-5 text-text-muted" />
               </button>
             </div>
             {children}

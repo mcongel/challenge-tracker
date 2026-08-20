@@ -1,17 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useTheme } from '../contexts/ThemeContext';
 
-/** Tracks the html.dark class so Recharts (which can't read CSS overrides)
- * gets explicit colors per theme. */
+/** Theme state for Recharts (which can't read CSS overrides) — now just a
+ * view of ThemeContext, the single owner of the html.dark class. */
 export function useIsDark(): boolean {
-  const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
-  useEffect(() => {
-    const obs = new MutationObserver(() =>
-      setDark(document.documentElement.classList.contains('dark')),
-    );
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-    return () => obs.disconnect();
-  }, []);
-  return dark;
+  return useTheme().dark;
 }
 
 /** The house chart chrome, theme-aware — one definition for every chart. */

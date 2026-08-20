@@ -36,7 +36,7 @@ export function ConfirmModal({
   return (
     <Modal isOpen onClose={onClose} title={title}>
       <div className="space-y-4">
-        <p className="text-sm text-gray-600 leading-relaxed">{message}</p>
+        <p className="text-sm text-text-secondary leading-relaxed">{message}</p>
         {error && <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{error}</p>}
         <div className="flex justify-end gap-2">
           <button type="button" onClick={onClose} disabled={busy} className={secondaryBtnCls}>

@@ -109,13 +109,13 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
       <aside
         className={cn(
-          'fixed lg:static inset-y-0 left-0 z-50 w-52 density-aware-sidebar bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-700 transform transition-transform duration-200 ease-in-out',
+          'fixed lg:static inset-y-0 left-0 z-50 w-52 density-aware-sidebar bg-surface dark:bg-slate-900 border-r border-border-base dark:border-slate-700 transform transition-transform duration-200 ease-in-out',
           isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
         )}
       >
         <div className="h-full flex flex-col">
-          <div className="p-3 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
-            <h1 className="text-lg font-bold text-gray-600 dark:text-slate-200">
+          <div className="p-3 border-b border-border-base dark:border-slate-700 flex items-center justify-between">
+            <h1 className="text-lg font-bold text-text-secondary dark:text-slate-200">
               Challenge Tracker
             </h1>
             <button
@@ -123,7 +123,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               className="lg:hidden p-2 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-md"
               aria-label="Close sidebar"
             >
-              <X className="h-5 w-5 text-gray-500" />
+              <X className="h-5 w-5 text-text-muted" />
             </button>
           </div>
 
@@ -142,7 +142,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                     (section.collapsible ? (
                       <button
                         onClick={() => toggle(section.label!)}
-                        className="w-full flex items-center justify-between px-3 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300"
+                        className="w-full flex items-center justify-between px-3 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 hover:text-text-secondary dark:hover:text-slate-300"
                         aria-expanded={open}
                       >
                         {section.label}
@@ -168,7 +168,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                               'flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors relative',
                               isActive
                                 ? 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-300'
-                                : 'text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800',
+                                : 'text-text-secondary dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800',
                             )
                           }
                         >
