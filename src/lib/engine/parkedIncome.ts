@@ -167,6 +167,94 @@ function afterTaxFraction(lots: ParkedLot[], today: string, rates: DividendTaxRa
   return 1 - taxed / total;
 }
 
+/** Phase 1 — cadence from history: payments in ≥2 distinct trailing-window
+ * months, latest not stale (older than ~1.5 payment intervals — a suspended
+ * dividend must not keep projecting). Cadence from the median gap, amount
+ * from the mean of the recent monthly payments, schedule anchored to the
+ * last actual pay date. */
+function actualCadence(
+  lots: ParkedLot[],
+  today: string,
+): { intervalMonths: number; perPayment: number; anchor: string } | null {
+  const windowStart = trailingWindowStart(today);
+  const recentPayments = mergeByMonth(
+    paymentsByDate(lots).filter((p) => p.date >= windowStart && p.date <= today),
+  );
+  if (recentPayments.length < 2) return null;
+  const intervalMonths = inferIntervalMonths(recentPayments.map((p) => p.date));
+  const last = recentPayments[recentPayments.length - 1];
+  // ~45 days per interval month = 1.5 intervals of slack before we decide
+  // the payer has gone quiet and stop trusting the history.
+  if (daysBetween(last.date, today) > intervalMonths * 45) return null;
+  const keep = Math.min(recentPayments.length, Math.round(12 / intervalMonths));
+  const recent = recentPayments.slice(-keep);
+  return {
+    intervalMonths,
+    perPayment: sum(recent.map((p) => p.amount)) / recent.length,
+    anchor: last.date,
+  };
+}
+
+/** Phase 1 fallback — the manual dividendRate × shares at dividendFrequency,
+ * first payment one interval after today. Sub-monthly cadences project as
+ * monthly aggregates (the buckets are calendar months anyway); the
+ * next-payment hint keeps the true cadence. */
+function manualCadence(
+  position: ParkedPosition,
+  today: string,
+): {
+  intervalMonths: number;
+  perPayment: number;
+  anchor: string;
+  subMonthlyNext: { date: string; amount: number } | null;
+} | null {
+  if (!(position.dividendRate != null && position.dividendRate > 0 && position.dividendFrequency)) {
+    return null;
+  }
+  const annual = position.dividendRate * position.shares;
+  const freq = position.dividendFrequency;
+  if (freq === 'daily' || freq === 'weekly' || freq === 'semimonthly') {
+    return {
+      intervalMonths: 1,
+      perPayment: annual / 12,
+      anchor: today,
+      subMonthlyNext:
+        freq === 'daily' ? { date: addDays(today, 1), amount: annual / 365 }
+        : freq === 'weekly' ? { date: addDays(today, 7), amount: annual / 52 }
+        : { date: addDays(today, 15), amount: annual / 24 },
+    };
+  }
+  const intervalMonths = MONTHS_PER[freq]!;
+  return {
+    intervalMonths,
+    perPayment: annual / (12 / intervalMonths),
+    anchor: today,
+    subMonthlyNext: null,
+  };
+}
+
+/** Phase 2 — dense next-12-months buckets, then drop the schedule into them.
+ * Payments recur every intervalMonths from the (real or synthetic) anchor. */
+function bucketizeSchedule(
+  anchor: string,
+  intervalMonths: number,
+  perPayment: number,
+  today: string,
+): { monthly: MonthlyIncomePoint[]; next: string | null } {
+  const startMonth = firstOfMonth(today);
+  const points = new Map<string, number>();
+  for (let i = 1; i <= 12; i++) points.set(monthOf(addMonths(startMonth, i)), 0);
+  const horizon = addMonths(startMonth, 13); // exclusive upper bound
+  let next: string | null = null;
+  for (let d = addMonths(anchor, intervalMonths); d < horizon; d = addMonths(d, intervalMonths)) {
+    if (d <= today) continue; // stale anchor: skip already-elapsed dates
+    if (next === null) next = d;
+    const m = monthOf(d);
+    if (points.has(m)) points.set(m, (points.get(m) ?? 0) + perPayment);
+  }
+  return { monthly: [...points.entries()].map(([month, amount]) => ({ month, amount })), next };
+}
+
 /**
  * Next-12-month income for one position. Trailing actuals win when payments
  * exist in ≥2 distinct months of the trailing window AND the latest payment
@@ -188,73 +276,15 @@ export function projectPositionIncome(args: {
   // Archived positions keep their history but never project — recent
   // payments belong to shares that are no longer held.
   if (isArchivedPosition(position)) return null;
-  const windowStart = trailingWindowStart(today);
-  const recentPayments = mergeByMonth(
-    paymentsByDate(lots).filter((p) => p.date >= windowStart && p.date <= today),
-  );
 
-  let actual: { intervalMonths: number; perPayment: number; anchor: string } | null = null;
-  if (recentPayments.length >= 2) {
-    const intervalMonths = inferIntervalMonths(recentPayments.map((p) => p.date));
-    const last = recentPayments[recentPayments.length - 1];
-    // ~45 days per interval month = 1.5 intervals of slack before we decide
-    // the payer has gone quiet and stop trusting the history.
-    if (daysBetween(last.date, today) <= intervalMonths * 45) {
-      const keep = Math.min(recentPayments.length, Math.round(12 / intervalMonths));
-      const recent = recentPayments.slice(-keep);
-      actual = {
-        intervalMonths,
-        perPayment: sum(recent.map((p) => p.amount)) / recent.length,
-        anchor: last.date,
-      };
-    }
-  }
+  const actual = actualCadence(lots, today);
+  const manual = actual ? null : manualCadence(position, today);
+  if (!actual && !manual) return null;
+  const source: RateSource = actual ? 'actual' : 'manual';
+  const { intervalMonths, perPayment, anchor } = (actual ?? manual)!;
+  const subMonthlyNext = manual?.subMonthlyNext ?? null;
 
-  let source: RateSource;
-  let intervalMonths: number;
-  let perPayment: number;
-  let anchor: string; // a real or synthetic pay date; payments recur from here
-  let subMonthlyNext: { date: string; amount: number } | null = null;
-
-  if (actual) {
-    source = 'actual';
-    ({ intervalMonths, perPayment, anchor } = actual);
-  } else if (position.dividendRate != null && position.dividendRate > 0 && position.dividendFrequency) {
-    source = 'manual';
-    const annual = position.dividendRate * position.shares;
-    const freq = position.dividendFrequency;
-    if (freq === 'daily' || freq === 'weekly' || freq === 'semimonthly') {
-      // Sub-monthly cadences project as monthly aggregates (the buckets are
-      // calendar months anyway); the next-payment hint keeps the true cadence.
-      intervalMonths = 1;
-      perPayment = annual / 12;
-      subMonthlyNext =
-        freq === 'daily' ? { date: addDays(today, 1), amount: annual / 365 }
-        : freq === 'weekly' ? { date: addDays(today, 7), amount: annual / 52 }
-        : { date: addDays(today, 15), amount: annual / 24 };
-    } else {
-      intervalMonths = MONTHS_PER[freq]!;
-      perPayment = annual / (12 / intervalMonths);
-    }
-    anchor = today;
-  } else {
-    return null;
-  }
-
-  // Dense next-12-months buckets, then drop scheduled payments into them.
-  const startMonth = firstOfMonth(today);
-  const points = new Map<string, number>();
-  for (let i = 1; i <= 12; i++) points.set(monthOf(addMonths(startMonth, i)), 0);
-  const horizon = addMonths(startMonth, 13); // exclusive upper bound
-  let next: string | null = null;
-  for (let d = addMonths(anchor, intervalMonths); d < horizon; d = addMonths(d, intervalMonths)) {
-    if (d <= today) continue; // stale anchor: skip already-elapsed dates
-    if (next === null) next = d;
-    const m = monthOf(d);
-    if (points.has(m)) points.set(m, (points.get(m) ?? 0) + perPayment);
-  }
-
-  const monthly = [...points.entries()].map(([month, amount]) => ({ month, amount }));
+  const { monthly, next } = bucketizeSchedule(anchor, intervalMonths, perPayment, today);
   const annualGross = sum(monthly.map((p) => p.amount));
   return {
     monthly,

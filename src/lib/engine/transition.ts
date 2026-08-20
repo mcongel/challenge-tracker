@@ -135,51 +135,35 @@ export interface ScenarioProjection {
 
 const monthOf = (iso: string) => Number(iso.slice(5, 7));
 
-export function projectScenario(args: {
-  scenario: IncomeScenario;
+interface SellEffect { positionId: string; soldFrac: number; effAbs: number }
+interface BuyEffect {
+  symbol: string; base: number; growth: number; atf: number; rocShare: number;
+  rotYear: number; monthsAfter: number; effAbs: number; netProceeds: number;
+}
+
+/** Phase 2 — walk the rotations date-order against SIMULATED lot state, so a
+ * later rotation's basis and LT/ST split reflect what earlier rotations
+ * already consumed. Emits the per-rotation previews plus the sell/buy
+ * effects the year rows integrate. Mutates holdingLabels (buy: entries). */
+function simulateRotations(args: {
   rotations: ScenarioRotation[];
-  positions: ParkedPosition[];
-  lots: ParkedLot[];
+  posById: Map<string, ParkedPosition>;
+  lotsByPosition: Map<string, ParkedLot[]>;
   adjustments: ParkedLotAdjustment[];
-  today: string;
-  settings: { dividend: DividendTaxRates; lt: number; st: number };
-}): ScenarioProjection {
-  const { scenario, positions, lots, adjustments, today, settings } = args;
-  const rates = resolveScenarioRates(scenario, settings);
-  const Y0 = taxYearOf(today);
-  const endYear = Math.max((scenario.targetYear ?? Y0) + 5, Y0 + 10);
-
-  const live = positions.filter((p) => !isArchivedPosition(p));
-  const posById = new Map(live.map((p) => [p.id, p]));
-  const lotsByPosition = lotsByPositionId(lots);
-
-  // ---- Baseline income per live position ------------------------------------
-  const excludedPositionIds: string[] = [];
-  const holdingLabels: Record<string, string> = {};
-  const baseline = new Map<string, { gross: number; atf: number; growth: number }>();
-  for (const p of live) {
-    holdingLabels[`pos:${p.id}`] = p.ticker;
-    const proj = projectPositionIncome({
-      position: p,
-      lots: lotsByPosition.get(p.id) ?? [],
-      today,
-      rates: rates.dividend,
-    });
-    if (!proj) {
-      excludedPositionIds.push(p.id);
-      continue;
-    }
-    baseline.set(p.id, {
-      gross: proj.annualGross,
-      atf: proj.annualGross > 0 ? proj.annualAfterTax / proj.annualGross : 1,
-      growth: p.dividendGrowthPct ?? 0,
-    });
-  }
-
+  rates: ScenarioRates;
+  endYear: number;
+  holdingLabels: Record<string, string>;
+}): {
+  rotationPreviews: RotationPreview[];
+  sellEffects: SellEffect[];
+  buyEffects: BuyEffect[];
+  netProceedsBySymbol: Record<string, number>;
+} {
+  const { rotations, posById, lotsByPosition, adjustments, rates, endYear, holdingLabels } = args;
   // ---- Rotations: sell haircuts against SIMULATED lot state -----------------
   // Sorted by date so a later rotation's basis and LT/ST split reflect what
   // earlier rotations already consumed.
-  const sorted = [...args.rotations].sort((a, b) =>
+  const sorted = [...rotations].sort((a, b) =>
     a.rotationDate.localeCompare(b.rotationDate),
   );
   const simLots = new Map<string, Map<string, ParkedLot>>();
@@ -202,13 +186,7 @@ export function projectScenario(args: {
   };
 
   const rotationPreviews: RotationPreview[] = [];
-  const rocCumulativeBySymbol: Record<string, number> = {};
   const netProceedsBySymbol: Record<string, number> = {};
-  interface SellEffect { positionId: string; soldFrac: number; effAbs: number }
-  interface BuyEffect {
-    symbol: string; base: number; growth: number; atf: number; rocShare: number;
-    rotYear: number; monthsAfter: number; effAbs: number; netProceeds: number;
-  }
   const sellEffects: SellEffect[] = [];
   const buyEffects: BuyEffect[] = [];
 
@@ -350,7 +328,27 @@ export function projectScenario(args: {
       rotationId: r.id, buySymbol: sym, warnings, ...preview,
     });
   }
+  return { rotationPreviews, sellEffects, buyEffects, netProceedsBySymbol };
+}
 
+/** Phase 3 — integrate baseline income (shrunk by sales) and the buys'
+ * income streams into per-year rows, tracking the first year after-tax
+ * income clears the target. */
+function buildYearRows(args: {
+  live: ParkedPosition[];
+  baseline: Map<string, { gross: number; atf: number; growth: number }>;
+  sellEffects: SellEffect[];
+  buyEffects: BuyEffect[];
+  targetAnnualIncome: number | null | undefined;
+  Y0: number;
+  endYear: number;
+}): {
+  years: ScenarioYearRow[];
+  targetReachedYear: number | null;
+  rocCumulativeBySymbol: Record<string, number>;
+} {
+  const { live, baseline, sellEffects, buyEffects, targetAnnualIncome, Y0, endYear } = args;
+  const rocCumulativeBySymbol: Record<string, number> = {};
   // ---- Year rows ------------------------------------------------------------
   const soldByPosition = new Map<string, SellEffect[]>();
   for (const e of sellEffects) {
@@ -417,8 +415,8 @@ export function projectScenario(args: {
 
     if (
       targetReachedYear === null &&
-      scenario.targetAnnualIncome != null &&
-      afterTax >= scenario.targetAnnualIncome
+      targetAnnualIncome != null &&
+      afterTax >= targetAnnualIncome
     ) {
       targetReachedYear = year;
     }
@@ -431,6 +429,58 @@ export function projectScenario(args: {
       portfolioYieldPct: value > 0 ? gross / value : null,
     });
   }
+  return { years, targetReachedYear, rocCumulativeBySymbol };
+}
+
+export function projectScenario(args: {
+  scenario: IncomeScenario;
+  rotations: ScenarioRotation[];
+  positions: ParkedPosition[];
+  lots: ParkedLot[];
+  adjustments: ParkedLotAdjustment[];
+  today: string;
+  settings: { dividend: DividendTaxRates; lt: number; st: number };
+}): ScenarioProjection {
+  const { scenario, positions, lots, adjustments, today, settings } = args;
+  const rates = resolveScenarioRates(scenario, settings);
+  const Y0 = taxYearOf(today);
+  const endYear = Math.max((scenario.targetYear ?? Y0) + 5, Y0 + 10);
+
+  const live = positions.filter((p) => !isArchivedPosition(p));
+  const posById = new Map(live.map((p) => [p.id, p]));
+  const lotsByPosition = lotsByPositionId(lots);
+
+  // ---- Baseline income per live position ------------------------------------
+  const excludedPositionIds: string[] = [];
+  const holdingLabels: Record<string, string> = {};
+  const baseline = new Map<string, { gross: number; atf: number; growth: number }>();
+  for (const p of live) {
+    holdingLabels[`pos:${p.id}`] = p.ticker;
+    const proj = projectPositionIncome({
+      position: p,
+      lots: lotsByPosition.get(p.id) ?? [],
+      today,
+      rates: rates.dividend,
+    });
+    if (!proj) {
+      excludedPositionIds.push(p.id);
+      continue;
+    }
+    baseline.set(p.id, {
+      gross: proj.annualGross,
+      atf: proj.annualGross > 0 ? proj.annualAfterTax / proj.annualGross : 1,
+      growth: p.dividendGrowthPct ?? 0,
+    });
+  }
+
+  // Phases 2 and 3 live in their own functions above.
+  const { rotationPreviews, sellEffects, buyEffects, netProceedsBySymbol } = simulateRotations({
+    rotations: args.rotations, posById, lotsByPosition, adjustments, rates, endYear, holdingLabels,
+  });
+  const { years, targetReachedYear, rocCumulativeBySymbol } = buildYearRows({
+    live, baseline, sellEffects, buyEffects,
+    targetAnnualIncome: scenario.targetAnnualIncome, Y0, endYear,
+  });
 
   return {
     years,
