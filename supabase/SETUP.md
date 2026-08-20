@@ -97,6 +97,14 @@ list (keep the existing entries). Save.
   (dashboard → Settings → API → anon/public key).
 - Cloudflare Pages (build env): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`,
   `FINNHUB_API_KEY` (quote fallback only; Yahoo is primary and needs no key).
+- Cloudflare Pages (for the Google Sheet endpoints `/api/sheet/*`):
+  `SHEET_KEY` (a long random token — the sheet's read-only access key) and
+  `SUPABASE_SERVICE_ROLE_KEY`. Note the deliberate exception to the rule
+  below: the service key lives in Pages' SERVER-side env solely so the sheet
+  endpoints can read balances; those functions are read-only by construction
+  and never expose the key. `=IMPORTDATA("https://challenge-tracker.pages.dev/api/sheet/account/Cash%20App?key=<SHEET_KEY>")`
+  drops one account's balance into one cell; `/api/sheet/accounts?key=…`
+  lists the exact names.
 - GitHub Actions (repo secrets): `SUPABASE_SERVICE_ROLE_KEY` — used by the
   daily-snapshot and nightly-backup workflows. Optional `QUOTES_BASE` env in
   the workflow if the Pages URL ever changes (defaults to production).
