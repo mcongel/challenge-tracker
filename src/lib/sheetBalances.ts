@@ -49,7 +49,15 @@ export async function computeSheetBalances(args: {
         `${SUPABASE_URL}/rest/v1/${table}?select=${select}&limit=1000&offset=${offset}`,
         { headers },
       );
-      if (!res.ok) throw new Error(`${table}: ${res.status}`);
+      if (!res.ok) {
+        // Self-diagnosing on auth failures: the key's SHAPE (safe — 'eyJhbG'
+        // opens every JWT on earth), never the key. A wrong paste shows up
+        // as the wrong prefix/length right in the error.
+        const shape = `${trimmedKey.slice(0, 6)}…, ${trimmedKey.length} chars, ` +
+          (trimmedKey.startsWith('eyJ') ? 'jwt' : trimmedKey.startsWith('sb_') ? 'sb-key' : 'unrecognized') +
+          ' format';
+        throw new Error(`${table}: ${res.status} (service key: ${shape})`);
+      }
       const page = (await res.json()) as Record<string, any>[];
       rows.push(...page);
       if (page.length < 1000) return rows;
