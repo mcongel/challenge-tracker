@@ -492,6 +492,9 @@ describe('parked cash — tracked balance with auto-flows', () => {
       pos('btc', { ticker: 'MSTR', category: 'BTC' }),
       pos('ret', { ticker: 'JLGMX', accountId: 'ira' }),           // hand-priced retirement
       pos('retLive', { ticker: 'BTC', accountId: 'ira', liveQuotes: true }),
+      // The Swan IRA case (owner decision 2026-08-20): BTC-category in a
+      // retirement account joins the BITCOIN pot, never taxable math.
+      pos('swanBtc', { ticker: 'BTC', accountId: 'ira', category: 'BTC', liveQuotes: true }),
     ];
     const retirementAccountIds = new Set(['ira']);
     const isQuotable = (p: import('../types').ParkedPosition) =>
@@ -509,7 +512,7 @@ describe('parked cash — tracked balance with auto-flows', () => {
     expect(price('ret')).toBe(10);       // hand-priced: market number never applies
     expect(price('retLive')).toBe(80);   // live_quotes opt-in wins over the retirement wall
     expect(pots.pileParked.map((p) => p.id)).toEqual(['pile']);
-    expect(pots.btcParked.map((p) => p.id)).toEqual(['btc']);
+    expect(pots.btcParked.map((p) => p.id).sort()).toEqual(['btc', 'swanBtc']);
     expect(pots.retirementParked.map((p) => p.id).sort()).toEqual(['ret', 'retLive']);
     expect(pots.taxableParked.map((p) => p.id).sort()).toEqual(['btc', 'pile']);
   });

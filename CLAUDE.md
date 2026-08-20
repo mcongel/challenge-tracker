@@ -13,7 +13,9 @@ A personal trading scoreboard app for Mark's swing-trading "challenge account." 
   - Bitcoin is its own fourth pot (owner decision 2026-08-19): category 'BTC'
     positions (BTC, MSTR, BTCI) are out of the pile's total/cap/chart with
     their own page — but stay in Income, Pile Taxes, and Activity (the split
-    is strategy, not tax).
+    is strategy, not tax). The pot spans the tax walls (owner decision
+    2026-08-20): the Swan IRA's BTC counts in the bitcoin pot, not the
+    retirement pot, while account kind still keeps it out of taxable math.
   - Benchmark = shadow VOO purchases per deposit, compared against Total Score.
   - Positions require an exit target at entry — target only, "full Xu" (owner decision 2026-08-05 superseding the earlier target+bail rule; do not restore the bail point). One stock at a time: warn, don't block. Warn on wash-sale-window rebuys.
 - $1M is an aspiration label, never a pass/fail. UI language should reflect "final height is the prize."

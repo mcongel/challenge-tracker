@@ -30,11 +30,13 @@ import { useValueHistory } from '../lib/useValueHistory';
 /** The fourth pot: the bitcoin conviction bucket (category 'BTC' — BTC
  * itself plus thesis members like MSTR and BTCI). Split out of the pile by
  * owner decision 2026-08-19: never pile total, cap, or trim fuel, and never
- * the score — but it IS taxable money, so Income, Pile Taxes, and Activity
- * keep counting it. Same lot machinery as everything else. */
+ * the score. The pot spans the tax walls (owner decision 2026-08-20): the
+ * Swan IRA's BTC shows here too, while account kind keeps deciding what's
+ * taxable — taxable slices stay in Income, Pile Taxes, and Activity; the
+ * IRA slice stays sheltered. Same lot machinery as everything else. */
 export function Bitcoin() {
   const {
-    btcParked, parkedLots, parkedSales, retirementAccountIds, accounts, tickerNames, overrides,
+    btcParked, parkedLots, parkedSales, accounts, tickerNames, overrides,
     quotes, dayChange, snapshots,
     loading, error,
   } = useData();
@@ -57,11 +59,13 @@ export function Bitcoin() {
     () => snapshots.filter((s) => s.btcValue != null && s.btcValue > 0),
     [snapshots],
   );
-  // Real history back to the first lot: shares held × actual closes.
+  // Real history back to the first lot: shares held × actual closes. The
+  // bucket spans tax walls now, so sales from EVERY bucket account add back
+  // (value history is about shares held, not tax character).
   const bucketTickers = useMemo(() => new Set(btcParked.map((p) => p.ticker)), [btcParked]);
   const bucketSales = useMemo(
-    () => parkedSales.filter((s) => !retirementAccountIds.has(s.accountId) && bucketTickers.has(s.ticker)),
-    [parkedSales, retirementAccountIds, bucketTickers],
+    () => parkedSales.filter((s) => bucketTickers.has(s.ticker)),
+    [parkedSales, bucketTickers],
   );
   const valueHistory = useValueHistory(btcParked, parkedLots, bucketSales, total);
 
@@ -69,7 +73,7 @@ export function Bitcoin() {
     <div>
       <PageHeader
         title="Bitcoin"
-        subtitle="The fourth pot — the conviction bucket, held, not traded. Never in the score, the pile, or its cap; its income and taxes still count with the taxable book."
+        subtitle="The fourth pot — the conviction bucket, held, not traded, across every account (Swan IRA included). Never in the score, the pile, or its cap; the taxable slices still count with the taxable book."
         actions={
           <button onClick={() => setAddOpen(true)}
             className={cn(primaryBtnCls, 'flex items-center gap-1.5')}>
@@ -202,9 +206,9 @@ export function Bitcoin() {
           </Card>
           <p className="mt-3 text-xs text-gray-400">
             Rule 5 territory: this bucket is never trim fuel and never sells to feed the challenge.
-            Lot dates still matter — a sale here would be a real taxable event, so Pile Taxes and
-            Income keep watching these holdings. Moving something in or out is just its Sector
-            field: 'BTC' means this page.
+            Lot dates still matter — a sale from a taxable account here is a real taxable event,
+            so Pile Taxes and Income keep watching those holdings; the Swan IRA slice stays
+            tax-sheltered. Moving something in or out is just its Sector field: 'BTC' means this page.
           </p>
         </>
       )}

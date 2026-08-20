@@ -14,14 +14,18 @@ export interface ParkedPots {
   mergedParked: ParkedPosition[];
   /** Everything outside retirement. Income, taxes, and activity key off THIS
    * — the bitcoin split is a strategy wall, not a tax wall, so taxable math
-   * must keep seeing the BTC-bucket holdings. */
+   * must keep seeing the taxable BTC-bucket holdings. */
   taxableParked: ParkedPosition[];
   /** The pile proper — taxable minus the bitcoin conviction bucket. */
   pileParked: ParkedPosition[];
   /** The fourth pot (owner decision 2026-08-19). Category 'BTC' is the
-   * owner's curation: BTC itself plus thesis members like MSTR and BTCI. */
+   * owner's curation: BTC itself plus thesis members like MSTR and BTCI.
+   * Spans the tax walls (owner decision 2026-08-20): a Swan IRA's BTC is
+   * strategically bitcoin — it lives on the Bitcoin page and in btc_value —
+   * while its ACCOUNT kind keeps it out of all taxable math. */
   btcParked: ParkedPosition[];
-  /** The third pot, behind its own wall — never in pile math or the score. */
+  /** The third pot, behind its own wall — never in pile math or the score.
+   * Minus BTC-category holdings, which the bitcoin pot claims. */
   retirementParked: ParkedPosition[];
 }
 
@@ -43,7 +47,10 @@ export function splitParkedPots(args: {
     mergedParked,
     taxableParked,
     pileParked: taxableParked.filter((p) => p.category !== BTC_CATEGORY),
-    btcParked: taxableParked.filter((p) => p.category === BTC_CATEGORY),
-    retirementParked: mergedParked.filter((p) => retirementAccountIds.has(p.accountId)),
+    // Strategy pot, not a tax pot: BTC-category holdings from EVERY account.
+    btcParked: mergedParked.filter((p) => p.category === BTC_CATEGORY),
+    retirementParked: mergedParked.filter(
+      (p) => retirementAccountIds.has(p.accountId) && p.category !== BTC_CATEGORY,
+    ),
   };
 }

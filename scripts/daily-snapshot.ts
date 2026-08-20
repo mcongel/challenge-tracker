@@ -70,13 +70,16 @@ async function main(): Promise<void> {
     ]);
   // The walls: retirement positions never enter parked_pile_value or the
   // concentration figure, and the bitcoin bucket is its own fourth pot
-  // (owner decision 2026-08-19) — out of the pile, into btc_value.
+  // (owner decision 2026-08-19) — out of the pile, into btc_value. The BTC
+  // pot spans the tax walls (owner decision 2026-08-20): a Swan IRA's BTC
+  // counts in btc_value, not retirement_value. MUST mirror
+  // engine/parkedWalls.splitParkedPots.
   const retirementIds = new Set(
     accountRows.filter((a) => a.kind === 'retirement').map((a) => a.id),
   );
   const taxableRows = allParkedRows.filter((r) => !retirementIds.has(r.account_id));
   const parkedRows = taxableRows.filter((r) => r.category !== BTC_CATEGORY);
-  const btcRows = taxableRows.filter((r) => r.category === BTC_CATEGORY);
+  const btcRows = allParkedRows.filter((r) => r.category === BTC_CATEGORY);
 
   const cashEvents: CashEvent[] = cashRows.map((r) => ({
     id: r.id, date: r.date, type: r.type, amount: num(r.amount),
@@ -148,7 +151,7 @@ async function main(): Promise<void> {
   const parked: ParkedPosition[] = parkedRows.map(toPosition);
   const btcParked: ParkedPosition[] = btcRows.map(toPosition);
   const retirementParked: ParkedPosition[] = allParkedRows
-    .filter((r) => retirementIds.has(r.account_id))
+    .filter((r) => retirementIds.has(r.account_id) && r.category !== BTC_CATEGORY)
     .map(toPosition);
 
   const priceMap = priceMapFor(lots, overrides, quotes);

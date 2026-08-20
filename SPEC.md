@@ -94,7 +94,7 @@ Reference implementation: `Challenge_Account_Tracker.xlsx` in this repo — the 
 - Lead = TotalScore − shadowValue (also as %)
 
 ### ParkedPosition (context only — excluded from all score math)
-- ticker, account (Cash App / Robinhood), category: free-text real sector since 2026-08-12 (vendor-informed via /api/profile, editable; was enum [Semi/AI, AI-adjacent, BTC, Other]). Two reserved values carry rule semantics: 'Semiconductors' drives the concentration cap and 'BTC' marks the never-trim bitcoin bucket; edge cases (NBIS) are hand-curated into the cap. The Semi+adjacent metric retired with the enum.
+- ticker, account (Cash App / Robinhood), category: free-text real sector since 2026-08-12 (vendor-informed via /api/profile, editable; was enum [Semi/AI, AI-adjacent, BTC, Other]). Two reserved values carry rule semantics: 'Semiconductors' drives the concentration cap and 'BTC' marks the never-trim bitcoin bucket — the fourth pot, which spans the tax walls (owner decision 2026-08-20: the Swan IRA's BTC counts in btc_value/the Bitcoin page, not the retirement pot, while account kind still keeps it out of taxable math); edge cases (NBIS) are hand-curated into the cap. The Semi+adjacent metric retired with the enum.
 - shares, avgCost, currentPrice, buyDate (oldest lot), notes, trimRank
 - Derived: longTermDate = buyDate + 366; ltStatus = "FUNDING UNLOCKED" when today ≥ longTermDate, else countdown
 - Concentration: Semiconductors % of pile against the target cap (default 50%, editable); status "OVER CAP — trim semis first" when exceeded; per-category value mix for display
