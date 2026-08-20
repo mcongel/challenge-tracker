@@ -176,7 +176,7 @@ export function Retirement() {
                             </span>
                           )}
                           <span className="text-xs font-normal text-gray-400 tabular-nums">
-                            · {money(g.positions.reduce((s, p) => s + parkedMarketValue(p), 0))}
+                            · <span className="text-sm font-semibold text-gray-900">{money(g.positions.reduce((s, p) => s + parkedMarketValue(p), 0))}</span>
                           </span>
                         </span>
                       </td>

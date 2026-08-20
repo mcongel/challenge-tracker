@@ -535,7 +535,7 @@ export function ParkedPile() {
                             {group.label}
                             <span className="ml-2 text-xs font-normal text-gray-400">
                               {group.positions.length} holding{group.positions.length > 1 ? 's' : ''} ·{' '}
-                              <span className="tabular-nums">{money(groupValue)}</span>
+                              <span className="text-sm font-semibold text-gray-900 tabular-nums">{money(groupValue)}</span>
                               {groupBasis > 0 && (
                                 <span className={cn('tabular-nums',
                                   groupValue - groupBasis >= 0 ? 'text-green-600' : 'text-red-600')}>
@@ -558,7 +558,7 @@ export function ParkedPile() {
                             )}
                             <span className="text-xs font-normal text-gray-400 tabular-nums">
                               · {fmtSh(groupShares)} sh across {group.positions.length} account{group.positions.length > 1 ? 's' : ''} ·{' '}
-                              {money(groupValue)}
+                              <span className="text-sm font-semibold text-gray-900">{money(groupValue)}</span>
                               {groupBasis > 0 && (
                                 <span className={groupValue - groupBasis >= 0 ? ' text-green-600' : ' text-red-600'}>
                                   {' '}· {signedMoney(groupValue - groupBasis)}
