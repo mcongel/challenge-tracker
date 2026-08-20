@@ -6,8 +6,8 @@ import {
 } from 'recharts';
 import { useData } from '../contexts/DataContext';
 import { lotsByPositionId } from '../lib/engine';
-import { activeAlerts } from '../lib/alerts';
-import { AlertHistory } from '../components/AlertHistory';
+import { ALERT_STYLES, BELL_ONLY_KINDS } from '../components/AlertsBell';
+import { useActiveAlerts } from '../lib/useActiveAlerts';
 import { useScoreSummary } from '../lib/useScoreSummary';
 import {
   isArchivedPosition, isNeverTrimFuel, lead, netContributed,
@@ -30,22 +30,14 @@ const SERIES = {
   floor: { light: '#16a34a', dark: '#22c55e' },
 };
 
-const ALERT_STYLES: Record<string, string> = {
-  MILESTONE: 'bg-emerald-50 text-emerald-800 border-emerald-200',
-  TARGET: 'bg-green-50 text-green-700 border-green-200',
-  TAX: 'bg-yellow-50 text-yellow-800 border-amber-300 border',
-  CAP: 'bg-red-50 text-red-700 border-red-200',
-  ENTRY: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-  CALENDAR: 'bg-amber-50 text-amber-800 border-amber-200',
-};
 
 export function Dashboard() {
   const {
-    // pileParked: the pile tile, CAP alert, and unlock line are pile rules —
+    // pileParked: the pile tile and the unlock line are pile rules —
     // retirement and the bitcoin bucket never move them.
-    lots, cashEvents, trades, milestones, pileParked: parked, btcParked,
+    cashEvents, trades, milestones, pileParked: parked, btcParked,
     retirementParked, parkedLots,
-    snapshots, carryforwards, overrides, quotes, contributionCap, concentrationCap, watchlist,
+    snapshots, contributionCap, concentrationCap,
     loading, error, quotesSettled,
   } = useData();
   const { isDark, gridColor, axisColor } = useChartColors();
@@ -59,10 +51,9 @@ export function Dashboard() {
   const { account, floor, reserved, score, shadow, vooToday } = useScoreSummary();
   const next = nextMilestone(account, milestones);
   const ytd = netRealizedYTD(trades, taxYearOf(today));
-  const alerts = activeAlerts({
-    lots, cashEvents, trades, milestones, parked, carryforwards, overrides, quotes,
-    concentrationCap, watchlist, today,
-  });
+  // Act-now banners only — chronic/contextual alerts (over-cap, entry
+  // triggers) live in the header bell instead of shouting here forever.
+  const alerts = useActiveAlerts().filter((a) => !BELL_ONLY_KINDS.has(a.kind));
 
   // Soonest unlock across the pile — the trim calendar at a glance. Rule 5's
   // never-trim holds are excluded: their unlocks are not trim fuel.
@@ -356,8 +347,6 @@ export function Dashboard() {
         )}
       </Card>
 
-      {/* Reference, not workflow: what the email pipeline actually fired. */}
-      <AlertHistory />
     </div>
   );
 }

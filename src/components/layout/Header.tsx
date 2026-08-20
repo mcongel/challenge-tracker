@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useData } from '../../contexts/DataContext';
 import { Modal } from '../ui/Modal';
+import { AlertsBell } from '../AlertsBell';
 import { downloadJson, downloadTableCsv } from '../../lib/export';
 import { cn, secondaryBtnCls, todayISO } from '../../lib/utils';
 
@@ -60,6 +61,7 @@ export function Header({ onMenuClick }: HeaderProps) {
         {!quotesAsOf && quotesError && (
           <span className="text-xs text-amber-600 font-medium">quotes unavailable</span>
         )}
+        <AlertsBell />
         {/* Reference material lives up here, not in the nav — it's reading,
             not workflow. */}
         <Link to="/rules" className="p-2.5 sm:p-2 rounded-md hover:bg-gray-100" aria-label="Rules" title="Rules">
