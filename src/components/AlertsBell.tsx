@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Bell } from 'lucide-react';
+import { Bell, X } from 'lucide-react';
 import { Modal } from './ui/Modal';
 import { AlertHistoryList } from './AlertHistory';
 import { useActiveAlerts } from '../lib/useActiveAlerts';
@@ -24,11 +24,56 @@ export const ALERT_STYLES: Record<AppAlert['kind'], string> = {
  * target, calendar) still banner on the Dashboard AND appear here. */
 export const BELL_ONLY_KINDS: ReadonlySet<AppAlert['kind']> = new Set(['CAP', 'ENTRY']);
 
+/** Everything can be dismissed for the rest of its episode EXCEPT the two
+ * the strategy insists on: the milestone bank and the quarterly skim nag
+ * until settled — "there is no off switch" is the product. */
+export const DISMISSABLE_KINDS: ReadonlySet<AppAlert['kind']> = new Set([
+  'CAP', 'ENTRY', 'TARGET', 'CALENDAR',
+]);
+
+/** An alert row (bell panel and Dashboard banners): the colored link, with a
+ * dismiss X for the kinds that allow it. */
+export function AlertRow({
+  alert, dismiss, onNavigate,
+}: {
+  alert: AppAlert;
+  dismiss: (id: string) => void;
+  onNavigate?: () => void;
+}) {
+  return (
+    <Link
+      to={alert.to}
+      onClick={onNavigate}
+      className={cn(
+        'flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-bold border',
+        ALERT_STYLES[alert.kind],
+        alert.kind === 'MILESTONE' && 'animate-fade-in-up',
+      )}
+    >
+      <span className="min-w-0 flex-1">{alert.message} →</span>
+      {DISMISSABLE_KINDS.has(alert.kind) && (
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dismiss(alert.id);
+          }}
+          className="p-1 -m-1 rounded hover:bg-black/10 flex-shrink-0"
+          aria-label="Dismiss this alert"
+          title="Dismiss until it clears and fires again"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      )}
+    </Link>
+  );
+}
+
 /** Header bell: count badge for every active alert, panel with the full list
  * plus the email-alert history. */
 export function AlertsBell() {
   const [open, setOpen] = useState(false);
-  const alerts = useActiveAlerts();
+  const { alerts, dismissedCount, dismiss, restoreDismissed } = useActiveAlerts();
   const urgent = alerts.some((a) => !BELL_ONLY_KINDS.has(a.kind));
 
   return (
@@ -62,16 +107,17 @@ export function AlertsBell() {
             ) : (
               <div className="space-y-2">
                 {alerts.map((a) => (
-                  <Link
-                    key={a.kind + a.message}
-                    to={a.to}
-                    onClick={() => setOpen(false)}
-                    className={cn('block rounded-lg px-4 py-3 text-sm font-bold border', ALERT_STYLES[a.kind])}
-                  >
-                    {a.message} →
-                  </Link>
+                  <AlertRow key={a.id} alert={a} dismiss={dismiss} onNavigate={() => setOpen(false)} />
                 ))}
               </div>
+            )}
+            {dismissedCount > 0 && (
+              <p className="text-xs text-gray-400">
+                {dismissedCount} dismissed until {dismissedCount === 1 ? 'it clears' : 'they clear'} and fire{dismissedCount === 1 ? 's' : ''} again.{' '}
+                <button onClick={restoreDismissed} className="underline hover:no-underline">
+                  Restore
+                </button>
+              </p>
             )}
             <div className="pt-2 border-t border-gray-100">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">

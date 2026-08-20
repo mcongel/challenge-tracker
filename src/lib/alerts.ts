@@ -30,6 +30,11 @@ export function priceMapFor(
 
 export interface AppAlert {
   kind: 'MILESTONE' | 'TAX' | 'CAP' | 'TARGET' | 'ENTRY' | 'CALENDAR';
+  /** Stable episode identity (same convention as the email alerts' keys) —
+   * dismissals key off this, NOT the message, whose prices move every tick.
+   * An id stays dismissed only while it keeps firing; once it clears, a
+   * re-cross alerts again. */
+  id: string;
   message: string;
   to: string;
 }
@@ -117,6 +122,7 @@ export function activeAlerts(d: AlertInputs): AppAlert[] {
   for (const hit of entryHits(d.watchlist ?? [], d.overrides, d.quotes)) {
     alerts.push({
       kind: 'ENTRY',
+      id: `entry-${hit.ticker}`,
       message: `${hit.ticker} hit your ${formatCurrency(hit.trigger)} entry trigger (now ${formatCurrency(hit.price)}) — the bench setup is live`,
       to: '/watchlist',
     });
@@ -125,6 +131,7 @@ export function activeAlerts(d: AlertInputs): AppAlert[] {
   for (const hit of targetHits(d.lots, d.overrides, d.quotes)) {
     alerts.push({
       kind: 'TARGET',
+      id: `target-${hit.ticker}`,
       message: `${hit.ticker} crossed its ${formatCurrency(hit.target)} exit target (now ${formatCurrency(hit.price)}) — sell into strength, then rotate (Rule 8)`,
       to: '/positions',
     });
@@ -138,6 +145,7 @@ export function activeAlerts(d: AlertInputs): AppAlert[] {
         : `is ${hit.exitDate} (${hit.daysLeft} session${hit.daysLeft > 1 ? 's' : ''} left)`;
     alerts.push({
       kind: 'CALENDAR',
+      id: `calendar-${hit.ticker}-${hit.exitDate}`,
       message: `${hit.ticker} calendar exit ${when} — the plan says never hold through the print`,
       to: '/positions',
     });
@@ -147,6 +155,7 @@ export function activeAlerts(d: AlertInputs): AppAlert[] {
     if (row.status === 'HIT_BANK_NOW') {
       alerts.push({
         kind: 'MILESTONE',
+        id: `milestone-${row.level}`,
         message: `MILESTONE HIT — BANK ${formatCurrency(row.skimDue)} NOW (${formatCurrency(row.level)} crossed)`,
         to: '/milestones',
       });
@@ -163,6 +172,7 @@ export function activeAlerts(d: AlertInputs): AppAlert[] {
     if (due) {
       alerts.push({
         kind: 'TAX',
+        id: `tax-${formatQuarterLabel(due)}`,
         message: `Tax skim due for ${formatQuarterLabel(due)} — move ${formatCurrency(due.moveOutNow)} out of play`,
         to: '/tax',
       });
@@ -172,6 +182,7 @@ export function activeAlerts(d: AlertInputs): AppAlert[] {
   if (concentration(d.parked, d.concentrationCap).overCap) {
     alerts.push({
       kind: 'CAP',
+      id: 'cap',
       message: 'Parked pile over the semiconductor concentration cap — trim semis first',
       to: '/parked',
     });

@@ -6,7 +6,7 @@ import {
 } from 'recharts';
 import { useData } from '../contexts/DataContext';
 import { lotsByPositionId } from '../lib/engine';
-import { ALERT_STYLES, BELL_ONLY_KINDS } from '../components/AlertsBell';
+import { AlertRow, BELL_ONLY_KINDS } from '../components/AlertsBell';
 import { useActiveAlerts } from '../lib/useActiveAlerts';
 import { useScoreSummary } from '../lib/useScoreSummary';
 import {
@@ -53,7 +53,8 @@ export function Dashboard() {
   const ytd = netRealizedYTD(trades, taxYearOf(today));
   // Act-now banners only — chronic/contextual alerts (over-cap, entry
   // triggers) live in the header bell instead of shouting here forever.
-  const alerts = useActiveAlerts().filter((a) => !BELL_ONLY_KINDS.has(a.kind));
+  const { alerts: allAlerts, dismiss } = useActiveAlerts();
+  const alerts = allAlerts.filter((a) => !BELL_ONLY_KINDS.has(a.kind));
 
   // Soonest unlock across the pile — the trim calendar at a glance. Rule 5's
   // never-trim holds are excluded: their unlocks are not trim fuel.
@@ -101,16 +102,7 @@ export function Dashboard() {
 
       {/* Active alerts — price-driven (targets, cap), so they wait for the
           first quote pass rather than flashing on cost-fallback prices. */}
-      {!settling && alerts.map((a) => (
-        <Link
-          key={a.kind + a.message}
-          to={a.to}
-          className={cn('block rounded-lg px-4 py-3 text-sm font-bold border', ALERT_STYLES[a.kind],
-            a.kind === 'MILESTONE' && 'animate-fade-in-up')}
-        >
-          {a.message} →
-        </Link>
-      ))}
+      {!settling && alerts.map((a) => <AlertRow key={a.id} alert={a} dismiss={dismiss} />)}
 
       {/* Hero: the one big honest number */}
       <Card className="p-6 sm:p-8 text-center">
