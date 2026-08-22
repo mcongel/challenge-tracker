@@ -97,6 +97,13 @@ list (keep the existing entries). Save.
   (dashboard → Settings → API → anon/public key).
 - Cloudflare Pages (build env): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`,
   `FINNHUB_API_KEY` (quote fallback only; Yahoo is primary and needs no key).
+- Cloudflare Pages (optional, for the Income page's dividend growth + payout
+  coverage): `FMP_API_KEY` — a Financial Modeling Prep key. The free tier
+  (250 req/day, US stocks, PERSONAL use only) is enough; `/api/fundamentals`
+  caches 24h so a ~30-holding portfolio stays well under the cap. Without it,
+  the dividend calendar and all other features still work — only the growth/
+  coverage chips are absent. A commercial deployment needs a paid FMP plan
+  (the free tier forbids commercial use).
 - Cloudflare Pages (for the Google Sheet endpoints `/api/sheet/*`):
   `SHEET_KEY` (a long random token — the sheet's read-only access key) and
   `SUPABASE_SERVICE_ROLE_KEY`. Note the deliberate exception to the rule

@@ -447,6 +447,41 @@ describe('parked cash — tracked balance with auto-flows', () => {
     expect(y2025.totalTax).toBeCloseTo(15, 9);
   });
 
+  it('dividendInsight: growth CAGR and streak use COMPLETE years; coverage thresholds', async () => {
+    const { dividendInsight, payoutCoverage } = await import('../dividendInsights');
+    const today = '2026-08-21';
+    // 2023→2025 complete years: 1.00 → 1.44 over 2 years = 20%/yr; 2026 partial dropped.
+    const annual = [
+      { year: 2023, amount: 1.00 },
+      { year: 2024, amount: 1.20 },
+      { year: 2025, amount: 1.44 },
+      { year: 2026, amount: 0.40 }, // partial current year — must NOT read as a cut
+    ];
+    const i = dividendInsight({ annual, payoutRatio: 0.45 }, today)!;
+    expect(i.growthCagr).toBeCloseTo(0.2, 9);
+    expect(i.streakYears).toBe(2);        // 2024≥2023, 2025≥2024
+    expect(i.coverage).toBe('healthy');
+
+    // A real cut in the latest complete year breaks the streak.
+    const cut = dividendInsight(
+      { annual: [{ year: 2023, amount: 2 }, { year: 2024, amount: 2 }, { year: 2025, amount: 1 }], payoutRatio: null },
+      today,
+    )!;
+    expect(cut.streakYears).toBe(0);
+    expect(cut.growthCagr).toBeCloseTo((1 / 2) ** (1 / 2) - 1, 9);
+
+    // <2 complete years → no growth number; undefined fundamentals → null.
+    expect(dividendInsight({ annual: [{ year: 2025, amount: 1 }], payoutRatio: 0.5 }, today)!.growthCagr).toBeNull();
+    expect(dividendInsight(undefined, today)).toBeNull();
+
+    // Coverage bands, incl. the REIT/CEF caveat (over-1 reads 'stretched', ≤0 = na).
+    expect(payoutCoverage(0.6)).toBe('healthy');
+    expect(payoutCoverage(0.9)).toBe('elevated');
+    expect(payoutCoverage(1.3)).toBe('stretched');
+    expect(payoutCoverage(0)).toBe('na');
+    expect(payoutCoverage(null)).toBe('na');
+  });
+
   it('concentration: ETF look-through counts hidden semis; direct semis never double-count', async () => {
     const { concentration } = await import('../parked');
     const pos = (ticker: string, category: string, shares: number, price: number) => ({

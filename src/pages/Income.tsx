@@ -17,6 +17,8 @@ import { HoldingRow } from '../components/income/HoldingRow';
 import { RateModal } from '../components/income/RateModal';
 import { ReclassifyModal } from '../components/income/ReclassifyModal';
 import { DividendCalendar } from '../components/income/DividendCalendar';
+import { DividendInsightChips } from '../components/income/DividendInsightChips';
+import { useDividendInsights } from '../lib/useDividendInsights';
 import type { HistRow } from '../components/income/shared';
 import { useData } from '../contexts/DataContext';
 import { lotsByPositionId } from '../lib/engine';
@@ -25,7 +27,7 @@ import type {
   DividendClassification, ParkedPosition,
 } from '../lib/engine';
 import {
-  dividendTaxYTD, isArchivedPosition, isUnallocatedRoc, positionIncomeSummary, roundCents,
+  dividendInsight, dividendTaxYTD, isArchivedPosition, isUnallocatedRoc, positionIncomeSummary, roundCents,
   trailingIncomeByMonth,
 } from '../lib/engine';
 import {
@@ -80,6 +82,21 @@ export function Income() {
       })),
     [parked, lotsByPosition, today, dividendTaxRates, parkedLotAdjustments],
   );
+
+  // Dividend growth + payout coverage (item 3), keyed by ticker. Best-effort:
+  // empty until /api/fundamentals answers, absent entirely without an FMP key.
+  const dividendPayers = useMemo(
+    () => [...new Set(summaries
+      .filter((s) => !isArchivedPosition(s.position) && s.summary.projection)
+      .map((s) => s.position.ticker))],
+    [summaries],
+  );
+  const fundamentals = useDividendInsights(dividendPayers);
+  const insights = useMemo(() => {
+    const m: Record<string, ReturnType<typeof dividendInsight>> = {};
+    for (const t of Object.keys(fundamentals)) m[t] = dividendInsight(fundamentals[t], today);
+    return m;
+  }, [fundamentals, today]);
 
   const trailing = useMemo(() => trailingIncomeByMonth(parkedLots, today), [parkedLots, today]);
   const trailingTotal = trailing.reduce((t, p) => t + p.amount, 0);
@@ -372,6 +389,7 @@ export function Income() {
                           unclassified
                         </span>
                       )}
+                      {!archived && <DividendInsightChips insight={insights[p.ticker]} />}
                     </span>
                   }
                   value={proj ? money(proj.annualGross) : '—'}
@@ -436,7 +454,7 @@ export function Income() {
               <tbody className="divide-y divide-gray-100">
                 {sortedSummaries.map(({ position: p, summary: s }) => (
                   <HoldingRow key={p.id} position={p} summary={s} anyRoc={anyRoc}
-                    onEditRate={() => setEditingRate(p)} />
+                    insight={insights[p.ticker]} onEditRate={() => setEditingRate(p)} />
                 ))}
               </tbody>
             </table>
