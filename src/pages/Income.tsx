@@ -16,6 +16,7 @@ import type { SortState } from '../components/parked/shared';
 import { HoldingRow } from '../components/income/HoldingRow';
 import { RateModal } from '../components/income/RateModal';
 import { ReclassifyModal } from '../components/income/ReclassifyModal';
+import { DividendCalendar } from '../components/income/DividendCalendar';
 import type { HistRow } from '../components/income/shared';
 import { useData } from '../contexts/DataContext';
 import { lotsByPositionId } from '../lib/engine';
@@ -339,6 +340,8 @@ export function Income() {
               </p>
             )}
           </Card>
+
+          <DividendCalendar entries={sortedSummaries.map(({ position, summary }) => ({ position, summary }))} />
 
           <TableCard
             className="mb-4"
