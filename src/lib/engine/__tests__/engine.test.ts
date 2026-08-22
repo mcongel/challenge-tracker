@@ -447,6 +447,30 @@ describe('parked cash — tracked balance with auto-flows', () => {
     expect(y2025.totalTax).toBeCloseTo(15, 9);
   });
 
+  it('concentration: ETF look-through counts hidden semis; direct semis never double-count', async () => {
+    const { concentration } = await import('../parked');
+    const pos = (ticker: string, category: string, shares: number, price: number) => ({
+      id: ticker, ticker, accountId: 'a', account: 'A', category, shares,
+      avgCost: price, currentPrice: price, buyDate: null,
+    }) as import('../types').ParkedPosition;
+    // $1000 pure semi (direct), $1000 QQQI (Income ETF, 22% semi look-through),
+    // $1000 SOXX categorized Semiconductors (direct, look-through must skip it).
+    const positions = [
+      pos('AMD', 'Semiconductors', 10, 100),
+      pos('QQQI', 'Income ETF', 10, 100),
+      pos('SOXX', 'Semiconductors', 10, 100),
+    ];
+    const c = concentration(positions, 0.5);
+    expect(c.directSemiValue).toBeCloseTo(2000, 6);          // AMD + SOXX, full value
+    expect(c.lookThroughSemiValue).toBeCloseTo(220, 6);      // 22% of QQQI's $1000
+    expect(c.semiValue).toBeCloseTo(2220, 6);                // SOXX not double-counted
+    expect(c.semiPct).toBeCloseTo(2220 / 3000, 9);
+    expect(c.overCap).toBe(true);                            // 74% > 50%
+    // A fund not in the map contributes zero look-through.
+    const none = concentration([pos('GLW', 'Electrical Equipment', 10, 100)], 0.5);
+    expect(none.lookThroughSemiValue).toBe(0);
+  });
+
   it('trimFuelRows: never-trim excluded; rank first, semis-when-over-cap, then size', async () => {
     const { trimFuelRows } = await import('../parkedTrimFuel');
     const pos = (id: string, over: Record<string, unknown>) => ({

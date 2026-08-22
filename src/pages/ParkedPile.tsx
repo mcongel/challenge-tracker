@@ -165,10 +165,18 @@ export function ParkedPile() {
           } />
         <StatTile label="Semiconductors" value={formatPercent(c.semiPct)}
           tone={c.overCap ? 'neg' : undefined}
+          title={c.lookThroughSemiValue > 0
+            ? `Includes ${money(c.lookThroughSemiValue)} of semis held inside ETFs (fund look-through), on top of ${money(c.directSemiValue)} in direct semi positions.`
+            : undefined}
           sub={
-            <button onClick={() => setCapOpen(true)} className="hover:text-green-700 hover:underline">
-              cap {formatPercent(concentrationCap, 0)} — edit
-            </button>
+            <span className="block">
+              <button onClick={() => setCapOpen(true)} className="hover:text-green-700 hover:underline">
+                cap {formatPercent(concentrationCap, 0)} — edit
+              </button>
+              {c.lookThroughSemiValue > 0 && (
+                <span className="block text-[11px]">+{money(c.lookThroughSemiValue)} via ETFs</span>
+              )}
+            </span>
           } />
         <StatTile label="Sector mix" value={Object.keys(c.byCategory).length}
           title={Object.entries(c.byCategory).sort((a, b) => b[1] - a[1])

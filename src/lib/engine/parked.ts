@@ -1,6 +1,7 @@
 import type { ParkedPosition } from './types';
 import { daysBetween, longTermDate } from './dates';
 import { sum } from './money';
+import { lookThroughSemiValue } from './fundLookThrough';
 
 /** Archived: fully trimmed/transferred away, kept for dividend history.
  * The single definition of "closed" — use this, not a raw epsilon. */
@@ -63,8 +64,14 @@ export const BTC_CATEGORY = 'BTC';
 
 export interface Concentration {
   total: number;
+  /** Cap-bearing semiconductor value: positions categorized 'Semiconductors'
+   * at full value PLUS the semi slice hiding inside broad ETFs (look-through). */
   semiValue: number;
   semiPct: number;
+  /** Semi value from directly-categorized positions only. */
+  directSemiValue: number;
+  /** Semi value contributed by ETF look-through — the previously-hidden part. */
+  lookThroughSemiValue: number;
   /** Value share per category, for the mix display. */
   byCategory: Record<string, number>;
   overCap: boolean;
@@ -75,11 +82,27 @@ export function concentration(
   cap = DEFAULT_CONCENTRATION_CAP,
 ): Concentration {
   const total = pileTotal(positions);
-  const semiValue = pileTotal(positions.filter((p) => p.category === SEMI_CATEGORY));
+  const directSemiValue = pileTotal(positions.filter((p) => p.category === SEMI_CATEGORY));
+  // Hidden semi exposure inside broad ETFs — a total-market or AI fund adds to
+  // real concentration even when its own category isn't 'Semiconductors'.
+  const lookThrough = sum(
+    positions.map((p) =>
+      lookThroughSemiValue(p.ticker, p.category, parkedMarketValue(p), SEMI_CATEGORY),
+    ),
+  );
+  const semiValue = directSemiValue + lookThrough;
   const semiPct = total === 0 ? 0 : semiValue / total;
   const byCategory: Record<string, number> = {};
   for (const p of positions) {
     byCategory[p.category] = (byCategory[p.category] ?? 0) + parkedMarketValue(p);
   }
-  return { total, semiValue, semiPct, byCategory, overCap: semiPct > cap };
+  return {
+    total,
+    semiValue,
+    semiPct,
+    directSemiValue,
+    lookThroughSemiValue: lookThrough,
+    byCategory,
+    overCap: semiPct > cap,
+  };
 }
