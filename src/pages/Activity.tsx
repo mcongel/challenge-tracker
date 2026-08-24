@@ -84,7 +84,7 @@ export function Activity() {
     // Taxable stream only — retirement history lives on the Retirement page.
     // The bitcoin bucket stays in: its buys, sales, and cash are taxable acts.
     taxableParked: allParked, parkedLots, parkedSales: allSales,
-    parkedCashEvents: allCashEvents, accounts, retirementAccountIds,
+    parkedCashEvents: allCashEvents, accounts, retirementAccountIds, expenses,
     deleteParkedSale, undoParkedSale, accountCash, ltTaxRate, stTaxRate, loading, error,
   } = useData();
   const parkedSales = useMemo(
@@ -118,6 +118,8 @@ export function Activity() {
   const activity = useMemo<ActivityRow[]>(() => {
     const posById = new Map(allParked.map((p) => [p.id, p]));
     const accName = (id: string | null) => accounts.find((a) => a.id === id)?.name ?? '—';
+    const expenseName = (id: string | null | undefined) =>
+      id ? expenses.find((e) => e.id === id)?.name ?? null : null;
     const rows: ActivityRow[] = [];
     for (const l of parkedLots) {
       const pos = posById.get(l.parkedPositionId);
@@ -193,12 +195,17 @@ export function Activity() {
         amount: e.amount,
         amountCls: e.type === 'withdrawal' || e.type === 'fee' || e.amount < 0 ? 'text-red-600' : 'text-green-600',
         cashImpact: signedParkedCash(e),
-        detail: e.notes ?? undefined,
+        // Surface a living-expenses tag: which bill it paid, and whether it
+        // drew on income or principal.
+        detail: e.expenseId || e.fundedFrom
+          ? [expenseName(e.expenseId), e.fundedFrom === 'principal' ? 'from principal' : e.fundedFrom === 'income' ? 'from income' : null, e.notes]
+            .filter(Boolean).join(' · ')
+          : e.notes ?? undefined,
       });
     }
     // Newest first; undated rows sink to the bottom.
     return rows.sort((a, b) => (b.date ?? '0000').localeCompare(a.date ?? '0000'));
-  }, [allParked, parkedLots, parkedSales, parkedCashEvents, accounts]);
+  }, [allParked, parkedLots, parkedSales, parkedCashEvents, accounts, expenses]);
 
   const actAccounts = useMemo(
     () => accounts.filter((a) => activity.some((r) => r.accountId === a.id)),

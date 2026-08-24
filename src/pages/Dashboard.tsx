@@ -9,6 +9,7 @@ import { lotsByPositionId } from '../lib/engine';
 import { AlertRow, BELL_ONLY_KINDS } from '../components/AlertsBell';
 import { useActiveAlerts } from '../lib/useActiveAlerts';
 import { useScoreSummary } from '../lib/useScoreSummary';
+import { useCoverage } from '../lib/useCoverage';
 import {
   isArchivedPosition, isNeverTrimFuel, lead, netContributed,
   netRealizedYTD, nextMilestone, pileTotal, roundCents, taxYearOf,
@@ -18,7 +19,7 @@ import { ErrorCard } from '../components/ui/ErrorCard';
 import { ContributionCapBadge } from '../components/ui/ContributionCapBadge';
 import { GettingStarted } from '../components/GettingStarted';
 import { Card } from '../components/ui/Card';
-import { cn, compactUsd, formatCurrency, formatCurrencyWhole, money, todayISO } from '../lib/utils';
+import { cn, compactUsd, formatCurrency, formatCurrencyWhole, formatPercent, money, todayISO } from '../lib/utils';
 import { useChartColors } from '../lib/useIsDark';
 
 /** Chart palette — validated (dataviz six checks) for both surfaces.
@@ -49,6 +50,7 @@ export function Dashboard() {
   const settling = loading || !quotesSettled;
 
   const { account, floor, reserved, score, shadow, vooToday } = useScoreSummary();
+  const coverage = useCoverage();
   const next = nextMilestone(account, milestones);
   const ytd = netRealizedYTD(trades, taxYearOf(today));
   // Act-now banners only — chronic/contextual alerts (over-cap, entry
@@ -201,7 +203,7 @@ export function Dashboard() {
             {money(pileTotal(parked) + pileTotal(btcParked) + pileTotal(retirementParked))}
           </p>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <Link to="/parked" className="rounded-lg border border-gray-200 p-4 hover:bg-gray-50 transition-colors">
             <p className="text-xs font-medium text-gray-500">Parked pile</p>
             <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums text-gray-700">
@@ -226,6 +228,25 @@ export function Dashboard() {
               {money(pileTotal(retirementParked))}
             </p>
             <p className="text-xs text-gray-400 mt-0.5">behind its own wall — tax-sheltered</p>
+          </Link>
+          <Link to="/coverage" className="rounded-lg border border-gray-200 p-4 hover:bg-gray-50 transition-colors">
+            <p className="text-xs font-medium text-gray-500">Living expenses</p>
+            {coverage.snapshot.totalCount > 0 ? (
+              <>
+                <p className={cn('mt-0.5 text-lg sm:text-xl font-bold tabular-nums',
+                  coverage.snapshot.coveragePct >= 1 ? 'text-green-600' : 'text-gray-700')}>
+                  {formatPercent(coverage.snapshot.coveragePct, 0)}
+                </p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {coverage.snapshot.coveredCount} of {coverage.snapshot.totalCount} bills · {money(coverage.spendableMonthly)}/mo spendable
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="mt-0.5 text-lg sm:text-xl font-bold tabular-nums text-gray-400">—</p>
+                <p className="text-xs text-green-700 mt-0.5">set up income coverage →</p>
+              </>
+            )}
           </Link>
         </div>
         {potsData.length === 1 && (

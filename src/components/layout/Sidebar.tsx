@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
+  ClipboardCheck,
   Bitcoin,
   Building2,
   Wallet,
@@ -59,6 +60,7 @@ export const NAV_SECTIONS: {
       { to: '/parked', label: 'Parked Pile', icon: Archive },
       { to: '/activity', label: 'Activity', icon: History },
       { to: '/income', label: 'Income', icon: HandCoins },
+      { to: '/coverage', label: 'Living Expenses', icon: ClipboardCheck },
       { to: '/pile-taxes', label: 'Pile Taxes', icon: Receipt },
       { to: '/transition', label: 'Transition', icon: Sunrise },
     ],

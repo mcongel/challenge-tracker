@@ -17,9 +17,6 @@ import { HoldingRow } from '../components/income/HoldingRow';
 import { RateModal } from '../components/income/RateModal';
 import { ReclassifyModal } from '../components/income/ReclassifyModal';
 import { DividendCalendar } from '../components/income/DividendCalendar';
-import { CoveragePanel } from '../components/income/CoveragePanel';
-import { MonthlyCoverageChart } from '../components/income/MonthlyCoverageChart';
-import { PaymentsTracker } from '../components/income/PaymentsTracker';
 import { IncomeUseToggle } from '../components/income/IncomeUseToggle';
 import { DividendInsightChips } from '../components/income/DividendInsightChips';
 import { useDividendInsights } from '../lib/useDividendInsights';
@@ -31,7 +28,7 @@ import type {
   DividendClassification, ParkedPosition,
 } from '../lib/engine';
 import {
-  dividendInsight, dividendTaxYTD, incomeUseOf, isArchivedPosition, isUnallocatedRoc,
+  dividendInsight, dividendTaxYTD, isArchivedPosition, isUnallocatedRoc,
   positionIncomeSummary, roundCents,
   trailingIncomeByMonth,
 } from '../lib/engine';
@@ -65,7 +62,7 @@ export function Income() {
     // Taxable positions only — a Roth's dividends are nobody's 1099. The
     // bitcoin bucket stays IN: BTCI's payouts are as taxable as any other.
     taxableParked: parked, parkedLots: allLots, parkedLotAdjustments, dividendTaxRates,
-    expenses, deleteParkedLot, allocateRocDividends, reclassifyDividends, loading, error,
+    deleteParkedLot, allocateRocDividends, reclassifyDividends, loading, error,
   } = useData();
   const today = todayISO();
   // Lots scoped to pile positions — retirement lots stay on their page.
@@ -102,45 +99,6 @@ export function Income() {
     for (const t of Object.keys(fundamentals)) m[t] = dividendInsight(fundamentals[t], today);
     return m;
   }, [fundamentals, today]);
-
-  // Coverage split: spendable (income_use = 'spend') vs reinvesting income,
-  // after tax, per month. Only spendable income covers living expenses.
-  const coverage = useMemo(() => {
-    let spendableAnnual = 0;
-    let reinvestAnnual = 0;
-    let spendableBasis = 0;
-    for (const s of summaries) {
-      if (isArchivedPosition(s.position) || !s.summary.projection) continue;
-      const use = incomeUseOf(s.position, s.lots);
-      const afterTax = s.summary.projection.annualAfterTax;
-      if (use === 'spend') {
-        spendableAnnual += afterTax;
-        spendableBasis += s.summary.costBasis;
-      } else {
-        reinvestAnnual += afterTax;
-      }
-    }
-    // Spendable AFTER-TAX income landing in each projected month (for the
-    // month-accurate coverage chart). Uses the after-tax fraction implied by
-    // each holding's annual gross vs after-tax.
-    const spendableByMonth = new Map<string, number>();
-    for (const s of summaries) {
-      if (isArchivedPosition(s.position) || !s.summary.projection) continue;
-      if (incomeUseOf(s.position, s.lots) !== 'spend') continue;
-      const proj = s.summary.projection;
-      const atf = proj.annualGross > 0 ? proj.annualAfterTax / proj.annualGross : 1;
-      for (const pt of proj.monthly) {
-        if (pt.amount <= 0) continue;
-        spendableByMonth.set(pt.month, (spendableByMonth.get(pt.month) ?? 0) + pt.amount * atf);
-      }
-    }
-    return {
-      spendableMonthly: spendableAnnual / 12,
-      reinvestingMonthly: reinvestAnnual / 12,
-      afterTaxYieldOnCost: spendableBasis > 0 ? spendableAnnual / spendableBasis : null,
-      spendableByMonth,
-    };
-  }, [summaries]);
 
   const trailing = useMemo(() => trailingIncomeByMonth(parkedLots, today), [parkedLots, today]);
   const trailingTotal = trailing.reduce((t, p) => t + p.amount, 0);
@@ -401,16 +359,6 @@ export function Income() {
               </p>
             )}
           </Card>
-
-          <CoveragePanel
-            spendableMonthly={coverage.spendableMonthly}
-            reinvestingMonthly={coverage.reinvestingMonthly}
-            afterTaxYieldOnCost={coverage.afterTaxYieldOnCost}
-          />
-
-          <MonthlyCoverageChart incomeByMonth={coverage.spendableByMonth} expenses={expenses} />
-
-          <PaymentsTracker />
 
           <DividendCalendar entries={sortedSummaries.map(({ position, summary }) => ({ position, summary }))} />
 
