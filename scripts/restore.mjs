@@ -131,6 +131,11 @@ const TABLES = [
   ['pile_tax_set_asides', get('pile_tax_set_asides').map((s) => ({
     id: s.id, tax_year: s.taxYear, date: s.date, amount: s.amount, notes: s.notes ?? null,
   })), 'id'],
+  ['expenses', get('expenses').map((e) => ({
+    id: e.id, name: e.name, amount: e.amount, cadence: e.cadence,
+    category: e.category ?? null, active: e.active, notes: e.notes ?? null,
+    created_at: e.createdAt ?? undefined,
+  })), 'id'],
   ['watchlist', get('watchlist').map((w) => ({
     id: w.id, ticker: w.ticker, catalyst: w.catalyst ?? null,
     catalyst_date: w.catalystDate ?? null, entry_note: w.entryNote ?? null,
