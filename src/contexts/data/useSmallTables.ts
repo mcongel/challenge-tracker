@@ -6,12 +6,13 @@
 import { useCallback } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type {
-  IncomeScenario, PileTaxSetAside, ScenarioRotation, WatchlistItem,
+  Expense, IncomeScenario, PileTaxSetAside, ScenarioRotation, WatchlistItem,
 } from '../../lib/engine';
 import { roundCents } from '../../lib/engine';
 import {
-  db, fetchAll, incomeScenarioPayload, mapIncomeScenario, mapScenarioRotation, mapWatchlistItem,
-  pileTaxSetAsidePayload, scenarioRotationPayload, watchlistItemPayload,
+  db, expensePayload, fetchAll, incomeScenarioPayload, mapExpense, mapIncomeScenario,
+  mapScenarioRotation, mapWatchlistItem, pileTaxSetAsidePayload, scenarioRotationPayload,
+  watchlistItemPayload,
 } from '../../lib/db';
 import type { DataState } from '../DataContext';
 
@@ -43,6 +44,40 @@ export function useSmallTables(args: {
     if (err) throw err;
     setState((prev) => ({ ...prev, watchlist: (data ?? []).map(mapWatchlistItem) }));
   }, [setState]);
+
+  const refreshExpenses = useCallback(async () => {
+    const client = db();
+    const { data, error: err } = await fetchAll(() =>
+      client.from('expenses').select('*').order('amount').order('id'),
+    );
+    if (err) throw err;
+    setState((prev) => ({ ...prev, expenses: (data ?? []).map(mapExpense) }));
+  }, [setState]);
+
+  const addExpense = useCallback(
+    async (e: Omit<Expense, 'id' | 'createdAt'>) => {
+      const { error: err } = await db().from('expenses').insert(expensePayload(e));
+      if (err) throw err;
+      await refreshExpenses();
+    },
+    [refreshExpenses],
+  );
+  const updateExpense = useCallback(
+    async (id: string, e: Omit<Expense, 'id' | 'createdAt'>) => {
+      const { error: err } = await db().from('expenses').update(expensePayload(e)).eq('id', id);
+      if (err) throw err;
+      await refreshExpenses();
+    },
+    [refreshExpenses],
+  );
+  const deleteExpense = useCallback(
+    async (id: string) => {
+      const { error: err } = await db().from('expenses').delete().eq('id', id);
+      if (err) throw err;
+      await refreshExpenses();
+    },
+    [refreshExpenses],
+  );
 
   const updateSetting = useCallback(
     async (key: string, value: unknown) => {
@@ -325,6 +360,7 @@ export function useSmallTables(args: {
   return {
     updateSetting, updateSettings,
     addWatchlistItem, updateWatchlistItem, deleteWatchlistItem,
+    addExpense, updateExpense, deleteExpense,
     addPileTaxSetAside, deletePileTaxSetAside, setCarryforward,
     refreshScenarios, addScenario, updateScenario, deleteScenario, duplicateScenario,
     addRotation, updateRotation, deleteRotation,

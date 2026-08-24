@@ -1,16 +1,18 @@
 import { Pencil } from 'lucide-react';
-import type { DividendInsight, ParkedPosition, PositionIncomeSummary } from '../../lib/engine';
+import type { DividendInsight, ParkedLot, ParkedPosition, PositionIncomeSummary } from '../../lib/engine';
 import { isArchivedPosition } from '../../lib/engine';
 import { cn, formatPercent, money } from '../../lib/utils';
 import { DividendInsightChips } from './DividendInsightChips';
+import { IncomeUseToggle } from './IncomeUseToggle';
 
 export function HoldingRow({
-  position: p, summary: s, anyRoc, insight, onEditRate,
+  position: p, summary: s, anyRoc, insight, lots, onEditRate,
 }: {
   position: ParkedPosition;
   summary: PositionIncomeSummary;
   anyRoc: boolean;
   insight?: DividendInsight | null;
+  lots: ParkedLot[];
   onEditRate: () => void;
 }) {
   const proj = s.projection;
@@ -33,6 +35,7 @@ export function HoldingRow({
           </span>
         )}
         {!archived && <DividendInsightChips insight={insight} />}
+        {!archived && s.projection && <span className="ml-1 align-middle"><IncomeUseToggle position={p} lots={lots} /></span>}
       </td>
       <td className="px-4 py-2 text-right tabular-nums text-gray-600">
         {s.yieldOnCost != null ? formatPercent(s.yieldOnCost) : '—'}

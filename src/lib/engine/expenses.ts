@@ -1,0 +1,129 @@
+/** Living-expenses coverage — the "pile pays the bills" engine. Spendable
+ * after-tax dividend income is matched against expenses CHEAPEST-FIRST (the
+ * debt-snowball method the owner chose): income fills the ladder from the
+ * bottom, each fully-funded bill flips to covered, and the next target is
+ * always the next-cheapest gap. Pure: the page supplies the income figures,
+ * this decides coverage. Never score or challenge math. */
+
+import type { Expense } from './types';
+import type { ParkedLot } from './parkedLots';
+import type { ParkedPosition } from './types';
+
+/** A cost normalized to dollars per month, whatever its cadence. One-off
+ * expenses return their full amount but are excluded from the recurring
+ * coverage ratio by the caller (they'd distort a monthly figure). */
+export function monthlyAmount(e: Expense): number {
+  switch (e.cadence) {
+    case 'annual': return e.amount / 12;
+    case 'once': return e.amount;
+    default: return e.amount;
+  }
+}
+
+export interface CoveredExpense {
+  expense: Expense;
+  monthly: number;
+  /** 1 = fully covered, 0..1 = the in-progress bill, 0 = not reached yet. */
+  fundedFraction: number;
+  /** Running covered total AFTER this expense — the cumulative fill. */
+  cumulativeMonthly: number;
+}
+
+export interface CoverageSnowball {
+  rows: CoveredExpense[];
+  coveredCount: number;
+  totalCount: number;
+  coveredMonthly: number;
+  /** Recurring monthly need (one-offs excluded). */
+  totalMonthly: number;
+  spendableMonthly: number;
+  /** Surplus after all recurring bills (≥0), or 0 when short. */
+  surplusMonthly: number;
+  coveragePct: number;
+  /** The next-cheapest bill not yet fully covered, and the monthly income
+   * still needed to finish it. null when everything recurring is covered. */
+  nextTarget: { expense: Expense; monthlyGap: number } | null;
+}
+
+/** Fill the cheapest bills first with spendableMonthly after-tax income. Only
+ * active, recurring (monthly/annual) expenses form the ladder; one-offs are a
+ * separate planning concern. */
+export function coverageSnowball(
+  spendableMonthly: number,
+  expenses: Expense[],
+): CoverageSnowball {
+  const ladder = expenses
+    .filter((e) => e.active && e.cadence !== 'once')
+    .map((e) => ({ expense: e, monthly: monthlyAmount(e) }))
+    .sort((a, b) => a.monthly - b.monthly);
+
+  let remaining = spendableMonthly;
+  let cumulative = 0;
+  let coveredCount = 0;
+  let nextTarget: CoverageSnowball['nextTarget'] = null;
+  const rows: CoveredExpense[] = ladder.map(({ expense, monthly }) => {
+    const funded = monthly <= 0 ? 1 : Math.max(0, Math.min(1, remaining / monthly));
+    const applied = monthly * funded;
+    cumulative += applied;
+    remaining -= applied;
+    if (funded >= 1 - 1e-9) coveredCount++;
+    else if (nextTarget === null) nextTarget = { expense, monthlyGap: monthly - applied };
+    return { expense, monthly, fundedFraction: funded, cumulativeMonthly: cumulative };
+  });
+
+  const totalMonthly = ladder.reduce((t, r) => t + r.monthly, 0);
+  return {
+    rows,
+    coveredCount,
+    totalCount: ladder.length,
+    coveredMonthly: Math.min(spendableMonthly, totalMonthly),
+    totalMonthly,
+    spendableMonthly,
+    surplusMonthly: Math.max(0, spendableMonthly - totalMonthly),
+    coveragePct: totalMonthly > 0 ? Math.min(1, spendableMonthly / totalMonthly) : 0,
+    nextTarget,
+  };
+}
+
+/** Roughly how much MORE must be invested to add `monthlyAfterTax` of
+ * spendable income, at the given after-tax yield-on-cost. null when the yield
+ * is unknown/zero (can't translate). */
+export function investedForMonthlyIncome(
+  monthlyAfterTax: number,
+  afterTaxYieldOnCost: number | null,
+): number | null {
+  if (!afterTaxYieldOnCost || afterTaxYieldOnCost <= 0) return null;
+  return (monthlyAfterTax * 12) / afterTaxYieldOnCost;
+}
+
+/** A position's income intent: the explicit flag wins; otherwise infer from
+ * recent dividend history — a position whose recent payments mostly
+ * reinvested defaults to 'reinvest', mostly-cash to 'spend', no history to
+ * 'reinvest' (the growth default). A DRIP lot carries a reinvest price; a
+ * cash dividend has none. */
+export function incomeUseOf(
+  position: Pick<ParkedPosition, 'incomeUse'>,
+  lots: ParkedLot[],
+  recentCount = 4,
+): 'reinvest' | 'spend' {
+  if (position.incomeUse) return position.incomeUse;
+  const dividends = lots
+    .filter((l) => l.source === 'dividend')
+    .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''))
+    .slice(0, recentCount);
+  if (dividends.length === 0) return 'reinvest';
+  const drip = dividends.filter((l) => l.price != null).length;
+  return drip >= dividends.length - drip ? 'reinvest' : 'spend';
+}
+
+/** True when the explicit intent contradicts recent behavior — the nudge
+ * ("you marked this spendable, but its dividends keep reinvesting"). */
+export function incomeUseMismatch(
+  position: Pick<ParkedPosition, 'incomeUse'>,
+  lots: ParkedLot[],
+): boolean {
+  if (!position.incomeUse) return false;
+  const inferred = incomeUseOf({ incomeUse: null }, lots);
+  const dividends = lots.filter((l) => l.source === 'dividend');
+  return dividends.length > 0 && inferred !== position.incomeUse;
+}

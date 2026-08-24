@@ -22,7 +22,7 @@ import {
   ST_TAX_RATE, totalScore,
 } from '../lib/engine';
 import type {
-  AccountCashBreakdown, DividendClassification, DividendTaxRates, IncomeScenario,
+  AccountCashBreakdown, DividendClassification, DividendTaxRates, Expense, IncomeScenario,
   ParkedCashEvent, ParkedLot, ParkedLotAdjustment, ParkedSale,
   PileTaxSetAside, ScenarioRotation, WatchlistItem,
 } from '../lib/engine';
@@ -56,6 +56,7 @@ import {
   mapSnapshot,
   mapTrade,
   mapPileTaxSetAside,
+  mapExpense,
   mapWatchlistItem,
   milestonePayload,
   outsideSalePayload,
@@ -95,6 +96,7 @@ export interface DataState {
   /** The bench: researched candidates for the next rotation. Context only. */
   watchlist: WatchlistItem[];
   pileTaxSetAsides: PileTaxSetAside[];
+  expenses: Expense[];
 }
 
 const EMPTY: DataState = {
@@ -119,6 +121,7 @@ const EMPTY: DataState = {
   scenarioRotations: [],
   watchlist: [],
   pileTaxSetAsides: [],
+  expenses: [],
 };
 
 interface DataContextValue extends DataState {
@@ -152,6 +155,12 @@ interface DataContextValue extends DataState {
   addWatchlistItem: (w: Omit<WatchlistItem, 'id' | 'createdAt'>) => Promise<void>;
   updateWatchlistItem: (id: string, w: Omit<WatchlistItem, 'id' | 'createdAt'>) => Promise<void>;
   deleteWatchlistItem: (id: string) => Promise<void>;
+  /** Living-expenses CRUD (coverage). Context only, never score math. */
+  addExpense: (e: Omit<Expense, 'id' | 'createdAt'>) => Promise<void>;
+  updateExpense: (id: string, e: Omit<Expense, 'id' | 'createdAt'>) => Promise<void>;
+  deleteExpense: (id: string) => Promise<void>;
+  /** The reinvest/spend toggle on a holding — null reverts to inference. */
+  setIncomeUse: (id: string, use: 'reinvest' | 'spend' | null) => Promise<void>;
   addPileTaxSetAside: (s: Omit<PileTaxSetAside, 'id'>) => Promise<void>;
   deletePileTaxSetAside: (id: string) => Promise<void>;
   /** Delayed API quotes (override-free). Merged view: overrides win. */
@@ -336,7 +345,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const [
         cash, lots, trades, milestones, bench, parked, snaps, carry, overrides, settings,
         accounts, outsideSales, parkedLots, parkedSales, parkedCashEvents, parkedLotAdjustments,
-        incomeScenarios, scenarioRotations, watchlist, pileTaxSetAsides,
+        incomeScenarios, scenarioRotations, watchlist, pileTaxSetAsides, expenses,
       // Every read pages via fetchAll — PostgREST truncates at 1000 rows
       // server-side, and a partial ledger means a silently wrong score. The
       // trailing .order('id') makes each ordering total so pages can't skip
@@ -362,13 +371,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         fetchAll(() => client.from('scenario_rotations').select('*').order('rotation_date').order('id')),
         fetchAll(() => client.from('watchlist').select('*').order('catalyst_date', { nullsFirst: false }).order('id')),
         fetchAll(() => client.from('pile_tax_set_asides').select('*').order('date').order('id')),
+        fetchAll(() => client.from('expenses').select('*').order('amount').order('id')),
       ]);
       const firstError =
         cash.error ?? lots.error ?? trades.error ?? milestones.error ?? bench.error ??
         parked.error ?? snaps.error ?? carry.error ?? overrides.error ?? settings.error ??
         accounts.error ?? outsideSales.error ?? parkedLots.error ?? parkedSales.error ??
         parkedCashEvents.error ?? parkedLotAdjustments.error ?? incomeScenarios.error ??
-        scenarioRotations.error ?? watchlist.error ?? pileTaxSetAsides.error;
+        scenarioRotations.error ?? watchlist.error ?? pileTaxSetAsides.error ?? expenses.error;
       if (firstError) throw firstError;
       setState({
         cashEvents: (cash.data ?? []).map(mapCashEvent),
@@ -396,6 +406,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         scenarioRotations: (scenarioRotations.data ?? []).map(mapScenarioRotation),
         watchlist: (watchlist.data ?? []).map(mapWatchlistItem),
         pileTaxSetAsides: (pileTaxSetAsides.data ?? []).map(mapPileTaxSetAside),
+        expenses: (expenses.data ?? []).map(mapExpense),
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -804,11 +815,27 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (patch.dividendFrequency !== undefined) payload.dividend_frequency = patch.dividendFrequency;
       if (patch.dividendGrowthPct !== undefined) payload.dividend_growth_pct = patch.dividendGrowthPct;
       if (patch.liveQuotes !== undefined) payload.live_quotes = patch.liveQuotes;
+      if (patch.incomeUse !== undefined) payload.income_use = patch.incomeUse;
       const { error: err } = await db().from('parked_positions').update(payload).eq('id', id);
       if (err) throw err;
       await refresh();
     },
     [refresh],
+  );
+
+  /** The reinvest/spend toggle. income_use is display-only (coverage math),
+   * so patch state locally instead of a full 20-table refresh. */
+  const setIncomeUse = useCallback(
+    async (id: string, use: 'reinvest' | 'spend' | null) => {
+      const { error: err } = await db()
+        .from('parked_positions').update({ income_use: use }).eq('id', id);
+      if (err) throw err;
+      setState((prev) => ({
+        ...prev,
+        parked: prev.parked.map((p) => (p.id === id ? { ...p, incomeUse: use } : p)),
+      }));
+    },
+    [],
   );
 
   /** Accounts are referenced by id everywhere, so renames/relabels touch
@@ -1729,6 +1756,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const {
     updateSetting, updateSettings,
     addWatchlistItem, updateWatchlistItem, deleteWatchlistItem,
+    addExpense, updateExpense, deleteExpense,
     addPileTaxSetAside, deletePileTaxSetAside, setCarryforward,
     addScenario, updateScenario, deleteScenario, duplicateScenario,
     addRotation, updateRotation, deleteRotation,
@@ -1790,6 +1818,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       addWatchlistItem,
       updateWatchlistItem,
       deleteWatchlistItem,
+      addExpense,
+      updateExpense,
+      deleteExpense,
+      setIncomeUse,
       addPileTaxSetAside,
       deletePileTaxSetAside,
       loading,
@@ -1849,6 +1881,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       contributionCap,
       concentrationCap, ltTaxRate, stTaxRate, dividendTaxRates, updateSetting, updateSettings,
       setCarryforward, addWatchlistItem, updateWatchlistItem, deleteWatchlistItem,
+      addExpense, updateExpense, deleteExpense, setIncomeUse,
       addPileTaxSetAside, deletePileTaxSetAside, loading, error,
       refresh, addCashEvent, updateCashEvent, deleteCashEvent, addLot, deleteLot, updateLotDetails,
       closePosition, recordSplit,

@@ -17,6 +17,8 @@ import { HoldingRow } from '../components/income/HoldingRow';
 import { RateModal } from '../components/income/RateModal';
 import { ReclassifyModal } from '../components/income/ReclassifyModal';
 import { DividendCalendar } from '../components/income/DividendCalendar';
+import { CoveragePanel } from '../components/income/CoveragePanel';
+import { IncomeUseToggle } from '../components/income/IncomeUseToggle';
 import { DividendInsightChips } from '../components/income/DividendInsightChips';
 import { useDividendInsights } from '../lib/useDividendInsights';
 import type { HistRow } from '../components/income/shared';
@@ -27,7 +29,8 @@ import type {
   DividendClassification, ParkedPosition,
 } from '../lib/engine';
 import {
-  dividendInsight, dividendTaxYTD, isArchivedPosition, isUnallocatedRoc, positionIncomeSummary, roundCents,
+  dividendInsight, dividendTaxYTD, incomeUseOf, isArchivedPosition, isUnallocatedRoc,
+  positionIncomeSummary, roundCents,
   trailingIncomeByMonth,
 } from '../lib/engine';
 import {
@@ -97,6 +100,30 @@ export function Income() {
     for (const t of Object.keys(fundamentals)) m[t] = dividendInsight(fundamentals[t], today);
     return m;
   }, [fundamentals, today]);
+
+  // Coverage split: spendable (income_use = 'spend') vs reinvesting income,
+  // after tax, per month. Only spendable income covers living expenses.
+  const coverage = useMemo(() => {
+    let spendableAnnual = 0;
+    let reinvestAnnual = 0;
+    let spendableBasis = 0;
+    for (const s of summaries) {
+      if (isArchivedPosition(s.position) || !s.summary.projection) continue;
+      const use = incomeUseOf(s.position, s.lots);
+      const afterTax = s.summary.projection.annualAfterTax;
+      if (use === 'spend') {
+        spendableAnnual += afterTax;
+        spendableBasis += s.summary.costBasis;
+      } else {
+        reinvestAnnual += afterTax;
+      }
+    }
+    return {
+      spendableMonthly: spendableAnnual / 12,
+      reinvestingMonthly: reinvestAnnual / 12,
+      afterTaxYieldOnCost: spendableBasis > 0 ? spendableAnnual / spendableBasis : null,
+    };
+  }, [summaries]);
 
   const trailing = useMemo(() => trailingIncomeByMonth(parkedLots, today), [parkedLots, today]);
   const trailingTotal = trailing.reduce((t, p) => t + p.amount, 0);
@@ -358,6 +385,12 @@ export function Income() {
             )}
           </Card>
 
+          <CoveragePanel
+            spendableMonthly={coverage.spendableMonthly}
+            reinvestingMonthly={coverage.reinvestingMonthly}
+            afterTaxYieldOnCost={coverage.afterTaxYieldOnCost}
+          />
+
           <DividendCalendar entries={sortedSummaries.map(({ position, summary }) => ({ position, summary }))} />
 
           <TableCard
@@ -390,6 +423,7 @@ export function Income() {
                         </span>
                       )}
                       {!archived && <DividendInsightChips insight={insights[p.ticker]} />}
+                      {!archived && proj && <IncomeUseToggle position={p} lots={lotsByPosition.get(p.id) ?? []} />}
                     </span>
                   }
                   value={proj ? money(proj.annualGross) : '—'}
@@ -454,7 +488,8 @@ export function Income() {
               <tbody className="divide-y divide-gray-100">
                 {sortedSummaries.map(({ position: p, summary: s }) => (
                   <HoldingRow key={p.id} position={p} summary={s} anyRoc={anyRoc}
-                    insight={insights[p.ticker]} onEditRate={() => setEditingRate(p)} />
+                    insight={insights[p.ticker]} lots={lotsByPosition.get(p.id) ?? []}
+                    onEditRate={() => setEditingRate(p)} />
                 ))}
               </tbody>
             </table>

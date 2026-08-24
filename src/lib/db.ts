@@ -18,6 +18,7 @@ import type {
   PositionLot,
   ScenarioRotation,
   Snapshot,
+  Expense,
   Trade,
   WatchlistItem,
 } from './engine';
@@ -182,6 +183,7 @@ export const mapParked = (r: any): ParkedPosition => ({
   dividendFrequency: r.dividend_frequency ?? null,
   dividendGrowthPct: r.dividend_growth_pct == null ? null : Number(r.dividend_growth_pct),
   liveQuotes: r.live_quotes ?? null,
+  incomeUse: r.income_use ?? null,
   notes: r.notes,
 });
 
@@ -197,6 +199,7 @@ export const parkedPayload = (p: Omit<ParkedPosition, 'id' | 'account'>) => ({
   dividend_rate: p.dividendRate ?? null,
   dividend_frequency: p.dividendFrequency ?? null,
   dividend_growth_pct: p.dividendGrowthPct ?? null,
+  income_use: p.incomeUse ?? null,
   notes: p.notes ?? null,
 });
 
@@ -292,6 +295,26 @@ export const pileTaxSetAsidePayload = (s: Omit<PileTaxSetAside, 'id'>) => ({
   date: s.date,
   amount: s.amount,
   notes: s.notes ?? null,
+});
+
+export const mapExpense = (r: any): Expense => ({
+  id: r.id,
+  name: r.name,
+  amount: Number(r.amount),
+  cadence: r.cadence,
+  category: r.category ?? null,
+  active: r.active,
+  notes: r.notes ?? null,
+  createdAt: r.created_at ?? null,
+});
+
+export const expensePayload = (e: Omit<Expense, 'id' | 'createdAt'>) => ({
+  name: e.name,
+  amount: e.amount,
+  cadence: e.cadence,
+  category: e.category ?? null,
+  active: e.active,
+  notes: e.notes ?? null,
 });
 
 export const mapIncomeScenario = (r: any): IncomeScenario => ({

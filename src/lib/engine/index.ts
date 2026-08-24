@@ -20,6 +20,7 @@ export * from './parkedRoc';
 export * from './parkedWalls';
 export * from './parkedTrimFuel';
 export * from './fundLookThrough';
+export * from './expenses';
 export * from './dividendInsights';
 export * from './pileTax';
 export * from './parkedSaleRestore';

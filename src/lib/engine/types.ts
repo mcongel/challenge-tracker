@@ -149,7 +149,26 @@ export interface ParkedPosition {
    * units (W146, TRAD) are priced by hand and their codes can collide with
    * real listings. null = pre-migration row: quotable unless retirement. */
   liveQuotes?: boolean | null;
+  /** Living-expenses intent: 'reinvest' (DRIP, still compounding) or 'spend'
+   * (cash available to cover bills). Only 'spend' income counts toward
+   * coverage. null = infer from recent dividend history. */
+  incomeUse?: 'reinvest' | 'spend' | null;
   notes?: string | null;
+}
+
+export type ExpenseCadence = 'monthly' | 'annual' | 'once';
+
+/** A living-expense line item. Amount is per its cadence; the engine
+ * normalizes to monthly. Pile-side context only. */
+export interface Expense {
+  id: string;
+  name: string;
+  amount: number;
+  cadence: ExpenseCadence;
+  category?: string | null;
+  active: boolean;
+  notes?: string | null;
+  createdAt?: string | null;
 }
 
 /** One consumed lot's record inside a sale snapshot. Pre-sale absolutes AND

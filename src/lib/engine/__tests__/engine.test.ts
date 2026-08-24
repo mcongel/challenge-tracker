@@ -447,6 +447,59 @@ describe('parked cash — tracked balance with auto-flows', () => {
     expect(y2025.totalTax).toBeCloseTo(15, 9);
   });
 
+  it('coverageSnowball: fills cheapest bills first; next target is the next gap', async () => {
+    const { coverageSnowball, monthlyAmount, investedForMonthlyIncome } = await import('../expenses');
+    const exp = (name: string, amount: number, cadence = 'monthly', over = {}) =>
+      ({ id: name, name, amount, cadence, active: true, ...over }) as import('../types').Expense;
+    // Bills: $50, $200, $1200/yr (=$100/mo). Sorted cheapest → $50, $100, $200.
+    const expenses = [exp('cable', 200), exp('phone', 50), exp('insurance', 1200, 'annual')];
+    expect(monthlyAmount(expenses[2])).toBeCloseTo(100, 9);
+
+    // $130/mo spendable covers phone ($50) fully, insurance ($100) partly.
+    const c = coverageSnowball(130, expenses);
+    expect(c.rows.map((r) => r.expense.name)).toEqual(['phone', 'insurance', 'cable']); // cheapest first
+    expect(c.coveredCount).toBe(1);                       // only phone fully
+    expect(c.rows[1].fundedFraction).toBeCloseTo(0.8, 9); // $80 of $100
+    expect(c.totalMonthly).toBeCloseTo(350, 9);
+    expect(c.coveragePct).toBeCloseTo(130 / 350, 9);
+    expect(c.nextTarget?.expense.name).toBe('insurance');
+    expect(c.nextTarget?.monthlyGap).toBeCloseTo(20, 9);  // $100 − $80
+
+    // One-off expenses never enter the recurring ladder.
+    const withOnce = coverageSnowball(130, [...expenses, exp('roof', 9000, 'once')]);
+    expect(withOnce.totalCount).toBe(3);
+    expect(withOnce.rows.some((r) => r.expense.name === 'roof')).toBe(false);
+
+    // Full coverage → surplus, no next target.
+    const full = coverageSnowball(400, expenses);
+    expect(full.coveragePct).toBe(1);
+    expect(full.surplusMonthly).toBeCloseTo(50, 9);
+    expect(full.nextTarget).toBeNull();
+
+    // Invested-needed translation: $20/mo after-tax at 4% after-tax YoC.
+    expect(investedForMonthlyIncome(20, 0.04)).toBeCloseTo((20 * 12) / 0.04, 6);
+    expect(investedForMonthlyIncome(20, 0)).toBeNull();
+  });
+
+  it('incomeUseOf: explicit flag wins; else inferred from recent DRIP vs cash', async () => {
+    const { incomeUseOf, incomeUseMismatch } = await import('../expenses');
+    const div = (date: string, drip: boolean) =>
+      ({ id: date, parkedPositionId: 'p', date, source: 'dividend' as const,
+         shares: drip ? 0.1 : 0, price: drip ? 100 : null, amount: 10 });
+    const dripHist = [div('2026-05-01', true), div('2026-02-01', true)];
+    const cashHist = [div('2026-05-01', false), div('2026-02-01', false)];
+
+    expect(incomeUseOf({ incomeUse: 'spend' }, dripHist)).toBe('spend');   // explicit wins
+    expect(incomeUseOf({ incomeUse: null }, dripHist)).toBe('reinvest');   // inferred DRIP
+    expect(incomeUseOf({ incomeUse: null }, cashHist)).toBe('spend');      // inferred cash
+    expect(incomeUseOf({ incomeUse: null }, [])).toBe('reinvest');         // no history → grow
+
+    // Mismatch: marked spend but dividends keep reinvesting.
+    expect(incomeUseMismatch({ incomeUse: 'spend' }, dripHist)).toBe(true);
+    expect(incomeUseMismatch({ incomeUse: 'spend' }, cashHist)).toBe(false);
+    expect(incomeUseMismatch({ incomeUse: null }, dripHist)).toBe(false);  // no explicit intent
+  });
+
   it('dividendInsight: growth CAGR and streak use COMPLETE years; coverage thresholds', async () => {
     const { dividendInsight, payoutCoverage } = await import('../dividendInsights');
     const today = '2026-08-21';
