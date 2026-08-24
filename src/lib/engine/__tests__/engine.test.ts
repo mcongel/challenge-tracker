@@ -481,6 +481,34 @@ describe('parked cash — tracked balance with auto-flows', () => {
     expect(investedForMonthlyIncome(20, 0)).toBeNull();
   });
 
+  it('paymentsSummary + fundedFromDefault: income vs principal accounting', async () => {
+    const { paymentsSummary, fundedFromDefault } = await import('../expenses');
+    const pay = (date: string, amount: number, expenseId: string | null, fundedFrom: any) =>
+      ({ accountId: 'a', date, amount, expenseId, fundedFrom });
+    const rows = [
+      pay('2026-08-05', 1000, 'rent', 'income'),
+      pay('2026-08-20', 300, 'rent', 'principal'),   // same bill, dipped in
+      pay('2026-07-01', 200, 'phone', 'income'),      // prior month, same year
+      pay('2025-12-01', 999, 'rent', 'income'),       // prior year — excluded from 2026
+      pay('2026-08-10', 50, null, 'income'),          // untagged but funded-from set → counts
+      pay('2026-08-01', 5, null, null),               // both null → a plain cash move, excluded
+    ];
+    // Only rows carrying an expense tag or a funded-from flag count; the plain
+    // withdrawal (both null) is a normal cash move, not an expense payment.
+    const ytd = paymentsSummary(rows, '2026');
+    expect(ytd.total).toBeCloseTo(1000 + 300 + 200 + 50, 6);   // 2025 and plain-move excluded
+    expect(ytd.fromIncome).toBeCloseTo(1000 + 200 + 50, 6);
+    expect(ytd.fromPrincipal).toBeCloseTo(300, 6);
+    expect(ytd.byExpense.get('rent')).toBeCloseTo(1300, 6);     // both rent rows
+    const mtd = paymentsSummary(rows, '2026-08');
+    expect(mtd.total).toBeCloseTo(1000 + 300 + 50, 6);
+
+    // Default flips to principal once the income pool runs dry.
+    expect(fundedFromDefault(100, 500)).toBe('income');    // pool covers it
+    expect(fundedFromDefault(600, 500)).toBe('principal'); // pool short
+    expect(fundedFromDefault(500, 500)).toBe('income');    // exactly covers
+  });
+
   it('expensesByMonth: bills land in their ACTUAL month; monthly hits all', async () => {
     const { expensesByMonth, monthlyCoverage } = await import('../expenses');
     const exp = (name: string, amount: number, cadence: string, dueDate: string | null = null) =>

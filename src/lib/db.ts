@@ -378,6 +378,8 @@ export const mapParkedCashEvent = (r: any): ParkedCashEvent => ({
   date: r.date,
   type: r.type,
   amount: Number(r.amount),
+  expenseId: r.expense_id ?? null,
+  fundedFrom: r.funded_from ?? null,
   notes: r.notes,
 });
 
@@ -386,6 +388,8 @@ export const parkedCashEventPayload = (e: Omit<ParkedCashEvent, 'id'>) => ({
   date: e.date,
   type: e.type,
   amount: e.amount,
+  expense_id: e.expenseId ?? null,
+  funded_from: e.fundedFrom ?? null,
   notes: e.notes ?? null,
 });
 

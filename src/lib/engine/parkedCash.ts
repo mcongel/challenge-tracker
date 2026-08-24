@@ -14,6 +14,11 @@ export interface ParkedCashEvent {
   type: ParkedCashType;
   /** Positive with typed direction; adjustments may be signed either way. */
   amount: number;
+  /** Living-expenses (Phase 3): a withdrawal paying a specific bill, and
+   * whether it came from accumulated dividend income or from principal.
+   * Only set on withdrawal rows; null elsewhere. */
+  expenseId?: string | null;
+  fundedFrom?: 'income' | 'principal' | null;
   notes?: string | null;
 }
 

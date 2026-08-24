@@ -56,9 +56,14 @@ const TABLES = [
     id: a.id, share_lot_id: a.shareLotId, dividend_lot_id: a.dividendLotId ?? null,
     amount: a.amount,
   })), 'id'],
+  ['expenses', get('expenses').map((e) => ({
+    id: e.id, name: e.name, amount: e.amount, cadence: e.cadence,
+    due_date: e.dueDate ?? null, category: e.category ?? null, active: e.active,
+    notes: e.notes ?? null, created_at: e.createdAt ?? undefined,
+  })), 'id'],
   ['parked_cash_events', get('parked_cash_events').map((e) => ({
     id: e.id, account_id: e.accountId, date: e.date, type: e.type, amount: e.amount,
-    notes: e.notes ?? null,
+    expense_id: e.expenseId ?? null, funded_from: e.fundedFrom ?? null, notes: e.notes ?? null,
   })), 'id'],
   ['parked_sales', get('parked_sales').map((s) => ({
     id: s.id, ticker: s.ticker, account_id: s.accountId, date: s.date, shares: s.shares,
@@ -130,11 +135,6 @@ const TABLES = [
   })), 'key'],
   ['pile_tax_set_asides', get('pile_tax_set_asides').map((s) => ({
     id: s.id, tax_year: s.taxYear, date: s.date, amount: s.amount, notes: s.notes ?? null,
-  })), 'id'],
-  ['expenses', get('expenses').map((e) => ({
-    id: e.id, name: e.name, amount: e.amount, cadence: e.cadence,
-    due_date: e.dueDate ?? null, category: e.category ?? null, active: e.active,
-    notes: e.notes ?? null, created_at: e.createdAt ?? undefined,
   })), 'id'],
   ['watchlist', get('watchlist').map((w) => ({
     id: w.id, ticker: w.ticker, catalyst: w.catalyst ?? null,

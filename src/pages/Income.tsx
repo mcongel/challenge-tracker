@@ -19,6 +19,7 @@ import { ReclassifyModal } from '../components/income/ReclassifyModal';
 import { DividendCalendar } from '../components/income/DividendCalendar';
 import { CoveragePanel } from '../components/income/CoveragePanel';
 import { MonthlyCoverageChart } from '../components/income/MonthlyCoverageChart';
+import { PaymentsTracker } from '../components/income/PaymentsTracker';
 import { IncomeUseToggle } from '../components/income/IncomeUseToggle';
 import { DividendInsightChips } from '../components/income/DividendInsightChips';
 import { useDividendInsights } from '../lib/useDividendInsights';
@@ -408,6 +409,8 @@ export function Income() {
           />
 
           <MonthlyCoverageChart incomeByMonth={coverage.spendableByMonth} expenses={expenses} />
+
+          <PaymentsTracker />
 
           <DividendCalendar entries={sortedSummaries.map(({ position, summary }) => ({ position, summary }))} />
 

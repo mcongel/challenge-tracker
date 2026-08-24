@@ -148,6 +148,62 @@ export function investedForMonthlyIncome(
   return (monthlyAfterTax * 12) / afterTaxYieldOnCost;
 }
 
+/** Recorded expense payments (Phase 3) — the ACTUAL side of coverage. A
+ * withdrawal tagged to an expense, with whether it drew on dividend income or
+ * on principal. */
+export interface ExpensePayment {
+  accountId: string;
+  date: string;
+  amount: number;
+  expenseId: string | null;
+  fundedFrom: 'income' | 'principal' | null;
+}
+
+export interface PaymentsSummary {
+  total: number;
+  fromIncome: number;
+  fromPrincipal: number;
+  /** Withdrawn per expense id, for the ledger. */
+  byExpense: Map<string, number>;
+  count: number;
+}
+
+/** Sum tagged withdrawals over a period. `prefix` filters by date (a year
+ * '2026' or a month '2026-08'); omit for all-time. Only rows carrying an
+ * expense tag or a funded-from flag count as expense payments. */
+export function paymentsSummary(
+  events: ExpensePayment[],
+  prefix?: string,
+): PaymentsSummary {
+  const rows = events.filter(
+    (e) => (e.expenseId != null || e.fundedFrom != null) &&
+      (!prefix || e.date.startsWith(prefix)),
+  );
+  const byExpense = new Map<string, number>();
+  let fromIncome = 0;
+  let fromPrincipal = 0;
+  for (const e of rows) {
+    if (e.expenseId) byExpense.set(e.expenseId, (byExpense.get(e.expenseId) ?? 0) + e.amount);
+    if (e.fundedFrom === 'principal') fromPrincipal += e.amount;
+    else fromIncome += e.amount; // null defaults to income (the aspiration)
+  }
+  return {
+    total: fromIncome + fromPrincipal,
+    fromIncome,
+    fromPrincipal,
+    byExpense,
+    count: rows.length,
+  };
+}
+
+/** Smart default for a new payment's funded-from: 'income' while accumulated
+ * dividend cash still covers it, else 'principal'. `incomePool` is the
+ * account's cash dividends received minus what prior income-funded
+ * withdrawals already drew. */
+export function fundedFromDefault(amount: number, incomePool: number): 'income' | 'principal' {
+  return incomePool + 1e-9 >= amount ? 'income' : 'principal';
+}
+
 /** A position's income intent: the explicit flag wins; otherwise infer from
  * recent dividend history — a position whose recent payments mostly
  * reinvested defaults to 'reinvest', mostly-cash to 'spend', no history to
