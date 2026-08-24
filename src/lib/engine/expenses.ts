@@ -85,6 +85,58 @@ export function coverageSnowball(
   };
 }
 
+/** Expense dollars landing in each of the given month keys (YYYY-MM), by
+ * ACTUAL due month: a monthly bill hits every month; an annual bill hits the
+ * month of its dueDate each year (or spreads evenly across the window when it
+ * has no dueDate — the documented fallback); a one-off hits the single month
+ * of its dueDate if that month is in the window. Only active expenses. */
+export function expensesByMonth(expenses: Expense[], monthKeys: string[]): Map<string, number> {
+  const out = new Map<string, number>(monthKeys.map((m) => [m, 0]));
+  const add = (m: string, amt: number) => {
+    if (out.has(m)) out.set(m, out.get(m)! + amt);
+  };
+  for (const e of expenses) {
+    if (!e.active) continue;
+    if (e.cadence === 'monthly') {
+      for (const m of monthKeys) add(m, e.amount);
+    } else if (e.cadence === 'once') {
+      if (e.dueDate) add(e.dueDate.slice(0, 7), e.amount);
+    } else {
+      // annual
+      if (e.dueDate) {
+        const mm = e.dueDate.slice(5, 7);
+        for (const m of monthKeys) if (m.slice(5, 7) === mm) add(m, e.amount);
+      } else {
+        // No month set — spread evenly so the window total still reconciles.
+        for (const m of monthKeys) add(m, e.amount / 12);
+      }
+    }
+  }
+  return out;
+}
+
+export interface MonthlyCoverage {
+  month: string;
+  income: number;
+  expenses: number;
+  /** income − expenses; negative = a shortfall that month. */
+  net: number;
+}
+
+/** Per-month spendable income vs actual-month expenses across the window. */
+export function monthlyCoverage(
+  incomeByMonth: Map<string, number>,
+  expenses: Expense[],
+  monthKeys: string[],
+): MonthlyCoverage[] {
+  const exp = expensesByMonth(expenses, monthKeys);
+  return monthKeys.map((month) => {
+    const income = incomeByMonth.get(month) ?? 0;
+    const expensesM = exp.get(month) ?? 0;
+    return { month, income, expenses: expensesM, net: income - expensesM };
+  });
+}
+
 /** Roughly how much MORE must be invested to add `monthlyAfterTax` of
  * spendable income, at the given after-tax yield-on-cost. null when the yield
  * is unknown/zero (can't translate). */

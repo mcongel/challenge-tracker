@@ -19,6 +19,7 @@ export function ExpenseModal({ expense, onClose }: { expense?: Expense | null; o
   const [name, setName] = useState(expense?.name ?? '');
   const [amount, setAmount] = useState(expense ? String(expense.amount) : '');
   const [cadence, setCadence] = useState<ExpenseCadence>(expense?.cadence ?? 'monthly');
+  const [dueDate, setDueDate] = useState(expense?.dueDate ?? '');
   const [category, setCategory] = useState(expense?.category ?? '');
   const [active, setActive] = useState(expense?.active ?? true);
 
@@ -26,7 +27,13 @@ export function ExpenseModal({ expense, onClose }: { expense?: Expense | null; o
     const amt = Number(amount);
     if (!name.trim()) throw new Error('Give the expense a name.');
     if (!amt || amt <= 0) throw new Error('Amount must be a positive number.');
-    const payload = { name: name.trim(), amount: amt, cadence, category: category.trim() || null, active };
+    if (cadence === 'once' && !dueDate) throw new Error('A one-off needs its date.');
+    const payload = {
+      name: name.trim(), amount: amt, cadence,
+      // Monthly bills hit every month, so a due date is meaningless for them.
+      dueDate: cadence === 'monthly' ? null : dueDate || null,
+      category: category.trim() || null, active,
+    };
     if (expense) await updateExpense(expense.id, payload);
     else await addExpense(payload);
     onClose();
@@ -50,6 +57,15 @@ export function ExpenseModal({ expense, onClose }: { expense?: Expense | null; o
             </select>
           </Field>
         </div>
+        {cadence !== 'monthly' && (
+          <Field
+            label={cadence === 'once' ? 'Date due' : 'Month due (recurs yearly)'}
+            hint={cadence === 'annual' ? 'Only the month is used; leave blank to spread evenly.' : undefined}
+          >
+            <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)}
+              required={cadence === 'once'} className={inputCls} />
+          </Field>
+        )}
         {cadence === 'once' && (
           <p className="text-xs text-gray-400">
             One-off costs are tracked for planning but stay out of the monthly coverage ratio.

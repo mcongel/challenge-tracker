@@ -165,6 +165,9 @@ export interface Expense {
   name: string;
   amount: number;
   cadence: ExpenseCadence;
+  /** annual: the bill's month (recurs yearly on it); once: the exact date;
+   * monthly: ignored. Null on annual → spread evenly (engine fallback). */
+  dueDate?: string | null;
   category?: string | null;
   active: boolean;
   notes?: string | null;

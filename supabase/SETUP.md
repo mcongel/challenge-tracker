@@ -42,6 +42,7 @@ once (the link state is gitignored), then `supabase db push`:
 20260831000000_lot_origin.sql            explicit lot origin (purchase/transfer/milestone)
 20260901000000_drop_bail_point.sql       REVERSED deploy order: deploy code FIRST, then apply
 20260902000000_living_expenses.sql       expenses table, income_use, cash-event expense link
+20260903000000_expense_due_date.sql      expenses.due_date for month-accurate coverage
 ```
 
 **Keep this list current** — it is the recovery runbook. A migration missing

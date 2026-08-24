@@ -481,6 +481,34 @@ describe('parked cash — tracked balance with auto-flows', () => {
     expect(investedForMonthlyIncome(20, 0)).toBeNull();
   });
 
+  it('expensesByMonth: bills land in their ACTUAL month; monthly hits all', async () => {
+    const { expensesByMonth, monthlyCoverage } = await import('../expenses');
+    const exp = (name: string, amount: number, cadence: string, dueDate: string | null = null) =>
+      ({ id: name, name, amount, cadence, dueDate, active: true }) as import('../types').Expense;
+    const months = ['2026-08', '2026-09', '2026-10', '2027-03'];
+    const expenses = [
+      exp('rent', 1000, 'monthly'),
+      exp('insurance', 1200, 'annual', '2026-03-15'), // recurs in MARCH → only 2027-03
+      exp('gift', 300, 'once', '2026-09-20'),         // single month
+      exp('spread', 600, 'annual', null),             // no month → even 600/12=50 each
+      exp('inactive', 999, 'monthly', null),          // dropped
+    ];
+    expenses[4].active = false;
+    const byMonth = expensesByMonth(expenses, months);
+    expect(byMonth.get('2026-08')).toBeCloseTo(1000 + 50, 6);        // rent + spread
+    expect(byMonth.get('2026-09')).toBeCloseTo(1000 + 300 + 50, 6);  // + gift
+    expect(byMonth.get('2026-10')).toBeCloseTo(1000 + 50, 6);
+    expect(byMonth.get('2027-03')).toBeCloseTo(1000 + 1200 + 50, 6); // + insurance
+
+    // monthlyCoverage nets income against those actual-month bills.
+    const income = new Map([['2026-08', 1200], ['2026-09', 1100], ['2026-10', 900], ['2027-03', 800]]);
+    const cov = monthlyCoverage(income, expenses, months);
+    expect(cov.find((c) => c.month === '2026-08')!.net).toBeCloseTo(150, 6);   // 1200 − 1050 surplus
+    expect(cov.find((c) => c.month === '2027-03')!.net).toBeCloseTo(800 - 2250, 6); // deep short
+    // Sep (gift pushes bills to 1350 > 1100), Oct (900 < 1050), Mar all short.
+    expect(cov.filter((c) => c.net < 0).length).toBe(3);
+  });
+
   it('incomeUseOf: explicit flag wins; else inferred from recent DRIP vs cash', async () => {
     const { incomeUseOf, incomeUseMismatch } = await import('../expenses');
     const div = (date: string, drip: boolean) =>

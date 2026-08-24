@@ -133,8 +133,8 @@ const TABLES = [
   })), 'id'],
   ['expenses', get('expenses').map((e) => ({
     id: e.id, name: e.name, amount: e.amount, cadence: e.cadence,
-    category: e.category ?? null, active: e.active, notes: e.notes ?? null,
-    created_at: e.createdAt ?? undefined,
+    due_date: e.dueDate ?? null, category: e.category ?? null, active: e.active,
+    notes: e.notes ?? null, created_at: e.createdAt ?? undefined,
   })), 'id'],
   ['watchlist', get('watchlist').map((w) => ({
     id: w.id, ticker: w.ticker, catalyst: w.catalyst ?? null,
