@@ -34,11 +34,27 @@ export interface Coverage {
     convictionValue: number;
     totalValue: number;
     /** The idle (rotatable) holdings, biggest first — the "which to rotate"
-     * answer. Conviction holds are excluded. */
+     * answer. Conviction holds are excluded. Alias of holdings.idle. */
     rotatable: { ticker: string; value: number }[];
+    /** The holdings behind each bucket, biggest first — the drill-down. For
+     * the two producing buckets `income` is the annual after-tax dividend. */
+    holdings: {
+      spend: CapitalHolding[];
+      reinvest: CapitalHolding[];
+      idle: CapitalHolding[];
+      conviction: CapitalHolding[];
+    };
   };
   /** True when there are dividends OR expenses to reason about. */
   hasAny: boolean;
+}
+
+/** One holding inside a capital bucket (drill-down row). */
+export interface CapitalHolding {
+  ticker: string;
+  value: number;
+  /** Annual after-tax dividend — only for the producing buckets. */
+  income?: number;
 }
 
 /** The living-expenses coverage figures, computed once from context so the
@@ -62,7 +78,12 @@ export function useCoverage(): Coverage {
     let reinvestValue = 0;
     let idleValue = 0;
     let convictionValue = 0;
-    const rotatable: { ticker: string; value: number }[] = [];
+    const holdings = {
+      spend: [] as CapitalHolding[],
+      reinvest: [] as CapitalHolding[],
+      idle: [] as CapitalHolding[],
+      conviction: [] as CapitalHolding[],
+    };
     const spendableByMonth = new Map<string, number>();
     const spendablePayersByMonth = new Map<string, { ticker: string; amount: number }[]>();
 
@@ -77,20 +98,23 @@ export function useCoverage(): Coverage {
         // held on purpose — not "idle capital to rotate"; everything else is.
         if (isNeverTrimFuel(p)) {
           convictionValue += mv;
+          if (mv > 0) holdings.conviction.push({ ticker: p.ticker, value: mv });
         } else {
           idleValue += mv;
-          if (mv > 0) rotatable.push({ ticker: p.ticker, value: mv });
+          if (mv > 0) holdings.idle.push({ ticker: p.ticker, value: mv });
         }
         continue;
       }
       if (incomeUseOf(p, lots) !== 'spend') {
         reinvestAnnual += proj.annualAfterTax;
         reinvestValue += mv;
+        if (mv > 0) holdings.reinvest.push({ ticker: p.ticker, value: mv, income: proj.annualAfterTax });
         continue;
       }
       spendableAnnual += proj.annualAfterTax;
       spendableBasis += summary.costBasis;
       spendableValue += mv;
+      if (mv > 0) holdings.spend.push({ ticker: p.ticker, value: mv, income: proj.annualAfterTax });
       const atf = proj.annualGross > 0 ? proj.annualAfterTax / proj.annualGross : 1;
       for (const pt of proj.monthly) {
         if (pt.amount <= 0) continue;
@@ -102,6 +126,7 @@ export function useCoverage(): Coverage {
       }
     }
     for (const list of spendablePayersByMonth.values()) list.sort((a, b) => b.amount - a.amount);
+    for (const list of Object.values(holdings)) list.sort((a, b) => b.value - a.value);
 
     const spendableMonthly = spendableAnnual / 12;
     const payments = parkedCashEvents
@@ -125,7 +150,8 @@ export function useCoverage(): Coverage {
         idleValue,
         convictionValue,
         totalValue: spendableValue + reinvestValue + idleValue + convictionValue,
-        rotatable: rotatable.sort((a, b) => b.value - a.value),
+        rotatable: holdings.idle,
+        holdings,
       },
       hasAny: expenses.length > 0 || spendableAnnual > 0 || reinvestAnnual > 0,
     };
