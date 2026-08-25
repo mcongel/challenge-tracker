@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 import { useData } from '../contexts/DataContext';
 import {
-  coverageSnowball, incomeUseOf, isArchivedPosition, lotsByPositionId, parkedMarketValue,
-  paymentsSummary, positionIncomeSummary,
+  coverageSnowball, incomeUseOf, isArchivedPosition, isNeverTrimFuel, lotsByPositionId,
+  parkedMarketValue, paymentsSummary, positionIncomeSummary,
 } from './engine';
 import type { CoverageSnowball, PaymentsSummary } from './engine';
 import { todayISO } from './utils';
@@ -26,11 +26,16 @@ export interface Coverage {
   capital: {
     spendableValue: number;
     reinvestValue: number;
-    /** Live holdings paying no dividend — capital generating no income. */
-    nonProducingValue: number;
+    /** No-dividend holdings that AREN'T conviction holds — the capital you
+     * could actually rotate into income. */
+    idleValue: number;
+    /** No-dividend conviction holds (BTC bucket + never-trim NVDA/TSLA/MSTR):
+     * held on purpose, not candidates for rotation. */
+    convictionValue: number;
     totalValue: number;
-    /** The non-producers, biggest first, for the "which ones" answer. */
-    nonProducers: { ticker: string; value: number }[];
+    /** The idle (rotatable) holdings, biggest first — the "which to rotate"
+     * answer. Conviction holds are excluded. */
+    rotatable: { ticker: string; value: number }[];
   };
   /** True when there are dividends OR expenses to reason about. */
   hasAny: boolean;
@@ -55,8 +60,9 @@ export function useCoverage(): Coverage {
     let spendableBasis = 0;
     let spendableValue = 0;
     let reinvestValue = 0;
-    let nonProducingValue = 0;
-    const nonProducers: { ticker: string; value: number }[] = [];
+    let idleValue = 0;
+    let convictionValue = 0;
+    const rotatable: { ticker: string; value: number }[] = [];
     const spendableByMonth = new Map<string, number>();
     const spendablePayersByMonth = new Map<string, { ticker: string; amount: number }[]>();
 
@@ -67,9 +73,14 @@ export function useCoverage(): Coverage {
       const proj = summary.projection;
       const mv = parkedMarketValue(p);
       if (!proj) {
-        // Live holding paying no dividend — capital generating no income.
-        nonProducingValue += mv;
-        if (mv > 0) nonProducers.push({ ticker: p.ticker, value: mv });
+        // No dividend. Conviction holds (BTC bucket, never-trim names) are
+        // held on purpose — not "idle capital to rotate"; everything else is.
+        if (isNeverTrimFuel(p)) {
+          convictionValue += mv;
+        } else {
+          idleValue += mv;
+          if (mv > 0) rotatable.push({ ticker: p.ticker, value: mv });
+        }
         continue;
       }
       if (incomeUseOf(p, lots) !== 'spend') {
@@ -111,9 +122,10 @@ export function useCoverage(): Coverage {
       capital: {
         spendableValue,
         reinvestValue,
-        nonProducingValue,
-        totalValue: spendableValue + reinvestValue + nonProducingValue,
-        nonProducers: nonProducers.sort((a, b) => b.value - a.value),
+        idleValue,
+        convictionValue,
+        totalValue: spendableValue + reinvestValue + idleValue + convictionValue,
+        rotatable: rotatable.sort((a, b) => b.value - a.value),
       },
       hasAny: expenses.length > 0 || spendableAnnual > 0 || reinvestAnnual > 0,
     };
