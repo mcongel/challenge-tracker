@@ -28,7 +28,7 @@ import type {
   DividendClassification, ParkedPosition,
 } from '../lib/engine';
 import {
-  dividendInsight, dividendTaxYTD, isArchivedPosition, isUnallocatedRoc,
+  dividendInsight, dividendTaxYTD, isArchivedPosition, isUnallocatedRoc, parkedMarketValue,
   positionIncomeSummary, roundCents,
   trailingIncomeByMonth,
 } from '../lib/engine';
@@ -111,14 +111,20 @@ export function Income() {
   // Portfolio yield on cost: only positions that project income AND have a
   // real cost basis count — in both the numerator and the denominator — so a
   // basis-less holding (pending ACATS with a manual rate) can't inflate it.
-  const { projectedGross, projectedAfterTax, portfolioYoc, anyProjection } = useMemo(() => {
+  const { projectedGross, projectedAfterTax, investedForIncome, portfolioYoc, anyProjection } = useMemo(() => {
     const gross = summaries.reduce((t, s) => t + (s.summary.projection?.annualGross ?? 0), 0);
     const afterTax = summaries.reduce((t, s) => t + (s.summary.projection?.annualAfterTax ?? 0), 0);
     const withBasis = summaries.filter((s) => s.summary.projection && s.summary.costBasis > 0);
     const basis = withBasis.reduce((t, s) => t + s.summary.costBasis, 0);
+    // Market value of the holdings actually producing income — "how much
+    // capital is doing the work" (owner question 2026-08-25).
+    const investedForIncome = summaries
+      .filter((s) => s.summary.projection && !isArchivedPosition(s.position))
+      .reduce((t, s) => t + parkedMarketValue(s.position), 0);
     return {
       projectedGross: gross,
       projectedAfterTax: afterTax,
+      investedForIncome,
       portfolioYoc: basis > 0
         ? withBasis.reduce((t, s) => t + (s.summary.projection?.annualGross ?? 0), 0) / basis
         : null,
@@ -330,7 +336,7 @@ export function Income() {
               } />
             <StatTile label="Yield on cost"
               value={portfolioYoc != null ? formatPercent(portfolioYoc) : '—'}
-              sub="projecting holdings only" />
+              sub={investedForIncome > 0 ? `${money(investedForIncome)} invested for income` : 'projecting holdings only'} />
           </div>
 
           <Card className="p-4 sm:p-6 density-aware-card mb-4">

@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 import { useData } from '../contexts/DataContext';
 import {
-  coverageSnowball, incomeUseOf, isArchivedPosition, lotsByPositionId, paymentsSummary,
-  positionIncomeSummary,
+  coverageSnowball, incomeUseOf, isArchivedPosition, lotsByPositionId, parkedMarketValue,
+  paymentsSummary, positionIncomeSummary,
 } from './engine';
 import type { CoverageSnowball, PaymentsSummary } from './engine';
 import { todayISO } from './utils';
@@ -22,6 +22,16 @@ export interface Coverage {
   snapshot: CoverageSnowball;
   /** Actual expense payments this year (plan-vs-actual). */
   paymentsYtd: PaymentsSummary;
+  /** How the invested capital is split by what it produces (market value). */
+  capital: {
+    spendableValue: number;
+    reinvestValue: number;
+    /** Live holdings paying no dividend — capital generating no income. */
+    nonProducingValue: number;
+    totalValue: number;
+    /** The non-producers, biggest first, for the "which ones" answer. */
+    nonProducers: { ticker: string; value: number }[];
+  };
   /** True when there are dividends OR expenses to reason about. */
   hasAny: boolean;
 }
@@ -43,6 +53,10 @@ export function useCoverage(): Coverage {
     let spendableAnnual = 0;
     let reinvestAnnual = 0;
     let spendableBasis = 0;
+    let spendableValue = 0;
+    let reinvestValue = 0;
+    let nonProducingValue = 0;
+    const nonProducers: { ticker: string; value: number }[] = [];
     const spendableByMonth = new Map<string, number>();
     const spendablePayersByMonth = new Map<string, { ticker: string; amount: number }[]>();
 
@@ -51,13 +65,21 @@ export function useCoverage(): Coverage {
       const lots = lotsByPosition.get(p.id) ?? [];
       const summary = positionIncomeSummary(p, lots, today, dividendTaxRates, parkedLotAdjustments);
       const proj = summary.projection;
-      if (!proj) continue;
+      const mv = parkedMarketValue(p);
+      if (!proj) {
+        // Live holding paying no dividend — capital generating no income.
+        nonProducingValue += mv;
+        if (mv > 0) nonProducers.push({ ticker: p.ticker, value: mv });
+        continue;
+      }
       if (incomeUseOf(p, lots) !== 'spend') {
         reinvestAnnual += proj.annualAfterTax;
+        reinvestValue += mv;
         continue;
       }
       spendableAnnual += proj.annualAfterTax;
       spendableBasis += summary.costBasis;
+      spendableValue += mv;
       const atf = proj.annualGross > 0 ? proj.annualAfterTax / proj.annualGross : 1;
       for (const pt of proj.monthly) {
         if (pt.amount <= 0) continue;
@@ -86,6 +108,13 @@ export function useCoverage(): Coverage {
       spendablePayersByMonth,
       snapshot: coverageSnowball(spendableMonthly, expenses),
       paymentsYtd: paymentsSummary(payments, today.slice(0, 4)),
+      capital: {
+        spendableValue,
+        reinvestValue,
+        nonProducingValue,
+        totalValue: spendableValue + reinvestValue + nonProducingValue,
+        nonProducers: nonProducers.sort((a, b) => b.value - a.value),
+      },
       hasAny: expenses.length > 0 || spendableAnnual > 0 || reinvestAnnual > 0,
     };
   }, [parked, allLots, parkedLotAdjustments, dividendTaxRates, expenses, parkedCashEvents, today]);

@@ -7,6 +7,7 @@ import { ErrorCard } from '../components/ui/ErrorCard';
 import { CoveragePanel } from '../components/income/CoveragePanel';
 import { MonthlyCoverageChart } from '../components/income/MonthlyCoverageChart';
 import { PaymentsTracker } from '../components/income/PaymentsTracker';
+import { CapitalAtWork } from '../components/income/CapitalAtWork';
 import { useData } from '../contexts/DataContext';
 import { useCoverage } from '../lib/useCoverage';
 import { formatPercent, money } from '../lib/utils';
@@ -47,6 +48,8 @@ export function Coverage() {
             reinvestingMonthly={cov.reinvestingMonthly}
             afterTaxYieldOnCost={cov.afterTaxYieldOnCost}
           />
+
+          <CapitalAtWork capital={cov.capital} afterTaxYieldOnCost={cov.afterTaxYieldOnCost} />
 
           {/* Bridge the plan to the actuals so the two cards below aren't
               read in isolation. */}
