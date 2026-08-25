@@ -9,7 +9,7 @@ import { applySplit, closeShares } from '../positions';
 import { milestoneLevels, milestoneTable, nextMilestone, skimDue } from '../milestones';
 import { applicableCarryforward, computeCheck, quartersEnded, reserveTarget, skimDueNow } from '../tax';
 import { washSaleWarnings } from '../washSale';
-import { stLt } from '../trades';
+import { stLt, tradeBuyPrice, tradeSellPrice } from '../trades';
 import { ltStatus } from '../parked';
 import { rollingLeadDelta } from '../benchmark';
 
@@ -68,6 +68,24 @@ describe('positions — partial close', () => {
     const mixed = [...lots, { ...lot('c', '2026-03-01', 4, 50), ticker: 'ABC' }];
     const r = closeShares(mixed, 'XYZ', 20, 20, '2026-06-01');
     expect(r.remainingLots.map((l) => l.ticker)).toEqual(['ABC']);
+  });
+
+  it('records shares per lot; buy/sell prices derive from them', () => {
+    const r = closeShares(lots, 'XYZ', 15, 20, '2026-06-01');
+    expect(r.trades[0]).toMatchObject({ shares: 10, costBasis: 100, proceeds: 200 });
+    expect(r.trades[1]).toMatchObject({ shares: 5, costBasis: 60, proceeds: 100 });
+    // Oldest lot: $10 in, $20 out. Second lot cost $12, sold $20.
+    const asTrade = (i: number) => ({ id: String(i), washSale: false, ...r.trades[i] });
+    expect(tradeBuyPrice(asTrade(0))).toBe(10);
+    expect(tradeSellPrice(asTrade(0))).toBe(20);
+    expect(tradeBuyPrice(asTrade(1))).toBe(12);
+  });
+
+  it('buy/sell prices are null when shares is missing (legacy rows)', () => {
+    const legacy = { id: '1', ticker: 'XYZ', openDate: '2026-01-01', closeDate: '2026-06-01',
+      costBasis: 100, proceeds: 200, washSale: false };
+    expect(tradeBuyPrice(legacy)).toBeNull();
+    expect(tradeSellPrice(legacy)).toBeNull();
   });
 
   it('records a split: shares × ratio, cost ÷ ratio', () => {

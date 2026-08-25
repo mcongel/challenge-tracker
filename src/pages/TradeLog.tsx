@@ -19,8 +19,8 @@ import { Field } from '../components/ui/Field';
 import { FormError, ModalFooter, useModalForm } from '../components/ui/useModalForm';
 import { useData } from '../contexts/DataContext';
 import {
-  netRealizedYTD, realizedGain, realizedPct, roundCents, stLt, taxYearOf, tradeDaysHeld,
-  tradeStats,
+  netRealizedYTD, realizedGain, realizedPct, roundCents, stLt, taxYearOf,
+  tradeBuyPrice, tradeDaysHeld, tradeSellPrice, tradeStats,
 } from '../lib/engine';
 import { useIndustries } from '../lib/useIndustries';
 import { useMemo } from 'react';
@@ -39,6 +39,10 @@ const EXIT_REASON_LABELS: Record<string, string> = {
   early: 'early',
   thesis_broke: 'thesis broke',
 };
+
+/** Shares without the numeric(18,8) trailing zeros — whole shares stay whole,
+ * fractional DRIP shares keep up to four places. */
+const fmtShares = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 4 });
 
 type TradeSortKey = 'closeDate' | 'ticker' | 'gain' | 'daysHeld';
 
@@ -267,6 +271,8 @@ export function TradeLog() {
         <TableCard
           cards={ordered.map((t) => {
             const gain = realizedGain(t);
+            const buy = tradeBuyPrice(t);
+            const sell = tradeSellPrice(t);
             return (
               <RowCard
                 key={t.id}
@@ -311,6 +317,12 @@ export function TradeLog() {
                 }
               >
                 <RowCardStat label="Days held">{tradeDaysHeld(t)}</RowCardStat>
+                {buy != null && sell != null && (
+                  <RowCardStat label="Buy → sell">
+                    {money(buy)} → {money(sell)}
+                    <span className="ml-1 text-xs font-normal text-gray-400">{fmtShares(t.shares!)} sh</span>
+                  </RowCardStat>
+                )}
                 <RowCardStat label="Proceeds / basis">
                   {formatCurrency(t.proceeds)} / {formatCurrency(t.costBasis)}
                 </RowCardStat>
@@ -341,6 +353,8 @@ export function TradeLog() {
                 const gain = realizedGain(t);
                 const pct = realizedPct(t);
                 const big = Math.abs(pct) > 0.25;
+                const buy = tradeBuyPrice(t);
+                const sell = tradeSellPrice(t);
                 return (
                   <tr key={t.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 font-medium">
@@ -360,8 +374,20 @@ export function TradeLog() {
                     <td className="px-4 py-3 tabular-nums text-gray-500">{t.openDate}</td>
                     <td className="px-4 py-3 tabular-nums text-gray-500">{t.closeDate}</td>
                     <td className="px-4 py-3 text-right tabular-nums">{tradeDaysHeld(t)}</td>
-                    <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(t.costBasis)}</td>
-                    <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(t.proceeds)}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">
+                      {formatCurrency(t.costBasis)}
+                      {buy != null && (
+                        <span className="block text-xs font-normal text-gray-400">
+                          {fmtShares(t.shares!)} sh @ {money(buy)}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums">
+                      {formatCurrency(t.proceeds)}
+                      {sell != null && (
+                        <span className="block text-xs font-normal text-gray-400">@ {money(sell)}</span>
+                      )}
+                    </td>
                     <td className={cn('px-4 py-3 text-right tabular-nums font-medium',
                       gain >= 0 ? 'text-green-600' : 'text-red-600')}>
                       {money(gain)}

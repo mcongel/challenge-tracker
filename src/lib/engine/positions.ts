@@ -94,6 +94,7 @@ export function closeShares(
         ticker,
         openDate: lot.buyDate,
         closeDate,
+        shares: take,
         costBasis: take * lot.avgCost,
         proceeds: take * pricePerShare,
       });

@@ -10,6 +10,18 @@ export function realizedPct(t: Trade): number {
   return t.costBasis === 0 ? 0 : realizedGain(t) / t.costBasis;
 }
 
+/** Per-share buy price for this close — cost basis ÷ shares. Null when the
+ * share count wasn't recorded (trades closed before the shares column). */
+export function tradeBuyPrice(t: Trade): number | null {
+  return t.shares && t.shares > 0 ? t.costBasis / t.shares : null;
+}
+
+/** Per-share sell price — proceeds ÷ shares. Net of sell-side fees, so it
+ * matches the recorded gain. Null when the share count is unknown. */
+export function tradeSellPrice(t: Trade): number | null {
+  return t.shares && t.shares > 0 ? t.proceeds / t.shares : null;
+}
+
 export function tradeDaysHeld(t: Trade): number {
   return daysBetween(t.openDate, t.closeDate);
 }

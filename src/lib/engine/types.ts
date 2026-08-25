@@ -75,6 +75,9 @@ export interface Trade {
   closeDate: string;
   costBasis: number;
   proceeds: number;
+  /** Shares in this per-lot close. Buy price = costBasis/shares, sell price =
+   * proceeds/shares. Null for trades closed before the column existed. */
+  shares?: number | null;
   washSale: boolean;
   /** Why the exit happened: target_hit | calendar | early | thesis_broke —
    * the pattern card reads it to judge target calibration. */
