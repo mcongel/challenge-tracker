@@ -82,12 +82,12 @@ export function CoveragePanel({
               </span>
             </p>
             <p className="text-xs text-gray-400 tabular-nums">
-              {money(cov.coveredMonthly)} of {money(cov.totalMonthly)}/mo covered
+              {money(cov.coveredMonthly)} of {money(cov.totalMonthly)}/mth covered
             </p>
           </div>
           <div className="text-right text-xs tabular-nums">
-            <p className="text-green-600 font-medium">{money(spendableMonthly)}/mo spendable</p>
-            <p className="text-gray-400">{money(reinvestingMonthly)}/mo reinvesting</p>
+            <p className="text-green-600 font-medium">{money(spendableMonthly)}/mth spendable</p>
+            <p className="text-gray-400">{money(reinvestingMonthly)}/mth reinvesting</p>
           </div>
         </div>
 
@@ -102,7 +102,7 @@ export function CoveragePanel({
           <p className="mb-3 rounded-md bg-green-50 px-3 py-2 text-sm text-green-800 flex items-start gap-2">
             <Target className="h-4 w-4 mt-0.5 flex-shrink-0" />
             <span>
-              <b className="tabular-nums">{money(cov.nextTarget.monthlyGap)}/mo</b> more covers{' '}
+              <b className="tabular-nums">{money(cov.nextTarget.monthlyGap)}/mth</b> more covers{' '}
               <b>{cov.nextTarget.expense.name}</b>
               {nextInvested != null && (
                 <> — at your yield, ≈ <b className="tabular-nums">{money(nextInvested)}</b> more invested</>
@@ -112,7 +112,7 @@ export function CoveragePanel({
         ) : (
           <p className="mb-3 rounded-md bg-green-50 px-3 py-2 text-sm text-green-800 flex items-center gap-2">
             <Check className="h-4 w-4 flex-shrink-0" />
-            Every recurring bill is covered — {money(cov.surplusMonthly)}/mo to spare.
+            Every recurring bill is covered — {money(cov.surplusMonthly)}/mth to spare.
           </p>
         )}
 
@@ -137,7 +137,7 @@ export function CoveragePanel({
                     </span>
                   )}
                 </span>
-                <span className="text-sm tabular-nums text-text-secondary flex-shrink-0">{money(monthly)}/mo</span>
+                <span className="text-sm tabular-nums text-text-secondary flex-shrink-0">{money(monthly)}/mth</span>
                 <span className="flex flex-shrink-0 gap-1">
                   <button onClick={() => setEditing(e)} className="p-1.5 rounded hover:bg-gray-100" aria-label={`Edit ${e.name}`}>
                     <Pencil className="h-3.5 w-3.5 text-gray-300 hover:text-gray-600" />

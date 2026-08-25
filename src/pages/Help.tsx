@@ -306,7 +306,7 @@ export function Help() {
             The headline — <strong className="text-gray-900">"62% · 7 of 12 bills"</strong> — is
             annualized, and the reinvesting-vs-spendable split beside it is your growth-vs-drawdown
             lever. The <strong className="text-gray-900">next-target line</strong> turns the gap
-            into an investing goal: "$95/mo more covers your phone — ≈ $30k more invested at your
+            into an investing goal: "$95/mth more covers your phone — ≈ $30k more invested at your
             yield."
           </li>
           <li>

@@ -238,7 +238,7 @@ export function Dashboard() {
                   {formatPercent(coverage.snapshot.coveragePct, 0)}
                 </p>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  {coverage.snapshot.coveredCount} of {coverage.snapshot.totalCount} bills · {money(coverage.spendableMonthly)}/mo spendable
+                  {coverage.snapshot.coveredCount} of {coverage.snapshot.totalCount} bills · {money(coverage.spendableMonthly)}/mth spendable
                 </p>
               </>
             ) : (

@@ -82,7 +82,7 @@ export function DividendCalendar({ entries }: { entries: Entry[] }) {
 
       {/* Summary strip — the numbers Snowball leads with. */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-        <Metric label="Projected 12-mo" value={money(annual)} />
+        <Metric label="Projected 12-mth" value={money(annual)} />
         <Metric label="Avg / month" value={money(avg)} />
         <Metric label="Peak month" value={money(peak.total)} sub={monthLabel(peak.month)} />
         <Metric
