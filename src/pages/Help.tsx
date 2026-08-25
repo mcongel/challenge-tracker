@@ -275,6 +275,58 @@ export function Help() {
             automatically; an amber "unallocated" badge offers one-click allocation for older ROC,
             and sales are taxed against the adjusted basis.
           </li>
+          <li>
+            Each dividend-paying holding carries a <strong className="text-gray-900">DRIP / Spend</strong>{' '}
+            toggle. It defaults from that holding's own history (mostly-reinvested → DRIP,
+            mostly-cash → Spend); flip the ones you want to draw from. Only <strong className="text-gray-900">Spend</strong>{' '}
+            income counts toward covering expenses — an amber dot warns when your choice
+            contradicts what the broker actually did.
+          </li>
+        </ul>
+      </Card>
+
+      <Card>
+        <Eyebrow>When the pile starts paying you</Eyebrow>
+        <h2 className="text-lg font-bold text-gray-900 mb-2">
+          <Screen to="/coverage">Living Expenses</Screen> — coverage, cheapest bill first
+        </h2>
+        <p className="text-sm text-gray-600 leading-relaxed mb-2">
+          The turn from growing the pile to living off it. Enter your bills, and the app matches
+          your <strong className="text-gray-900">spendable</strong> after-tax dividend income
+          against them — filling the cheapest bill first (the debt-snowball method), so each one
+          flips to covered and the next target is always the next-cheapest gap.
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm text-gray-600 leading-relaxed">
+          <li>
+            <strong className="text-gray-900">Add expenses</strong> as monthly, annual (with the
+            month it's due), or one-off. Annual bills land in their real month; one-offs are
+            tracked but stay out of the recurring coverage ratio.
+          </li>
+          <li>
+            The headline — <strong className="text-gray-900">"62% · 7 of 12 bills"</strong> — is
+            annualized, and the reinvesting-vs-spendable split beside it is your growth-vs-drawdown
+            lever. The <strong className="text-gray-900">next-target line</strong> turns the gap
+            into an investing goal: "$95/mo more covers your phone — ≈ $30k more invested at your
+            yield."
+          </li>
+          <li>
+            The <strong className="text-gray-900">monthly chart</strong> lands each bill in its
+            actual month, so a fat annual premium spikes the line where it really hits. Green
+            months clear it, red months are where you'd dip into principal. Tap a month to see its
+            payers and bills.
+          </li>
+          <li>
+            <strong className="text-gray-900">Record a payment</strong> when you actually withdraw
+            to pay a bill — tagged to the expense and flagged <em>income</em> vs <em>principal</em>{' '}
+            (defaulted from your accumulated dividend cash). The Payments card tracks how much of
+            what you drew came from income — the honest "living on the yield, or eating the seed
+            corn" read. Tagged withdrawals also show their bill on{' '}
+            <Screen to="/activity">Activity</Screen>.
+          </li>
+          <li>
+            A coverage tile on the <Screen to="/">Dashboard</Screen> keeps the headline % in view.
+            Coverage is context only — it never touches Total Score or the challenge rules.
+          </li>
         </ul>
       </Card>
 

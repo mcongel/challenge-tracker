@@ -62,6 +62,14 @@ The floor rises permanently, the staircase chart gets a step, and the banner is 
 - **Accounts** button: manage where money lives, and each account's *tracked cash*. Trims, buys, dividends, and challenge funding flow in automatically; you enter only external deposits, interest, and fees. **Reconcile monthly**: click the cash figure, type the brokerage's actual balance, and an adjustment keeps the number true (first reconcile = your opening balance).
 - ACATS transfer landed? Edit the position and change its account.
 
+## When the pile starts paying you — Living Expenses
+
+- The turn from growing the pile to living off it. Enter your **bills** (monthly, annual with the month due, or one-off), and the app matches your **spendable** after-tax dividend income against them — filling the **cheapest bill first** (the debt-snowball method), so each flips to covered and the next target is always the next-cheapest gap.
+- Each holding on Income carries a **DRIP / Spend** toggle — only *Spend* income counts toward coverage. It defaults from the holding's own history; an amber dot warns when your choice contradicts what the broker actually did.
+- The headline ("62% · 7 of 12 bills") is annualized; the **next-target line** turns the gap into an investing goal ("$95/mo more covers your phone — ≈ $30k more invested at your yield"). The reinvesting-vs-spendable split is your growth-vs-drawdown lever.
+- The **monthly chart** lands each bill in its actual month, so an annual premium spikes where it really hits. Green months clear it, red months are where you'd dip into principal. Tap a month for its payers and bills.
+- **Record a payment** when you withdraw to pay a bill — tagged to the expense and flagged *income* vs *principal* (defaulted from your accumulated dividend cash). The Payments card tracks how much of what you drew came from income — the honest "living on the yield, or eating the seed corn" read. A coverage tile on the Dashboard keeps the headline % in view. Context only — never score or challenge math.
+
 ## The retirement modeler — Transition
 
 - **Scenarios** are pure what-ifs: which holdings rotate into income assets, when, at what assumed yields — projected against your after-tax target income. Nothing in a scenario touches real holdings, the score, or the ledger.
@@ -101,6 +109,7 @@ Every deposit bought shadow VOO the same day. The Benchmark screen shows the rac
 | Benchmark | You vs shadow VOO |
 | Parked Pile | The foundation — context only |
 | Activity | Every pile event, filterable by account/ticker/type |
-| Income | What the pile pays; 1099 filters and ROC basis |
+| Income | What the pile pays; 1099 filters, ROC basis, DRIP/Spend |
+| Living Expenses | Bills covered by dividend income, cheapest first |
 | Transition | Retirement rotations, on paper only |
 | Rules | The law. Read after big wins especially |
