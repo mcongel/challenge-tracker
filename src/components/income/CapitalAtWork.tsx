@@ -10,14 +10,14 @@ const BLURB: Record<BucketKey, string> = {
   spend: 'Dividend holdings you spend — the income that pays your bills.',
   reinvest: 'Dividend holdings set to reinvest (DRIP) — compounding, not spent.',
   idle: 'No dividend and not a conviction hold — the capital you could rotate into income.',
-  conviction: 'Held on purpose (Bitcoin pot + never-trim names) — no dividend, not for rotation.',
+  conviction: 'No-dividend names held on purpose (never-trim NVDA/TSLA) — not for rotation.',
 };
 
 /** Which capital is actually producing income (owner question 2026-08-25).
  * The pile's market value split by what it produces: spendable income,
- * reinvesting, idle (no dividend, rotatable), and conviction holds (BTC /
- * never-trim — no dividend but held on purpose). Each bucket is clickable to
- * reveal the holdings behind its number. */
+ * reinvesting, idle (no dividend, rotatable), and conviction holds (never-trim
+ * names — no dividend but held on purpose). The BTC pot is walled off upstream,
+ * so it never appears here. Each bucket is clickable to reveal its holdings. */
 export function CapitalAtWork({
   capital, afterTaxYieldOnCost,
 }: {

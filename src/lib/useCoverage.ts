@@ -29,8 +29,8 @@ export interface Coverage {
     /** No-dividend holdings that AREN'T conviction holds — the capital you
      * could actually rotate into income. */
     idleValue: number;
-    /** No-dividend conviction holds (BTC bucket + never-trim NVDA/TSLA/MSTR):
-     * held on purpose, not candidates for rotation. */
+    /** No-dividend never-trim holds (NVDA/TSLA) held in the pile on purpose,
+     * not candidates for rotation. (The BTC pot is walled off upstream.) */
     convictionValue: number;
     totalValue: number;
     /** The idle (rotatable) holdings, biggest first — the "which to rotate"
@@ -61,7 +61,11 @@ export interface CapitalHolding {
  * Coverage page and the Dashboard tile agree. */
 export function useCoverage(): Coverage {
   const {
-    taxableParked: parked, parkedLots: allLots, parkedLotAdjustments, dividendTaxRates,
+    // The pile only — pileParked is taxable minus the BTC pot. The Bitcoin
+    // pot (BTC/MSTR/BTCI) is walled off from all pile math, so it never
+    // appears in Capital at work and its dividends don't count toward bill
+    // coverage (owner decision 2026-08-25).
+    pileParked: parked, parkedLots: allLots, parkedLotAdjustments, dividendTaxRates,
     expenses, parkedCashEvents,
   } = useData();
   const today = todayISO();
@@ -94,8 +98,9 @@ export function useCoverage(): Coverage {
       const proj = summary.projection;
       const mv = parkedMarketValue(p);
       if (!proj) {
-        // No dividend. Conviction holds (BTC bucket, never-trim names) are
-        // held on purpose — not "idle capital to rotate"; everything else is.
+        // No dividend. Never-trim names (NVDA/TSLA) are held on purpose —
+        // not "idle capital to rotate"; everything else is. (BTC-pot names
+        // never reach here — they're excluded from pileParked upstream.)
         if (isNeverTrimFuel(p)) {
           convictionValue += mv;
           if (mv > 0) holdings.conviction.push({ ticker: p.ticker, value: mv });
