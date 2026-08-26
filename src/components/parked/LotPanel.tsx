@@ -13,7 +13,7 @@ import { useNotional } from '../../lib/useNotional';
 import {
   cn, formatCurrency, formatPercent, inputCls, money, secondaryBtnCls, signedMoney, todayISO,
 } from '../../lib/utils';
-import { CLASSIFICATION_LABELS, classificationPillCls, fmtSh, unlockSentence } from './shared';
+import { CLASSIFICATION_LABELS, classificationPillCls, fmtShFull, unlockSentence } from './shared';
 
 export function LotPanel({ position: p, summary }: { position: ParkedPosition; summary: UnlockSummary }) {
   const {
@@ -192,7 +192,7 @@ export function LotPanel({ position: p, summary }: { position: ParkedPosition; s
                     )}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-gray-600">
-                    {l.shares > 0 ? `${fmtSh(l.shares)} sh` : '—'}
+                    {l.shares > 0 ? `${fmtShFull(l.shares)} sh` : '—'}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-gray-600">{formatCurrency(l.amount)}</td>
                   <td className="px-1 py-2 w-8">
@@ -309,7 +309,7 @@ export function LotPanel({ position: p, summary }: { position: ParkedPosition; s
       {deleting && (
         <ConfirmModal
           title="Delete lot"
-          message={`Delete this ${deleting.source} (${deleting.shares > 0 ? `${fmtSh(deleting.shares)} sh, ` : ''}${formatCurrency(deleting.amount)})? The position's shares and cost recompute without it.`}
+          message={`Delete this ${deleting.source} (${deleting.shares > 0 ? `${fmtShFull(deleting.shares)} sh, ` : ''}${formatCurrency(deleting.amount)})? The position's shares and cost recompute without it.`}
           onConfirm={() => deleteParkedLot(deleting.id)}
           onClose={() => setDeleting(null)}
         />

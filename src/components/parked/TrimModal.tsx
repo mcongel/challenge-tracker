@@ -13,7 +13,7 @@ import {
 import { useNotional } from '../../lib/useNotional';
 import { fetchClose } from '../../lib/quotes';
 import { cn, formatCurrency, formatPercent, inputCls, money, todayISO } from '../../lib/utils';
-import { fmtSh } from './shared';
+import { fmtSh, fmtShFull } from './shared';
 
 export function TrimModal({
   position: p, initialShares, onClose,
@@ -152,7 +152,7 @@ export function TrimModal({
         <div className="grid grid-cols-2 gap-3">
           <Field label={
             <span className="flex items-baseline justify-between gap-2">
-              <span>Shares (of {fmtSh(p.shares)})</span>
+              <span>Shares (of {fmtShFull(p.shares)})</span>
               {!fullTrim && (
                 <button type="button" onClick={() => setShares(String(p.shares))}
                   className="text-[11px] font-semibold normal-case text-green-700 hover:underline">

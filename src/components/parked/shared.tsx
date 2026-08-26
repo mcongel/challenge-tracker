@@ -37,6 +37,11 @@ export const CATEGORY_SUGGESTIONS = [
  * 0.00052 BTC never displays as 0.0005-rounded-to-nothing. */
 export const fmtSh = (n: number) =>
   String(Number(n.toFixed(Math.abs(n) > 0 && Math.abs(n) < 0.01 ? 8 : 4)));
+/** FULL-precision share count (up to 8 decimals — the stored precision —
+ * trailing zeros trimmed). Use wherever a share number is read to verify or
+ * act on an exact entry (a purchase/DRIP lot), so nothing shows rounded. */
+export const fmtShFull = (n: number) =>
+  n.toLocaleString('en-US', { maximumFractionDigits: 8, useGrouping: false });
 /** SortHeader was promoted to the UI kit (it was never pile-specific);
  * re-exported here so existing imports keep working. */
 export { SortHeader } from '../ui/SortHeader';
