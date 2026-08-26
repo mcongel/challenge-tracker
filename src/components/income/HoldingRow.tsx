@@ -1,7 +1,7 @@
 import { Pencil } from 'lucide-react';
 import type { DividendInsight, ParkedLot, ParkedPosition, PositionIncomeSummary } from '../../lib/engine';
 import { isArchivedPosition } from '../../lib/engine';
-import { cn, formatPercent, money } from '../../lib/utils';
+import { cn, formatPercent, money, nextPayDate, NEXT_PAY_TITLE } from '../../lib/utils';
 import { DividendInsightChips } from './DividendInsightChips';
 import { IncomeUseToggle } from './IncomeUseToggle';
 
@@ -47,9 +47,14 @@ export function HoldingRow({
         {proj ? money(proj.annualGross) : '—'}
       </td>
       <td className="px-4 py-2 text-right tabular-nums text-gray-600">
-        {proj?.nextPayment
-          ? `${proj.nextPayment.date} · est. ${money(proj.nextPayment.amount)}`
-          : '—'}
+        {proj?.nextPayment ? (
+          <span title={NEXT_PAY_TITLE[proj.source]}>
+            <span className={proj.source === 'manual' ? 'text-indigo-500' : undefined}>
+              {nextPayDate(proj.nextPayment.date, proj.source)}
+            </span>
+            <span className="text-gray-400"> · est. {money(proj.nextPayment.amount)}</span>
+          </span>
+        ) : '—'}
       </td>
       <td className="px-4 py-2">
         {proj ? (

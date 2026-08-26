@@ -34,7 +34,7 @@ import {
 } from '../lib/engine';
 import {
   cn, compactUsd, formatCurrency, formatPercent, inputCls, money,
-  safeStorage, secondaryBtnCls, todayISO,
+  nextPayDate, NEXT_PAY_TITLE, safeStorage, secondaryBtnCls, todayISO,
 } from '../lib/utils';
 import { useChartColors } from '../lib/useIsDark';
 
@@ -416,9 +416,14 @@ export function Income() {
                     {s.trailing12m > 0 ? money(s.trailing12m) : '—'}
                   </RowCardStat>
                   <RowCardStat label="Next payment">
-                    {proj?.nextPayment
-                      ? `${proj.nextPayment.date} · est. ${money(proj.nextPayment.amount)}`
-                      : '—'}
+                    {proj?.nextPayment ? (
+                      <span title={NEXT_PAY_TITLE[proj.source]}>
+                        <span className={proj.source === 'manual' ? 'text-indigo-500' : undefined}>
+                          {nextPayDate(proj.nextPayment.date, proj.source)}
+                        </span>
+                        {' · est. '}{money(proj.nextPayment.amount)}
+                      </span>
+                    ) : '—'}
                   </RowCardStat>
                   <RowCardStat label="Source">
                     {proj ? (

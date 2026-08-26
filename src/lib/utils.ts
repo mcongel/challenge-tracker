@@ -19,6 +19,19 @@ export const money = (value: number): string => usd.format(roundCents(value));
 export const signedMoney = (value: number): string =>
   `${value >= 0 ? '+' : '−'}${usd.format(Math.abs(roundCents(value)))}`;
 
+/** Next-payment date decorated by its projection source. A 'manual' date is
+ * one interval from TODAY — an estimate that drifts until a real payment lands
+ * — so it wears a '≈'; an 'actual' date sits on your recorded pay cadence,
+ * anchored to the last real payment, so it shows plain. Tie this to the date
+ * itself so a real-cadence date reads differently from a from-today guess. */
+export const nextPayDate = (date: string, source: 'actual' | 'manual'): string =>
+  source === 'manual' ? `≈ ${date}` : date;
+
+export const NEXT_PAY_TITLE: Record<'actual' | 'manual', string> = {
+  actual: 'On your recorded pay cadence — the date is anchored to your last actual payment.',
+  manual: 'Estimated from your manual rate — one interval from today, not a known pay date. It firms up once real payments are logged.',
+};
+
 const usdWhole = new Intl.NumberFormat('en-US', {
   style: 'currency',
   currency: 'USD',

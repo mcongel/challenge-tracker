@@ -5,7 +5,8 @@ import {
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Card } from '../ui/Card';
 import type { ParkedPosition, PositionIncomeSummary } from '../../lib/engine';
-import { compactUsd, money } from '../../lib/utils';
+import { compactUsd, money, nextPayDate, NEXT_PAY_TITLE } from '../../lib/utils';
+import type { RateSource } from '../../lib/engine';
 import { useChartColors } from '../../lib/useIsDark';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -47,11 +48,11 @@ export function DividendCalendar({ entries }: { entries: Entry[] }) {
 
   // Soonest dated payout across holdings — the "what's next" line.
   const nextPayout = useMemo(() => {
-    let best: { ticker: string; date: string; amount: number } | null = null;
+    let best: { ticker: string; date: string; amount: number; source: RateSource } | null = null;
     for (const { position, summary } of entries) {
       const np = summary.projection?.nextPayment;
       if (np && (!best || np.date < best.date)) {
-        best = { ticker: position.ticker, date: np.date, amount: np.amount };
+        best = { ticker: position.ticker, date: np.date, amount: np.amount, source: summary.projection!.source };
       }
     }
     return best;
@@ -88,7 +89,8 @@ export function DividendCalendar({ entries }: { entries: Entry[] }) {
         <Metric
           label="Next payout"
           value={nextPayout ? money(nextPayout.amount) : '—'}
-          sub={nextPayout ? `${nextPayout.ticker} · ${nextPayout.date}` : 'nothing scheduled'}
+          sub={nextPayout ? `${nextPayout.ticker} · ${nextPayDate(nextPayout.date, nextPayout.source)}` : 'nothing scheduled'}
+          subTitle={nextPayout ? NEXT_PAY_TITLE[nextPayout.source] : undefined}
         />
       </div>
 
@@ -170,12 +172,14 @@ export function DividendCalendar({ entries }: { entries: Entry[] }) {
   );
 }
 
-function Metric({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function Metric({ label, value, sub, subTitle }: {
+  label: string; value: string; sub?: string; subTitle?: string;
+}) {
   return (
     <div>
       <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">{label}</p>
       <p className="mt-0.5 text-base sm:text-lg font-bold tabular-nums text-text-primary">{value}</p>
-      {sub && <p className="text-[11px] text-gray-400 truncate">{sub}</p>}
+      {sub && <p className="text-[11px] text-gray-400 truncate" title={subTitle}>{sub}</p>}
     </div>
   );
 }
