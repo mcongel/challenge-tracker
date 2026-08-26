@@ -1,15 +1,18 @@
 import { Pencil } from 'lucide-react';
-import type { DividendInsight, ParkedLot, ParkedPosition, PositionIncomeSummary } from '../../lib/engine';
+import type {
+  DividendInsight, ParkedLot, ParkedPosition, PositionIncomeSummary, PositionTotalReturn,
+} from '../../lib/engine';
 import { isArchivedPosition } from '../../lib/engine';
-import { cn, formatPercent, money, nextPayDate, NEXT_PAY_TITLE } from '../../lib/utils';
+import { cn, formatPercent, money, nextPayDate, NEXT_PAY_TITLE, signedMoney } from '../../lib/utils';
 import { DividendInsightChips } from './DividendInsightChips';
 import { IncomeUseToggle } from './IncomeUseToggle';
 
 export function HoldingRow({
-  position: p, summary: s, anyRoc, insight, lots, onEditRate,
+  position: p, summary: s, ret, anyRoc, insight, lots, onEditRate,
 }: {
   position: ParkedPosition;
   summary: PositionIncomeSummary;
+  ret: PositionTotalReturn;
   anyRoc: boolean;
   insight?: DividendInsight | null;
   lots: ParkedLot[];
@@ -45,6 +48,20 @@ export function HoldingRow({
       </td>
       <td className="px-4 py-2 text-right tabular-nums text-gray-600">
         {proj ? money(proj.annualGross) : '—'}
+      </td>
+      <td className="px-4 py-2 text-right tabular-nums">
+        {ret.invested > 0 ? (
+          <span title={`Price ${signedMoney(ret.unrealized)} · income ${money(ret.income)}`
+            + (ret.realized ? ` · realized ${signedMoney(ret.realized)}` : '')}>
+            <span className={ret.total >= 0 ? 'text-green-600' : 'text-red-600'}>
+              {signedMoney(ret.total)}
+            </span>
+            {ret.pct != null && <span className="text-gray-400"> ({formatPercent(ret.pct)})</span>}
+            <span className="block text-[11px] text-gray-400">
+              px {signedMoney(ret.unrealized)} · inc {money(ret.income)}
+            </span>
+          </span>
+        ) : '—'}
       </td>
       <td className="px-4 py-2 text-right tabular-nums text-gray-600">
         {proj?.nextPayment ? (

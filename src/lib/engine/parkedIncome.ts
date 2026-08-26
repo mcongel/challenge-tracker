@@ -8,7 +8,7 @@
  * totals (dividendsCollected) and rocCumulative. */
 
 import { addDays, addMonths, daysBetween, taxYearOf } from './dates';
-import { sum } from './money';
+import { roundCents, sum } from './money';
 import { isArchivedPosition } from './parked';
 import type { DividendClassification, ParkedLot } from './parkedLots';
 import { aggregateLotsAdjusted } from './parkedRoc';
@@ -64,6 +64,24 @@ const firstOfMonth = (iso: string) => `${monthOf(iso)}-01`;
 
 const datedDividends = (lots: ParkedLot[]) =>
   lots.filter((l): l is ParkedLot & { date: string } => l.source === 'dividend' && l.date !== null);
+
+/** Running total of dated dividend dollars as of each date in `dates`
+ * (ascending). Both cash and DRIP count at receipt; undated lots are excluded
+ * (they can't be placed on a timeline). Pairs with a reconstructed value
+ * series to draw price-vs-income total return over time. */
+export function cumulativeIncomeByDate(lots: ParkedLot[], dates: string[]): number[] {
+  const paid = datedDividends(lots)
+    .map((l) => ({ date: l.date, amount: l.amount }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const out: number[] = [];
+  let i = 0;
+  let acc = 0;
+  for (const d of dates) {
+    while (i < paid.length && paid[i].date <= d) { acc += paid[i].amount; i += 1; }
+    out.push(roundCents(acc));
+  }
+  return out;
+}
 
 export interface MonthlyIncomePoint {
   /** 'yyyy-mm' */

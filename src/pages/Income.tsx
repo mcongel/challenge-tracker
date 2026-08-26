@@ -14,6 +14,7 @@ import { StatTile } from '../components/ui/StatTile';
 import { CLASSIFICATION_LABELS, classificationPillCls, SortHeader } from '../components/parked/shared';
 import type { SortState } from '../components/parked/shared';
 import { HoldingRow } from '../components/income/HoldingRow';
+import { TotalReturnCard } from '../components/income/TotalReturnCard';
 import { RateModal } from '../components/income/RateModal';
 import { ReclassifyModal } from '../components/income/ReclassifyModal';
 import { DividendCalendar } from '../components/income/DividendCalendar';
@@ -28,13 +29,15 @@ import type {
   DividendClassification, ParkedPosition,
 } from '../lib/engine';
 import {
-  dividendInsight, dividendTaxYTD, isArchivedPosition, isUnallocatedRoc, parkedMarketValue,
-  positionIncomeSummary, roundCents,
+  cumulativeIncomeByDate, dividendInsight, dividendTaxYTD, isArchivedPosition, isUnallocatedRoc,
+  parkedMarketValue, positionIncomeSummary, positionTotalReturn, roundCents,
   trailingIncomeByMonth,
 } from '../lib/engine';
+import type { PositionTotalReturn } from '../lib/engine';
+import { useValueHistory } from '../lib/useValueHistory';
 import {
   cn, compactUsd, formatCurrency, formatPercent, inputCls, money,
-  nextPayDate, NEXT_PAY_TITLE, safeStorage, secondaryBtnCls, todayISO,
+  nextPayDate, NEXT_PAY_TITLE, safeStorage, secondaryBtnCls, signedMoney, todayISO,
 } from '../lib/utils';
 import { useChartColors } from '../lib/useIsDark';
 
@@ -61,7 +64,7 @@ export function Income() {
   const {
     // Taxable positions only — a Roth's dividends are nobody's 1099. The
     // bitcoin bucket stays IN: BTCI's payouts are as taxable as any other.
-    taxableParked: parked, parkedLots: allLots, parkedLotAdjustments, dividendTaxRates,
+    taxableParked: parked, parkedLots: allLots, parkedLotAdjustments, parkedSales, dividendTaxRates,
     deleteParkedLot, allocateRocDividends, reclassifyDividends, loading, error,
   } = useData();
   const today = todayISO();
@@ -84,6 +87,52 @@ export function Income() {
       })),
     [parked, lotsByPosition, today, dividendTaxRates, parkedLotAdjustments],
   );
+
+  // Total return per holding (price + income + realized, ROC counted once).
+  // Same inputs the lot-panel uses; keyed by position id for the table rows.
+  const returns = useMemo(() => {
+    const m = new Map<string, PositionTotalReturn>();
+    for (const { position, lots } of summaries) {
+      m.set(position.id, positionTotalReturn(
+        position, lots, parkedLotAdjustments,
+        parkedSales.filter((s) => s.ticker === position.ticker && s.accountId === position.accountId),
+      ));
+    }
+    return m;
+  }, [summaries, parkedLotAdjustments, parkedSales]);
+
+  // The income holdings: real dividend history OR a live projection. This is
+  // the set the aggregate total-return card and its trend chart cover — the
+  // "income stocks," not the pile's pure-growth names.
+  const incomeSet = useMemo(
+    () => summaries.filter((s) => s.summary.projection || s.lots.some((l) => l.source === 'dividend')),
+    [summaries],
+  );
+  const aggReturn = useMemo<PositionTotalReturn>(() => {
+    const acc = { unrealized: 0, income: 0, realized: 0, total: 0, invested: 0, unknownBasisSales: 0 };
+    for (const { position } of incomeSet) {
+      const r = returns.get(position.id);
+      if (!r) continue;
+      acc.unrealized += r.unrealized; acc.income += r.income; acc.realized += r.realized;
+      acc.total += r.total; acc.invested += r.invested; acc.unknownBasisSales += r.unknownBasisSales;
+    }
+    return { ...acc, pct: acc.invested > 0 ? acc.total / acc.invested : null };
+  }, [incomeSet, returns]);
+
+  // Reconstructed value history for the income holdings × real closes; paired
+  // with cumulative income for the price-vs-income trend chart.
+  const incomePositions = useMemo(() => incomeSet.map((s) => s.position), [incomeSet]);
+  const incomeLiveValue = useMemo(
+    () => incomePositions.reduce((t, p) => t + parkedMarketValue(p), 0),
+    [incomePositions],
+  );
+  const valueHistory = useValueHistory(incomePositions, allLots, parkedSales, incomeLiveValue);
+  const returnChart = useMemo(() => {
+    if (!valueHistory || valueHistory.length < 2) return null;
+    const dates = valueHistory.map((v) => v.date);
+    const cum = cumulativeIncomeByDate(parkedLots, dates);
+    return valueHistory.map((v, i) => ({ date: v.date, value: v.value, income: cum[i] }));
+  }, [valueHistory, parkedLots]);
 
   // Dividend growth + payout coverage (item 3), keyed by ticker. Best-effort:
   // empty until /api/fundamentals answers, absent entirely without an FMP key.
@@ -339,6 +388,8 @@ export function Income() {
               sub={investedForIncome > 0 ? `${money(investedForIncome)} invested for income` : 'projecting holdings only'} />
           </div>
 
+          {aggReturn.invested > 0 && <TotalReturnCard agg={aggReturn} data={returnChart} />}
+
           <Card className="p-4 sm:p-6 density-aware-card mb-4">
             <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
               Monthly income — last 12 actual, next 12 projected
@@ -377,6 +428,7 @@ export function Income() {
             }
             cards={sortedSummaries.map(({ position: p, summary: s }) => {
               const proj = s.projection;
+              const ret = returns.get(p.id)!;
               const archived = isArchivedPosition(p);
               return (
                 <RowCard
@@ -414,6 +466,16 @@ export function Income() {
                   </RowCardStat>
                   <RowCardStat label="T12M">
                     {s.trailing12m > 0 ? money(s.trailing12m) : '—'}
+                  </RowCardStat>
+                  <RowCardStat label="Total return">
+                    {ret.invested > 0 ? (
+                      <span title={`price ${signedMoney(ret.unrealized)} · income ${money(ret.income)}`}>
+                        <span className={ret.total >= 0 ? 'text-green-600' : 'text-red-600'}>
+                          {signedMoney(ret.total)}
+                        </span>
+                        {ret.pct != null && <span className="text-gray-400"> ({formatPercent(ret.pct)})</span>}
+                      </span>
+                    ) : '—'}
                   </RowCardStat>
                   <RowCardStat label="Next payment">
                     {proj?.nextPayment ? (
@@ -457,6 +519,7 @@ export function Income() {
                   <th className="px-4 py-2 text-right" title="Projected annual income / original cost basis">Yield on cost</th>
                   <th className="px-4 py-2 text-right">T12M</th>
                   <th className="px-4 py-2 text-right">Projected 12M</th>
+                  <th className="px-4 py-2 text-right" title="Price change + income + realized, since you bought — ROC counted once. Sub-line splits price vs income.">Total return</th>
                   <th className="px-4 py-2 text-right">Next payment</th>
                   <th className="px-4 py-2">Source</th>
                   {anyRoc && (
@@ -467,7 +530,7 @@ export function Income() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {sortedSummaries.map(({ position: p, summary: s }) => (
-                  <HoldingRow key={p.id} position={p} summary={s} anyRoc={anyRoc}
+                  <HoldingRow key={p.id} position={p} summary={s} ret={returns.get(p.id)!} anyRoc={anyRoc}
                     insight={insights[p.ticker]} lots={lotsByPosition.get(p.id) ?? []}
                     onEditRate={() => setEditingRate(p)} />
                 ))}

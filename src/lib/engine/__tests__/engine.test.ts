@@ -865,6 +865,19 @@ describe('parked income — trailing, projection, yield, dividend tax', () => {
     expect(points.reduce((t, p) => t + p.amount, 0)).toBe(150);
   });
 
+  it('cumulativeIncomeByDate: running dividend total per date; undated excluded, purchases ignored', async () => {
+    const { cumulativeIncomeByDate } = await import('../parkedIncome');
+    const lots = [
+      div('a', '2026-01-15', 100),
+      div('b', '2026-03-10', 50),
+      div('c', '2026-03-20', 25),        // same month as b — both counted
+      div('d', null, 999),               // undated — never placed on the timeline
+      buy('e', '2026-02-01', 10, 1000),  // purchase — not income
+    ];
+    const dates = ['2026-01-01', '2026-02-01', '2026-03-15', '2026-04-01'];
+    expect(cumulativeIncomeByDate(lots, dates)).toEqual([0, 100, 150, 175]);
+  });
+
   it('quarterly payer with 4 actuals: cadence, mean amount, schedule anchored to last pay date', async () => {
     const { projectPositionIncome } = await import('../parkedIncome');
     const lots = [
