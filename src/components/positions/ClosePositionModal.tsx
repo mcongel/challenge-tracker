@@ -79,7 +79,17 @@ export function ClosePositionModal({ ticker, onClose }: { ticker: string; onClos
     <Modal isOpen onClose={onClose} title={`Close ${ticker}`}>
       <form onSubmit={submit} className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
-          <Field label={`Shares (of ${totalShares})`}>
+          <Field label={
+            <span className="flex items-baseline justify-between gap-2">
+              <span>Shares (of {totalShares})</span>
+              {numShares < totalShares - 1e-9 && (
+                <button type="button" onClick={() => setShares(String(totalShares))}
+                  className="text-[11px] font-semibold normal-case text-indigo-600 hover:underline">
+                  Sell all
+                </button>
+              )}
+            </span>
+          }>
             <input type="number" step="any" min="0.00000001" required value={shares}
               onChange={(e) => setShares(e.target.value)} className={inputCls} />
           </Field>

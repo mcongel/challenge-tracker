@@ -150,7 +150,17 @@ export function TrimModal({
         )}
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label={`Shares (of ${p.shares})`}>
+          <Field label={
+            <span className="flex items-baseline justify-between gap-2">
+              <span>Shares (of {fmtSh(p.shares)})</span>
+              {!fullTrim && (
+                <button type="button" onClick={() => setShares(String(p.shares))}
+                  className="text-[11px] font-semibold normal-case text-green-700 hover:underline">
+                  Sell all
+                </button>
+              )}
+            </span>
+          }>
             <input type="number" step="any" min="0.00000001" required value={shares}
               onChange={(e) => setShares(e.target.value)} className={inputCls} />
           </Field>
