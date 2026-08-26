@@ -123,10 +123,10 @@ export function CoveragePanel({
             const partial = fundedFraction > 0 && !covered;
             return (
               <li key={e.id} className="flex items-center gap-3 py-2">
-                <span className={cn('flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold',
+                <span className={cn('flex h-5 min-w-5 flex-shrink-0 items-center justify-center rounded-full px-1 text-[10px] font-bold tabular-nums',
                   covered ? 'bg-green-100 text-green-700'
                     : partial ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-400')}>
-                  {covered ? <Check className="h-3 w-3" /> : partial ? formatPercent(fundedFraction, 0).replace('%', '') : ''}
+                  {covered ? <Check className="h-3 w-3" /> : partial ? formatPercent(fundedFraction, 0) : ''}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="text-sm font-medium text-text-primary">{e.name}</span>
