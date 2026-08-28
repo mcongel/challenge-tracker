@@ -64,13 +64,17 @@ export async function onRequestGet(context) {
       continue;
     }
     quotes[ticker] = quote;
+    // A quote missing its day-change (no previous close — the feed omits it
+    // briefly around the open/pre-market) is incomplete: cache it for only a
+    // minute so it refills fast, instead of pinning a "—" for the full TTL.
+    const ttl = quote.change !== null ? CACHE_TTL_SECONDS : 60;
     context.waitUntil(
       cache.put(
         cacheKey(ticker),
         new Response(JSON.stringify(quote), {
           headers: {
             'Content-Type': 'application/json',
-            'Cache-Control': `s-maxage=${CACHE_TTL_SECONDS}`,
+            'Cache-Control': `s-maxage=${ttl}`,
           },
         }),
       ),
