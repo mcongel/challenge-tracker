@@ -919,7 +919,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   /** Recompute a position's shares/avg_cost from its lots. A position whose
    * lots hold no shares survives archived at zero (its dividend history stays
-   * on the Income screen); only a position with no lots at all is removed. */
+   * on the Income screen). With no lots at all, a position that was ever SOLD
+   * still survives as an archived shell — its closed-position record (realized
+   * performance, and a home for a late dividend) belongs on the Closed
+   * Positions section — while a never-sold empty position (a mistaken entry
+   * whose lots were all deleted) is removed. */
   const recomputeParkedAggregate = useCallback(async (positionId: string) => {
     const client = db();
     const { data, error: readErr } = await client
@@ -928,8 +932,23 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const rows = (data ?? []).map(mapParkedLot);
     const agg = aggregateLots(rows);
     if (rows.length === 0) {
-      const { error: err } = await client.from('parked_positions').delete().eq('id', positionId);
-      if (err) throw err;
+      const { data: posRow } = await client
+        .from('parked_positions').select('ticker, account_id').eq('id', positionId).maybeSingle();
+      let hasSale = false;
+      if (posRow) {
+        const { data: saleRows } = await client
+          .from('parked_sales').select('id')
+          .eq('ticker', posRow.ticker).eq('account_id', posRow.account_id).limit(1);
+        hasSale = (saleRows?.length ?? 0) > 0;
+      }
+      if (hasSale) {
+        const { error: err } = await client
+          .from('parked_positions').update({ shares: 0, avg_cost: 0 }).eq('id', positionId);
+        if (err) throw err;
+      } else {
+        const { error: err } = await client.from('parked_positions').delete().eq('id', positionId);
+        if (err) throw err;
+      }
     } else {
       const { error: err } = await client
         .from('parked_positions')
