@@ -35,6 +35,7 @@ import { useValueHistory } from '../lib/useValueHistory';
 import { AddHoldingModal } from '../components/parked/AddHoldingModal';
 import { EditParkedModal } from '../components/parked/EditParkedModal';
 import { LotPanel } from '../components/parked/LotPanel';
+import { ClosedPositions } from '../components/parked/ClosedPositions';
 import { TransferModal } from '../components/parked/TransferModal';
 import { TrimModal } from '../components/parked/TrimModal';
 
@@ -50,6 +51,9 @@ export function ParkedPile() {
   // Archived (zero-share) rows keep dividend history alive on the Income
   // screen; this table shows live holdings only.
   const parked = useMemo(() => allParked.filter((p) => !isArchivedPosition(p)), [allParked]);
+  // Fully-sold rows: dropped from the live table, surfaced in their own
+  // closed-positions section for final performance and post-sale dividends.
+  const closedPositions = useMemo(() => allParked.filter(isArchivedPosition), [allParked]);
   const [capOpen, setCapOpen] = useState(false);
   const [splitTicker, setSplitTicker] = useState<string | null>(null);
   const [editing, setEditing] = useState<ParkedPosition | null>(null);
@@ -612,6 +616,13 @@ export function ParkedPile() {
           </table>
         </TableCard>
       )}
+
+      <ClosedPositions
+        positions={closedPositions}
+        returns={totalReturnByPosition}
+        lotsByPosition={lotsByPosition}
+        tickerNames={tickerNames}
+      />
 
       {editing && <EditParkedModal position={editing} onClose={() => setEditing(null)} />}
       {trimming && (
