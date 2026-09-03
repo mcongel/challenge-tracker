@@ -57,8 +57,17 @@ export async function onRequestGet(context) {
     uncached.push(ticker);
   }
 
-  for (const ticker of uncached) {
-    const quote = (await fromYahoo(ticker)) ?? (await fromFinnhub(ticker, env));
+  // Fetch the uncached tickers concurrently — sequential awaits made a cold
+  // batch slow enough to return partial, so the client had to retry to
+  // converge. Each source call is still guarded, so one bad symbol can't
+  // sink the batch.
+  const fetched = await Promise.all(
+    uncached.map(async (ticker) => ({
+      ticker,
+      quote: (await fromYahoo(ticker)) ?? (await fromFinnhub(ticker, env)),
+    })),
+  );
+  for (const { ticker, quote } of fetched) {
     if (!quote) {
       missing.push(ticker);
       continue;

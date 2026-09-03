@@ -58,22 +58,42 @@ export function useQuotesEngine(args: {
       setQuotesSettled(true);
       return;
     }
+    // Chunked and parallel: one big batch can't finish inside a single Pages
+    // Function invocation's budget, so it returned a partial set and the user
+    // had to click "check prices" repeatedly to converge. Small chunks each
+    // complete on their own; firing them together fills everything in one go.
+    const CHUNK = 10;
+    const chunks: string[][] = [];
+    for (let i = 0; i < tickers.length; i += CHUNK) chunks.push(tickers.slice(i, i + CHUNK));
     try {
-      const res = await fetch(`/api/quotes?tickers=${tickers.join(',')}`);
-      if (!res.ok) {
-        // Best-effort — overrides and cost fallbacks cover us — but the
-        // staleness stamp should turn amber rather than lie quietly.
+      const bodies = await Promise.all(
+        chunks.map(async (chunk) => {
+          const res = await fetch(`/api/quotes?tickers=${chunk.join(',')}`);
+          if (!res.ok) return null;
+          return (await res.json()) as {
+            quotes?: Record<string, { price: number; change?: number | null; changePct?: number | null }>;
+            asOf?: number;
+          };
+        }),
+      );
+      const fresh: Record<string, { price: number; change?: number | null; changePct?: number | null }> = {};
+      let asOf = Date.now();
+      let anyOk = false;
+      for (const body of bodies) {
+        if (!body) continue;
+        anyOk = true;
+        Object.assign(fresh, body.quotes ?? {});
+        if (body.asOf) asOf = body.asOf;
+      }
+      // Every chunk failed — best-effort, so turn the staleness stamp amber
+      // rather than blank out prices we already had.
+      if (!anyOk) {
         setQuotesError(true);
         return;
       }
-      const body = (await res.json()) as {
-        quotes?: Record<string, { price: number; change?: number | null; changePct?: number | null }>;
-        asOf?: number;
-      };
-      const fresh = body.quotes;
-      if (fresh) {
-        // Merge instead of replace: a throttled fetch that misses a ticker
-        // shouldn't blank out the price we already had.
+      if (Object.keys(fresh).length > 0) {
+        // Merge instead of replace: a chunk that misses a ticker shouldn't
+        // blank out the price we already had.
         setQuotes((prev) => ({
           ...prev,
           ...Object.fromEntries(Object.entries(fresh).map(([t, q]) => [t, q.price])),
@@ -87,7 +107,7 @@ export function useQuotesEngine(args: {
             ]),
           ),
         }));
-        setQuotesAsOf(body.asOf ?? Date.now());
+        setQuotesAsOf(asOf);
         lastQuoteFetchAt.current = Date.now();
         setQuotesError(false);
         void persistQuotedPrices(fresh);
